@@ -21,6 +21,7 @@
 #include "script/interpreter.h"
 #include "sodium.h"
 #include "timedata.h"
+#include "transaction_builder.h"
 #include "util.h"
 #include "utilmoneystr.h"
 #include "utiltime.h"
@@ -792,15 +793,16 @@ UniValue AsyncRPCOperation_mergetoaddress::perform_joinsplit(
     uint256 esk; // payment disclosure - secret
 
     assert(mtx.fOverwintered && (mtx.nVersion >= SAPLING_TX_VERSION));
-    JSDescription jsdesc = JSDescription::Randomized(
+    JSDescription jsdesc = JSDescriptionInfo(
         joinSplitPubKey_,
         anchor,
         inputs,
         outputs,
+        info.vpub_old,
+        info.vpub_new
+    ).BuildRandomized(
         inputMap,
         outputMap,
-        info.vpub_old,
-        info.vpub_new,
         !this->testmode,
         &esk); // parameter expects pointer to esk, so pass in address
     {
