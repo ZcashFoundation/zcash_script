@@ -19,7 +19,6 @@
 
 #include "zcash/NoteEncryption.hpp"
 #include "zcash/Zcash.h"
-#include "zcash/JoinSplit.hpp"
 #include "zcash/Proof.hpp"
 
 // Overwinter transaction version
@@ -232,9 +231,6 @@ public:
     libzcash::SproutProof proof;
 
     JSDescription(): vpub_old(0), vpub_new(0) { }
-
-    // Returns the calculated h_sig
-    uint256 h_sig(const uint256& joinSplitPubKey) const;
 
     ADD_SERIALIZE_METHODS;
 

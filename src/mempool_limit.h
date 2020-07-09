@@ -5,6 +5,7 @@
 #ifndef MEMPOOLLIMIT_H
 #define MEMPOOLLIMIT_H
 
+#include <deque>
 #include <map>
 #include <set>
 #include <vector>
