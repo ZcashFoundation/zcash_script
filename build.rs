@@ -2,11 +2,24 @@ use color_eyre::{
     eyre::{eyre, Context, Report, Result},
     Help, SectionExt,
 };
-use std::{env, path::PathBuf, process::Command};
+use std::{env, fs, path::PathBuf, process::Command};
 
-fn main() -> Result<()> {
-    color_eyre::install()?;
+trait CommandExt {
+    /// wrapper for `status` fn on `Command` that constructs informative error
+    /// reports
+    fn status2(&mut self) -> Result<(), Report>;
 
+    /// wrapper for `output` fn on `Command` that constructs informative error
+    /// reports
+    fn output2(&mut self) -> Result<String, Report>;
+}
+
+fn guess_host() -> Result<String> {
+    Command::new("depend/zcash/depends/config.guess").output2()
+}
+
+#[cfg(feature = "generate")]
+fn bindgen_headers() -> Result<()> {
     let bindings = bindgen::Builder::default()
         .header("depend/zcash/src/script/zcashconsensus.h")
         // Tell cargo to invalidate the built crate whenever any of the
@@ -14,30 +27,47 @@ fn main() -> Result<()> {
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
         // Finish the builder and generate the bindings.
         .generate()
-        // Unwrap the Result and panic on failure.
-        .expect("Unable to generate bindings");
+        .ok_or("Unable to generate bindings")?;
 
     // Write the bindings to the $OUT_DIR/bindings.rs file.
-    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let out_path = env::var("OUT_DIR")?;
+    let out_path = PathBuf::from(out_path);
     bindings
         .write_to_file(out_path.join("bindings.rs"))
-        .expect("Couldn't write bindings!");
+        .wrap_err("unable to write bindings")?;
+
+    Ok(())
+}
+
+#[cfg(not(feature = "generate"))]
+fn bindgen_headers() -> Result<()> {
+    let out_path = env::var("OUT_DIR")?;
+    let out_path = PathBuf::from(out_path).join("bindings.rs");
+    fs::copy("bindgen/bindings.rs", out_path).wrap_err("unable to write bindings")?;
+
+    Ok(())
+}
+
+fn main() -> Result<()> {
+    color_eyre::install()?;
+
+    bindgen_headers()?;
 
     let host = guess_host()?;
     let host = host.trim();
 
-    // std::env::remove_var("DEBUG");
-    // let old_dir = std::env::current_dir()?;
-    // std::env::set_current_dir("zcash")?;
+    std::env::remove_var("DEBUG");
+    let old_dir = std::env::current_dir()?;
+    std::env::set_current_dir("depend/zcash")?;
 
-    // Command::new("make")
-    //     .env("HOST", &host)
-    //     .env("BUILD", &host)
-    //     .arg("-C")
-    //     .arg("depends")
-    //     .status2()?;
+    Command::new("make")
+        .env("HOST", &host)
+        .env("BUILD", &host)
+        .arg("-C")
+        .arg("depends")
+        .status2()?;
 
-    // std::env::set_current_dir(old_dir)?;
+    std::env::set_current_dir(old_dir)?;
 
     // Check whether we can use 64-bit compilation
     let use_64bit_compilation = if env::var("CARGO_CFG_TARGET_POINTER_WIDTH").unwrap() == "64" {
@@ -134,15 +164,6 @@ fn main() -> Result<()> {
         .compile("libzcashconsensus.a");
 
     Ok(())
-}
-
-fn guess_host() -> Result<String, Report> {
-    Command::new("depend/zcash/depends/config.guess").output2()
-}
-
-trait CommandExt {
-    fn status2(&mut self) -> Result<(), Report>;
-    fn output2(&mut self) -> Result<String, Report>;
 }
 
 impl CommandExt for Command {

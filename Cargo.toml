@@ -12,7 +12,7 @@ name = "bitcoinconsensus"
 path = "src/lib.rs"
 
 [features]
-external-secp = []
+generate = ["bindgen"]
 
 [dependencies]
 libc="0.2"
@@ -22,7 +22,7 @@ lazy_static = "1.4.0"
 [build-dependencies]
 cc = ">= 1.0.36, <= 1.0.41"
 color-eyre = "0.5.0"
-bindgen = "0.54.1"
+bindgen = { version = "0.54.1", optional = true }
 
 [dev-dependencies]
 rustc-serialize = "0.3"
