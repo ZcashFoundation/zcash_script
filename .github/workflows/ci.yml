@@ -12,6 +12,8 @@ jobs:
           - stable
     steps:
       - uses: actions/checkout@v1
+        with:
+          submodules: true
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: ${{ matrix.rust }}
@@ -30,6 +32,8 @@ jobs:
           - nightly
     steps:
       - uses: actions/checkout@v1
+        with:
+          submodules: true
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: ${{ matrix.rust }}
@@ -47,6 +51,8 @@ jobs:
           - stable
     steps:
       - uses: actions/checkout@v1
+        with:
+          submodules: true
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: ${{ matrix.rust }}
@@ -66,6 +72,8 @@ jobs:
           - stable
     steps:
       - uses: actions/checkout@v1
+        with:
+          submodules: true
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: ${{ matrix.rust }}
