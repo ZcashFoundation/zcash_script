@@ -10,8 +10,6 @@
 #include "crypto/sha256.h"
 #include "utilstrencodings.h"
 
-#include "sodium.h"
-
 #include <cstring>
 #include <exception>
 #include <stdexcept>
@@ -21,8 +19,20 @@
 #include <vector>
 
 #include <boost/static_assert.hpp>
+#include <rust/blake2b.h>
 
-typedef crypto_generichash_blake2b_state eh_HashState;
+struct eh_HashState {
+    BLAKE2bState* state;
+
+    eh_HashState() {}
+    eh_HashState(size_t length, unsigned char personalization[BLAKE2bPersonalBytes]);
+    eh_HashState(const eh_HashState& baseState);
+    ~eh_HashState();
+
+    void Update(const unsigned char *input, size_t inputLen);
+    void Finalize(unsigned char *hash, size_t hLen);
+};
+
 typedef uint32_t eh_index;
 typedef uint8_t eh_trunc;
 
@@ -183,7 +193,7 @@ public:
 
     Equihash() { }
 
-    int InitialiseState(eh_HashState& base_state);
+    void InitialiseState(eh_HashState& base_state);
     bool BasicSolve(const eh_HashState& base_state,
                     const std::function<bool(std::vector<unsigned char>)> validBlock,
                     const std::function<bool(EhSolverCancelCheck)> cancelled);

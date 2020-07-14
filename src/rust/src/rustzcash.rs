@@ -67,6 +67,8 @@ use zcash_proofs::{
 
 use zcash_history::{Entry as MMREntry, NodeData as MMRNodeData, Tree as MMRTree};
 
+mod blake2b;
+
 #[cfg(test)]
 mod tests;
 
