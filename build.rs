@@ -63,6 +63,7 @@ fn main() -> Result<()> {
     Command::new("make")
         .env("HOST", &host)
         .env("BUILD", &host)
+        .env("LIBZCASHCONSENSUS_ONLY", "1")
         .arg("-C")
         .arg("depends")
         .status2()?;
