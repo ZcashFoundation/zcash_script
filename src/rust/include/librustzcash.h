@@ -352,6 +352,12 @@ extern "C" {
         unsigned char *h_ret
     );
 
+    /// Fills the provided buffer with random bytes.
+    void librustzcash_getrandom(
+        unsigned char *buf,
+        size_t buf_len
+    );
+
     int librustzcash_zebra_crypto_sign_verify_detached(
         const unsigned char *sig,
         const unsigned char *m,
