@@ -87,6 +87,7 @@ fn main() -> Result<()> {
     let target = env::var("TARGET").expect("TARGET was not set");
     let is_big_endian = env::var("CARGO_CFG_TARGET_ENDIAN").expect("No endian is set") == "big";
     let mut base_config = cc::Build::new();
+
     base_config
         .cpp(true)
         .include("depend/zcash/src")
@@ -105,7 +106,7 @@ fn main() -> Result<()> {
             .include("depend/zcash/src/secp256k1")
             .flag_if_supported("-Wno-unused-function") // some ecmult stuff is defined but not used upstream
             .define("SECP256K1_BUILD", "1")
-            // Bitcoin core defines libsecp to *not* use libgmp.
+            // zcash core defines libsecp to *not* use libgmp.
             .define("USE_NUM_NONE", "1")
             .define("USE_FIELD_INV_BUILTIN", "1")
             .define("USE_SCALAR_INV_BUILTIN", "1")
