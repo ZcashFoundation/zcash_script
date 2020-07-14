@@ -143,10 +143,7 @@ fn main() -> Result<()> {
     }
 
     println!("cargo:rustc-link-lib=static=sodium");
-    println!(
-        "cargo:rustc-link-search=/home/jlusby/git/ecc/zcash/depends/{}/lib/",
-        host
-    );
+    println!("cargo:rustc-link-search=depend/zcash/depends/{}/lib/", host);
 
     base_config
         .file("depend/zcash/src/script/zcashconsensus.cpp")
