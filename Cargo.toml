@@ -1,14 +1,14 @@
 [package]
-name = "bitcoinconsensus"
-version = "0.19.0-1"
-authors = ["Tamas Blummer <tamas.blummer@gmail.com>"]
+name = "zcashconsensus"
+version = "0.1.0"
+authors = ["Tamas Blummer <tamas.blummer@gmail.com>", "Zcash Foundation <zebra@zfnd.org>"]
 license = "Apache-2.0"
 readme = "README.md"
 build = "build.rs"
 edition = "2018"
 
 [lib]
-name = "bitcoinconsensus"
+name = "zcashconsensus"
 path = "src/lib.rs"
 
 [features]
@@ -16,8 +16,6 @@ generate = ["bindgen"]
 
 [dependencies]
 libc="0.2"
-hex = "0.4.2"
-lazy_static = "1.4.0"
 blake2b_simd = "0.5.10"
 
 [build-dependencies]
@@ -27,3 +25,5 @@ bindgen = { version = "0.54.1", optional = true }
 
 [dev-dependencies]
 rustc-serialize = "0.3"
+hex = "0.4.2"
+lazy_static = "1.4.0"
