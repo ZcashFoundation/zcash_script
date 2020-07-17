@@ -24,9 +24,8 @@
 
 #include <algorithm>
 #include <iostream>
+#include <optional>
 #include <stdexcept>
-
-#include <boost/optional.hpp>
 
 static EhSolverCancelledException solver_cancelled;
 
@@ -657,7 +656,7 @@ bool Equihash<N,K>::OptimisedSolve(const eh_HashState& base_state,
         size_t hashLen;
         size_t lenIndices;
         unsigned char tmpHash[HashOutput];
-        std::vector<boost::optional<std::vector<FullStepRow<FinalFullWidth>>>> X;
+        std::vector<std::optional<std::vector<FullStepRow<FinalFullWidth>>>> X;
         X.reserve(K+1);
 
         // 3) Repeat steps 1 and 2 for each partial index
@@ -675,7 +674,7 @@ bool Equihash<N,K>::OptimisedSolve(const eh_HashState& base_state,
                                  N/8, HashLength, CollisionBitLength, newIndex);
                 if (cancelled(PartialGeneration)) throw solver_cancelled;
             }
-            boost::optional<std::vector<FullStepRow<FinalFullWidth>>> ic = icv;
+            std::optional<std::vector<FullStepRow<FinalFullWidth>>> ic = icv;
 
             // 2a) For each pair of lists:
             hashLen = HashLength;
@@ -700,7 +699,7 @@ bool Equihash<N,K>::OptimisedSolve(const eh_HashState& base_state,
                         if (ic->size() == 0)
                             goto invalidsolution;
 
-                        X[r] = boost::none;
+                        X[r] = std::nullopt;
                         hashLen -= CollisionByteLength;
                         lenIndices *= 2;
                         rti = lti;

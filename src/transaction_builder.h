@@ -19,7 +19,7 @@
 #include "zcash/Note.hpp"
 #include "zcash/NoteEncryption.hpp"
 
-#include <boost/optional.hpp>
+#include <optional>
 
 #define NO_MEMO {{0xF6}}
 
@@ -47,7 +47,7 @@ struct OutputDescriptionInfo {
         libzcash::SaplingNote note,
         std::array<unsigned char, ZC_MEMO_SIZE> memo) : ovk(ovk), note(note), memo(memo) {}
 
-    boost::optional<OutputDescription> Build(void* ctx);
+    std::optional<OutputDescription> Build(void* ctx);
 };
 
 struct JSDescriptionInfo {
@@ -91,8 +91,8 @@ struct TransparentInputInfo {
 
 class TransactionBuilderResult {
 private:
-    boost::optional<CTransaction> maybeTx;
-    boost::optional<std::string> maybeError;
+    std::optional<CTransaction> maybeTx;
+    std::optional<std::string> maybeError;
 public:
     TransactionBuilderResult() = delete;
     TransactionBuilderResult(const CTransaction& tx);
@@ -120,9 +120,9 @@ private:
     std::vector<libzcash::JSOutput> jsOutputs;
     std::vector<TransparentInputInfo> tIns;
 
-    boost::optional<std::pair<uint256, libzcash::SaplingPaymentAddress>> saplingChangeAddr;
-    boost::optional<libzcash::SproutPaymentAddress> sproutChangeAddr;
-    boost::optional<CTxDestination> tChangeAddr;
+    std::optional<std::pair<uint256, libzcash::SaplingPaymentAddress>> saplingChangeAddr;
+    std::optional<libzcash::SproutPaymentAddress> sproutChangeAddr;
+    std::optional<CTxDestination> tChangeAddr;
 
 public:
     TransactionBuilder() {}

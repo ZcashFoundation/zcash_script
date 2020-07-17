@@ -11,9 +11,8 @@
 #include "key_constants.h"
 #include <zcash/address/sapling.hpp>
 
+#include <optional>
 #include <variant>
-
-#include <boost/optional.hpp>
 
 namespace Consensus {
 
@@ -80,7 +79,7 @@ struct NetworkUpgrade {
      * scrutiny than regular releases. nMinimumChainWork MUST be set to at least the chain
      * work of this block, otherwise this detection will have false positives.
      */
-    boost::optional<uint256> hashActivationBlock;
+    std::optional<uint256> hashActivationBlock;
 };
 
 typedef std::variant<libzcash::SaplingPaymentAddress, CScript> FundingStreamAddress;
@@ -211,7 +210,7 @@ struct Params {
     NetworkUpgrade vUpgrades[MAX_NETWORK_UPGRADES];
 
     int nFundingPeriodLength;
-    boost::optional<FundingStream> vFundingStreams[MAX_FUNDING_STREAMS];
+    std::optional<FundingStream> vFundingStreams[MAX_FUNDING_STREAMS];
     void AddZIP207FundingStream(
         const KeyConstants& keyConstants,
         FundingStreamIndex idx,
@@ -263,7 +262,7 @@ struct Params {
     unsigned int nEquihashN = 0;
     unsigned int nEquihashK = 0;
     uint256 powLimit;
-    boost::optional<uint32_t> nPowAllowMinDifficultyBlocksAfterHeight;
+    std::optional<uint32_t> nPowAllowMinDifficultyBlocksAfterHeight;
     int64_t nPowAveragingWindow;
     int64_t nPowMaxAdjustDown;
     int64_t nPowMaxAdjustUp;

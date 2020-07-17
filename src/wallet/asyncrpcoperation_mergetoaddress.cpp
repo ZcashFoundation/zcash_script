@@ -57,7 +57,7 @@ int mta_find_output(UniValue obj, int n)
 }
 
 AsyncRPCOperation_mergetoaddress::AsyncRPCOperation_mergetoaddress(
-    boost::optional<TransactionBuilder> builder,
+    std::optional<TransactionBuilder> builder,
     CMutableTransaction contextualTx,
     std::vector<MergeToAddressInputUTXO> utxoInputs,
     std::vector<MergeToAddressInputSproutNote> sproutNoteInputs,
@@ -91,7 +91,7 @@ AsyncRPCOperation_mergetoaddress::AsyncRPCOperation_mergetoaddress(
     isUsingBuilder_ = false;
     if (builder) {
         isUsingBuilder_ = true;
-        builder_ = builder.get();
+        builder_ = builder.value();
     }
 
     KeyIO keyIO(Params());
@@ -291,7 +291,7 @@ bool AsyncRPCOperation_mergetoaddress::main_impl()
             builder_.AddTransparentInput(outPoint, scriptPubKey, amount);
         }
 
-        boost::optional<uint256> ovk;
+        std::optional<uint256> ovk;
         // Select Sapling notes
         std::vector<SaplingOutPoint> saplingOPs;
         std::vector<SaplingNote> saplingNotes;
@@ -308,7 +308,7 @@ bool AsyncRPCOperation_mergetoaddress::main_impl()
 
         // Fetch Sapling anchor and witnesses
         uint256 anchor;
-        std::vector<boost::optional<SaplingWitness>> witnesses;
+        std::vector<std::optional<SaplingWitness>> witnesses;
         {
             LOCK2(cs_main, pwalletMain->cs_wallet);
             pwalletMain->GetSaplingNoteWitnesses(saplingOPs, witnesses, anchor);
@@ -319,7 +319,7 @@ bool AsyncRPCOperation_mergetoaddress::main_impl()
             if (!witnesses[i]) {
                 throw JSONRPCError(RPC_WALLET_ERROR, "Missing witness for Sapling note");
             }
-            builder_.AddSaplingSpend(expsks[i], saplingNotes[i], anchor, witnesses[i].get());
+            builder_.AddSaplingSpend(expsks[i], saplingNotes[i], anchor, witnesses[i].value());
         }
 
         if (isToTaddr_) {
@@ -344,13 +344,13 @@ bool AsyncRPCOperation_mergetoaddress::main_impl()
             if (!ovk) {
                 throw JSONRPCError(RPC_WALLET_ERROR, "Sending to a Sapling address requires an ovk.");
             }
-            builder_.AddSaplingOutput(ovk.get(), *saplingPaymentAddress, sendAmount, hexMemo);
+            builder_.AddSaplingOutput(ovk.value(), *saplingPaymentAddress, sendAmount, hexMemo);
         }
 
         // Build the transaction
         tx_ = builder_.Build().GetTxOrThrow();
 
-        UniValue sendResult = SendTransaction(tx_, boost::none, testmode);
+        UniValue sendResult = SendTransaction(tx_, std::nullopt, testmode);
         set_result(sendResult);
 
         return true;
@@ -370,7 +370,7 @@ bool AsyncRPCOperation_mergetoaddress::main_impl()
     if (isPureTaddrOnlyTx) {
         UniValue obj(UniValue::VOBJ);
         obj.pushKV("rawtxn", EncodeHexTx(tx_));
-        auto txAndResult = SignSendRawTransaction(obj, boost::none, testmode);
+        auto txAndResult = SignSendRawTransaction(obj, std::nullopt, testmode);
         tx_ = txAndResult.first;
         set_result(txAndResult.second);
         return true;
@@ -408,7 +408,7 @@ bool AsyncRPCOperation_mergetoaddress::main_impl()
         info.vjsout.push_back(jso);
 
         UniValue obj = perform_joinsplit(info);
-        auto txAndResult = SignSendRawTransaction(obj, boost::none, testmode);
+        auto txAndResult = SignSendRawTransaction(obj, std::nullopt, testmode);
         tx_ = txAndResult.first;
         set_result(txAndResult.second);
         return true;
@@ -433,7 +433,7 @@ bool AsyncRPCOperation_mergetoaddress::main_impl()
             JSOutPoint jso = std::get<0>(t);
             std::vector<JSOutPoint> vOutPoints = {jso};
             uint256 inputAnchor;
-            std::vector<boost::optional<SproutWitness>> vInputWitnesses;
+            std::vector<std::optional<SproutWitness>> vInputWitnesses;
             pwalletMain->GetSproutNoteWitnesses(vOutPoints, vInputWitnesses, inputAnchor);
             jsopWitnessAnchorMap[jso.ToString()] = MergeToAddressWitnessAnchorData{vInputWitnesses[0], inputAnchor};
         }
@@ -497,7 +497,7 @@ bool AsyncRPCOperation_mergetoaddress::main_impl()
 
         CAmount jsInputValue = 0;
         uint256 jsAnchor;
-        std::vector<boost::optional<SproutWitness>> witnesses;
+        std::vector<std::optional<SproutWitness>> witnesses;
 
         JSDescription prevJoinSplit;
 
@@ -528,7 +528,7 @@ bool AsyncRPCOperation_mergetoaddress::main_impl()
             }
 
             assert(changeOutputIndex != -1);
-            boost::optional<SproutWitness> changeWitness;
+            std::optional<SproutWitness> changeWitness;
             int n = 0;
             for (const uint256& commitment : prevJoinSplit.commitments) {
                 tree.append(commitment);
@@ -536,7 +536,7 @@ bool AsyncRPCOperation_mergetoaddress::main_impl()
                 if (!changeWitness && changeOutputIndex == n++) {
                     changeWitness = tree.witness();
                 } else if (changeWitness) {
-                    changeWitness.get().append(commitment);
+                    changeWitness.value().append(commitment);
                 }
             }
             if (changeWitness) {
@@ -581,7 +581,7 @@ bool AsyncRPCOperation_mergetoaddress::main_impl()
         std::vector<SproutNote> vInputNotes;
         std::vector<SproutSpendingKey> vInputZKeys;
         std::vector<JSOutPoint> vOutPoints;
-        std::vector<boost::optional<SproutWitness>> vInputWitnesses;
+        std::vector<std::optional<SproutWitness>> vInputWitnesses;
         uint256 inputAnchor;
         int numInputsNeeded = (jsChange > 0) ? 1 : 0;
         while (numInputsNeeded++ < ZC_NUM_JS_INPUTS && zInputsDeque.size() > 0) {
@@ -638,7 +638,7 @@ bool AsyncRPCOperation_mergetoaddress::main_impl()
                 if (!optionalWitness) {
                     throw JSONRPCError(RPC_WALLET_ERROR, "Witness for note commitment is null");
                 }
-                SproutWitness w = *optionalWitness; // could use .get();
+                SproutWitness w = *optionalWitness; // could use .value();
                 if (jsChange > 0) {
                     for (const uint256& commitment : previousCommitments) {
                         w.append(commitment);
@@ -712,7 +712,7 @@ bool AsyncRPCOperation_mergetoaddress::main_impl()
     assert(zInputsDeque.size() == 0);
     assert(vpubNewProcessed);
 
-    auto txAndResult = SignSendRawTransaction(obj, boost::none, testmode);
+    auto txAndResult = SignSendRawTransaction(obj, std::nullopt, testmode);
     tx_ = txAndResult.first;
     set_result(txAndResult.second);
     return true;
@@ -721,7 +721,7 @@ bool AsyncRPCOperation_mergetoaddress::main_impl()
 
 UniValue AsyncRPCOperation_mergetoaddress::perform_joinsplit(MergeToAddressJSInfo& info)
 {
-    std::vector<boost::optional<SproutWitness>> witnesses;
+    std::vector<std::optional<SproutWitness>> witnesses;
     uint256 anchor;
     {
         LOCK(cs_main);
@@ -733,7 +733,7 @@ UniValue AsyncRPCOperation_mergetoaddress::perform_joinsplit(MergeToAddressJSInf
 
 UniValue AsyncRPCOperation_mergetoaddress::perform_joinsplit(MergeToAddressJSInfo& info, std::vector<JSOutPoint>& outPoints)
 {
-    std::vector<boost::optional<SproutWitness>> witnesses;
+    std::vector<std::optional<SproutWitness>> witnesses;
     uint256 anchor;
     {
         LOCK(cs_main);
@@ -744,7 +744,7 @@ UniValue AsyncRPCOperation_mergetoaddress::perform_joinsplit(MergeToAddressJSInf
 
 UniValue AsyncRPCOperation_mergetoaddress::perform_joinsplit(
     MergeToAddressJSInfo& info,
-    std::vector<boost::optional<SproutWitness>> witnesses,
+    std::vector<std::optional<SproutWitness>> witnesses,
     uint256 anchor)
 {
     if (anchor.IsNull()) {

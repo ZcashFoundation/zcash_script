@@ -15,6 +15,7 @@
 #include "wallet.h"
 
 #include <fstream>
+#include <optional>
 #include <stdint.h>
 #include <variant>
 
@@ -397,8 +398,8 @@ UniValue importwallet_impl(const UniValue& params, bool fImportZKeys)
             auto spendingkey = keyIO.DecodeSpendingKey(vstr[0]);
             int64_t nTime = DecodeDumpTime(vstr[1]);
             // Only include hdKeypath and seedFpStr if we have both
-            boost::optional<std::string> hdKeypath = (vstr.size() > 3) ? boost::optional<std::string>(vstr[2]) : boost::none;
-            boost::optional<std::string> seedFpStr = (vstr.size() > 3) ? boost::optional<std::string>(vstr[3]) : boost::none;
+            std::optional<std::string> hdKeypath = (vstr.size() > 3) ? std::optional<std::string>(vstr[2]) : std::nullopt;
+            std::optional<std::string> seedFpStr = (vstr.size() > 3) ? std::optional<std::string>(vstr[3]) : std::nullopt;
             if (IsValidSpendingKey(spendingkey)) {
                 auto addResult = std::visit(
                     AddSpendingKeyToWallet(pwalletMain, Params().GetConsensus(), nTime, hdKeypath, seedFpStr, true), spendingkey);
@@ -912,7 +913,7 @@ UniValue z_exportkey(const UniValue& params, bool fHelp)
     if (!sk) {
         throw JSONRPCError(RPC_WALLET_ERROR, "Wallet does not hold private zkey for this zaddr");
     }
-    return keyIO.EncodeSpendingKey(sk.get());
+    return keyIO.EncodeSpendingKey(sk.value());
 }
 
 UniValue z_exportviewingkey(const UniValue& params, bool fHelp)
@@ -948,7 +949,7 @@ UniValue z_exportviewingkey(const UniValue& params, bool fHelp)
 
     auto vk = std::visit(GetViewingKeyForPaymentAddress(pwalletMain), address);
     if (vk) {
-        return keyIO.EncodeViewingKey(vk.get());
+        return keyIO.EncodeViewingKey(vk.value());
     } else {
         throw JSONRPCError(RPC_WALLET_ERROR, "Wallet does not hold private key or viewing key for this zaddr");
     }
