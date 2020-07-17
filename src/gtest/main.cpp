@@ -1,10 +1,10 @@
 #include "gmock/gmock.h"
-#include "crypto/common.h"
 #include "key.h"
 #include "pubkey.h"
 #include "util.h"
 
 #include "librustzcash.h"
+#include <sodium.h>
 
 struct ECCryptoClosure
 {
@@ -14,7 +14,7 @@ struct ECCryptoClosure
 ECCryptoClosure instance_of_eccryptoclosure;
 
 int main(int argc, char **argv) {
-  assert(init_and_check_sodium() != -1);
+  assert(sodium_init() != -1);
   ECC_Start();
 
   boost::filesystem::path sapling_spend = ZC_GetParamsDir() / "sapling-spend.params";
