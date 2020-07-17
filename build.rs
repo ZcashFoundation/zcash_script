@@ -15,7 +15,9 @@ trait CommandExt {
 }
 
 fn guess_host() -> Result<String> {
-    Command::new("depend/zcash/depends/config.guess").output2()
+    Command::new("./config.guess")
+        .current_dir("depend/zcash/depends")
+        .output2()
 }
 
 #[cfg(feature = "generate")]
@@ -53,22 +55,22 @@ fn main() -> Result<()> {
 
     bindgen_headers()?;
 
-    let host = guess_host()?;
-    let host = host.trim();
+    // let host = guess_host()?;
+    // let host = host.trim();
 
-    std::env::remove_var("DEBUG");
-    let old_dir = std::env::current_dir()?;
-    std::env::set_current_dir("depend/zcash")?;
+    // std::env::remove_var("DEBUG");
+    // let old_dir = std::env::current_dir()?;
+    // std::env::set_current_dir("depend/zcash")?;
 
-    Command::new("make")
-        .env("HOST", &host)
-        .env("BUILD", &host)
-        .env("LIBZCASHCONSENSUS_ONLY", "1")
-        .arg("-C")
-        .arg("depends")
-        .status2()?;
+    // Command::new("make")
+    //     .env("HOST", &host)
+    //     .env("BUILD", &host)
+    //     .env("LIBZCASHCONSENSUS_ONLY", "1")
+    //     .arg("-C")
+    //     .arg("depends")
+    //     .status2()?;
 
-    std::env::set_current_dir(old_dir)?;
+    // std::env::set_current_dir(old_dir)?;
 
     // Check whether we can use 64-bit compilation
     let use_64bit_compilation = if env::var("CARGO_CFG_TARGET_POINTER_WIDTH").unwrap() == "64" {
@@ -90,8 +92,10 @@ fn main() -> Result<()> {
 
     base_config
         .cpp(true)
+        // .include("include")
         .include("depend/zcash/src")
-        .include(format!("depend/zcash/depends/{}/include", &host))
+        .include("depend/zcash/src/rust/include/")
+        // .include(format!("depend/zcash/depends/{}/include", &host))
         .include("depend/zcash/src/secp256k1/include")
         .flag_if_supported("-Wno-implicit-fallthrough")
         .flag_if_supported("-Wno-catch-value")
@@ -133,17 +137,17 @@ fn main() -> Result<()> {
 
     let tool = base_config.get_compiler();
     if tool.is_like_msvc() {
-        base_config.flag("/std:c++14").flag("/wd4100");
+        base_config.flag("/std:c++17").flag("/wd4100");
     } else if tool.is_like_clang() || tool.is_like_gnu() {
-        base_config.flag("-std=c++11").flag("-Wno-unused-parameter");
+        base_config.flag("-std=c++17").flag("-Wno-unused-parameter");
     }
 
     if target.contains("windows") {
         base_config.define("WIN32", "1");
     }
 
-    println!("cargo:rustc-link-lib=static=sodium");
-    println!("cargo:rustc-link-search=depend/zcash/depends/{}/lib/", host);
+    // println!("cargo:rustc-link-lib=static=sodium");
+    // println!("cargo:rustc-link-search=depend/zcash/depends/{}/lib/", host);
 
     base_config
         .file("depend/zcash/src/script/zcashconsensus.cpp")
@@ -228,3 +232,12 @@ impl CommandExt for Command {
         Ok(stdout)
     }
 }
+
+// fn download_boost() -> Result<()> {
+//     // package=boost
+//     // $(package)_version=1_70_0
+//     // $(package)_download_path=https://dl.bintray.com/boostorg/release/1.70.0/source/boost_1_70_0.tar.bz2
+//     // boost_file_name=boost_1_70_0.tar.bz2
+
+//     Ok(())
+// }

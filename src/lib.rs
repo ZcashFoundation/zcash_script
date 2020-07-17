@@ -6,6 +6,8 @@
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
+mod blake2b;
+
 // pub type size_t = usize;
 
 // #[repr(C)]
