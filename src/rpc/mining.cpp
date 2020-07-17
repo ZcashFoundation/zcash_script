@@ -27,6 +27,7 @@
 #endif
 
 #include <stdint.h>
+#include <variant>
 
 #include <boost/assign/list_of.hpp>
 #include <boost/shared_ptr.hpp>
@@ -255,7 +256,7 @@ endloop:
         blockHashes.push_back(pblock->GetHash().GetHex());
 
         //mark miner address as important because it was used at least for one coinbase output
-        boost::apply_visitor(KeepMinerAddress(), minerAddress);
+        std::visit(KeepMinerAddress(), minerAddress);
     }
     return blockHashes;
 }
@@ -624,7 +625,7 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
             throw JSONRPCError(RPC_OUT_OF_MEMORY, "Out of memory");
 
         // Mark script as important because it was used at least for one coinbase output
-        boost::apply_visitor(KeepMinerAddress(), minerAddress);
+        std::visit(KeepMinerAddress(), minerAddress);
 
         // Need to update only after we know CreateNewBlock succeeded
         pindexPrev = pindexPrevNew;

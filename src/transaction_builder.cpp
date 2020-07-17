@@ -12,7 +12,6 @@
 #include "utilmoneystr.h"
 #include "zcash/Note.hpp"
 
-#include <boost/variant.hpp>
 #include <librustzcash.h>
 
 SpendDescriptionInfo::SpendDescriptionInfo(

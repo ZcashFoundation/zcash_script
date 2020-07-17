@@ -99,7 +99,7 @@ namespace Consensus {
         return (nHeight - fundingStreamStartHeight + startPeriodOffset) / nFundingPeriodLength;
     }
 
-    boost::variant<FundingStream, FundingStreamError> FundingStream::ValidateFundingStream(
+    std::variant<FundingStream, FundingStreamError> FundingStream::ValidateFundingStream(
         const Consensus::Params& params,
         const int startHeight,
         const int endHeight,
@@ -120,7 +120,7 @@ namespace Consensus {
         return FundingStream(startHeight, endHeight, addresses);
     };
 
-    class GetFundingStreamOrThrow: public boost::static_visitor<FundingStream> {
+    class GetFundingStreamOrThrow {
     public:
         FundingStream operator()(const FundingStream& fs) const {
             return fs;
@@ -160,12 +160,12 @@ namespace Consensus {
                 // If the string is not a valid transparent or Sapling address, we will
                 // throw here.
 
-                addresses.push_back(boost::get<libzcash::SaplingPaymentAddress>(zaddr));
+                addresses.push_back(std::get<libzcash::SaplingPaymentAddress>(zaddr));
             }
         }
 
         auto validationResult = FundingStream::ValidateFundingStream(params, startHeight, endHeight, addresses);
-        return boost::apply_visitor(GetFundingStreamOrThrow(), validationResult);
+        return std::visit(GetFundingStreamOrThrow(), validationResult);
     };
 
     void Params::AddZIP207FundingStream(

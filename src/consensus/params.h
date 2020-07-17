@@ -11,6 +11,8 @@
 #include "key_constants.h"
 #include <zcash/address/sapling.hpp>
 
+#include <variant>
+
 #include <boost/optional.hpp>
 
 namespace Consensus {
@@ -81,7 +83,7 @@ struct NetworkUpgrade {
     boost::optional<uint256> hashActivationBlock;
 };
 
-typedef boost::variant<libzcash::SaplingPaymentAddress, CScript> FundingStreamAddress;
+typedef std::variant<libzcash::SaplingPaymentAddress, CScript> FundingStreamAddress;
 
 /**
  * Index into Params.vFundingStreams.
@@ -115,7 +117,7 @@ public:
     FundingStream(const FundingStream& fs):
         startHeight(fs.startHeight), endHeight(fs.endHeight), addresses(fs.addresses) { }
 
-    static boost::variant<FundingStream, FundingStreamError> ValidateFundingStream(
+    static std::variant<FundingStream, FundingStreamError> ValidateFundingStream(
         const Consensus::Params& params,
         const int startHeight,
         const int endHeight,
