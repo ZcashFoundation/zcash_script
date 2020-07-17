@@ -7,6 +7,8 @@
 #include "random.h"
 #include "serialize.h"
 #include "timedata.h"
+#include "util.h"
+#include "utiltime.h"
 #include "version.h"
 
 const CAmount DEFAULT_FEE = 10000;

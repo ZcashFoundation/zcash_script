@@ -9,6 +9,8 @@
 
 #include <array>
 
+#include <sodium.h>
+
 // Sprout
 CMutableTransaction GetValidSproutReceiveTransaction(
                                 const libzcash::SproutSpendingKey& sk,

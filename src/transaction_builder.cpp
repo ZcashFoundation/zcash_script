@@ -13,6 +13,7 @@
 #include "zcash/Note.hpp"
 
 #include <librustzcash.h>
+#include <sodium.h>
 
 SpendDescriptionInfo::SpendDescriptionInfo(
     libzcash::SaplingExpandedSpendingKey expsk,

@@ -7,6 +7,8 @@
 #include "key_io.h"
 #include "util.h"
 
+#include <sodium.h>
+
 std::string PaymentDisclosureInfo::ToString() const {
     KeyIO keyIO(Params());
     return strprintf("PaymentDisclosureInfo(version=%d, esk=%s, joinSplitPrivKey=<omitted>, address=%s)",

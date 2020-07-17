@@ -17,6 +17,7 @@
 #include <unordered_map>
 #include <tuple>
 
+#include <sodium.h>
 #include <univalue.h>
 
 // Default transaction fee if caller does not specify one.

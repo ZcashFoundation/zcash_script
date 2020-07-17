@@ -10,6 +10,8 @@
 #include "zcash/util.h"
 #include "librustzcash.h"
 
+#include <boost/thread/exceptions.hpp>
+
 using namespace libzcash;
 
 SproutNote::SproutNote() {
