@@ -65,4 +65,17 @@ mod tests {
 
         verify_script(script_pub_key, amount, tx_to, nIn, flags, branch_id).unwrap();
     }
+
+    #[test]
+    fn it_doesnt_work() {
+        let coin = i64::pow(10, 8);
+        let script_pub_key = &*SCRIPT_PUBKEY;
+        let amount = 212 * coin;
+        let tx_to = &*SCRIPT_TX;
+        let nIn = 0;
+        let flags = 1;
+        let branch_id = 0x2bb40e61;
+
+        verify_script(script_pub_key, amount, tx_to, nIn, flags, branch_id).unwrap_err();
+    }
 }

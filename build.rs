@@ -1,18 +1,5 @@
-use color_eyre::{
-    eyre::{eyre, Context, Report, Result},
-    Help, SectionExt,
-};
-use std::{env, fs, path::PathBuf, process::Command};
-
-trait CommandExt {
-    /// wrapper for `status` fn on `Command` that constructs informative error
-    /// reports
-    fn status2(&mut self) -> Result<(), Report>;
-
-    /// wrapper for `output` fn on `Command` that constructs informative error
-    /// reports
-    fn output2(&mut self) -> Result<String, Report>;
-}
+use color_eyre::eyre::{Context, Result};
+use std::{env, fs, path::PathBuf};
 
 #[cfg(feature = "generate")]
 fn bindgen_headers() -> Result<()> {
@@ -139,68 +126,4 @@ fn main() -> Result<()> {
         .compile("libzcashconsensus.a");
 
     Ok(())
-}
-
-impl CommandExt for Command {
-    fn status2(&mut self) -> Result<(), Report> {
-        dbg!(&self);
-        let status = self.status();
-
-        let command = || format!("{:?}", self).header("Command:");
-
-        let status = status
-            .wrap_err("failed to execute process")
-            .with_section(command)?;
-
-        if !status.success() {
-            let exit_code = || {
-                if let Some(code) = status.code() {
-                    format!("Exit Code: {}", code)
-                } else {
-                    "Exit Code: None".into()
-                }
-            };
-
-            Err(eyre!("command exited unsuccessfully"))
-                .with_section(command)
-                .with_section(exit_code)?;
-        }
-
-        Ok(())
-    }
-
-    fn output2(&mut self) -> Result<String, Report> {
-        dbg!(&self);
-        let output = self.output();
-
-        let output = output
-            .wrap_err("failed to execute process")
-            .with_section(|| format!("{:?}", self).header("Command:"))?;
-
-        if !output.status.success() {
-            Err(eyre!("command exited unsuccessfully"))
-                .with_section(|| format!("{:?}", self).header("Command:"))
-                .with_section(|| {
-                    String::from_utf8_lossy(output.stdout.as_slice())
-                        .to_string()
-                        .header("Stdout:")
-                })
-                .with_section(|| {
-                    String::from_utf8_lossy(output.stderr.as_slice())
-                        .to_string()
-                        .header("Stderr:")
-                })
-                .with_section(|| {
-                    if let Some(code) = output.status.code() {
-                        format!("Exit Code: {}", code)
-                    } else {
-                        "Exit Code: None".into()
-                    }
-                })?;
-        }
-
-        let stdout = String::from_utf8_lossy(output.stdout.as_slice()).to_string();
-
-        Ok(stdout)
-    }
 }
