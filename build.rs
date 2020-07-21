@@ -2,6 +2,8 @@ use color_eyre::eyre::{eyre, Context, Result};
 use std::{env, path::PathBuf};
 
 fn bindgen_headers() -> Result<()> {
+    println!("cargo:rerun-if-changed=depend/zcash/src/script/zcashconsensus.h");
+
     let bindings = bindgen::Builder::default()
         .header("depend/zcash/src/script/zcashconsensus.h")
         // Tell cargo to invalidate the built crate whenever any of the
