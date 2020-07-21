@@ -1,7 +1,6 @@
-use color_eyre::eyre::{Context, Result};
-use std::{env, fs, path::PathBuf};
+use color_eyre::eyre::{eyre, Context, Result};
+use std::{env, path::PathBuf};
 
-#[cfg(feature = "generate")]
 fn bindgen_headers() -> Result<()> {
     let bindings = bindgen::Builder::default()
         .header("depend/zcash/src/script/zcashconsensus.h")
@@ -10,7 +9,7 @@ fn bindgen_headers() -> Result<()> {
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
         // Finish the builder and generate the bindings.
         .generate()
-        .ok_or("Unable to generate bindings")?;
+        .map_err(|_| eyre!("Unable to generate bindings"))?;
 
     // Write the bindings to the $OUT_DIR/bindings.rs file.
     let out_path = env::var("OUT_DIR")?;
@@ -18,15 +17,6 @@ fn bindgen_headers() -> Result<()> {
     bindings
         .write_to_file(out_path.join("bindings.rs"))
         .wrap_err("unable to write bindings")?;
-
-    Ok(())
-}
-
-#[cfg(not(feature = "generate"))]
-fn bindgen_headers() -> Result<()> {
-    let out_path = env::var("OUT_DIR")?;
-    let out_path = PathBuf::from(out_path).join("bindings.rs");
-    fs::copy("bindgen/bindings.rs", out_path).wrap_err("unable to write bindings")?;
 
     Ok(())
 }
