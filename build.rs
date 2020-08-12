@@ -1,41 +1,24 @@
-use color_eyre::{
-    eyre::{eyre, Context, Result},
-    Help, SectionExt,
-};
+use color_eyre::eyre::{eyre, Context, Result};
 use std::{env, path::PathBuf};
 
 fn bindgen_headers() -> Result<()> {
-    let crate_root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
-
-    let cd_section = || {
-        (std::env::current_dir().unwrap().display().to_string()
-            + "\n"
-            + crate_root.to_string_lossy().as_ref())
-        .header("Current Dir:")
-    };
+    println!("cargo:rerun-if-changed=depend/zcash/src/script/zcash_script.h");
 
     let bindings = bindgen::Builder::default()
-        .header(
-            crate_root
-                .join("depend/zcash/src/script/zcash_script.h")
-                .to_str()
-                .unwrap(),
-        )
+        .header("depend/zcash/src/script/zcash_script.h")
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
         // Finish the builder and generate the bindings.
         .generate()
-        .map_err(|_| eyre!("Unable to generate bindings"))
-        .with_section(cd_section)?;
+        .map_err(|_| eyre!("Unable to generate bindings"))?;
 
     // Write the bindings to the $OUT_DIR/bindings.rs file.
     let out_path = env::var("OUT_DIR")?;
     let out_path = PathBuf::from(out_path);
     bindings
         .write_to_file(out_path.join("bindings.rs"))
-        .wrap_err("unable to write bindings")
-        .with_section(cd_section)?;
+        .wrap_err("unable to write bindings")?;
 
     Ok(())
 }
