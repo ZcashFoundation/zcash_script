@@ -1,29 +1,14 @@
 [package]
-name = "zcashconsensus"
+name = "zcash_script"
 version = "0.1.0"
 authors = ["Tamas Blummer <tamas.blummer@gmail.com>", "Zcash Foundation <zebra@zfnd.org>"]
 license = "Apache-2.0"
 readme = "README.md"
 build = "build.rs"
 edition = "2018"
-include = [
-    ".github/workflows/ci.yml",
-    ".gitignore",
-    ".gitmodules",
-    "Cargo.toml",
-    "Cargo.toml.orig",
-    "LICENSE",
-    "README.md",
-    "build.rs",
-    "depend/check_uint128_t.c",
-    "src/blake2b.rs",
-    "src/lib.rs",
-    "zcash/src/script/zcashconsensus.h"
-]
-
 
 [lib]
-name = "zcashconsensus"
+name = "zcash_script"
 path = "src/lib.rs"
 
 [features]
