@@ -10,7 +10,7 @@ mod blake2b;
 
 #[cfg(test)]
 mod tests {
-    pub use super::zcashconsensus_error_t;
+    pub use super::zcash_script_error_t;
 
     pub fn verify_script(
         script_pub_key: &[u8],
@@ -19,7 +19,7 @@ mod tests {
         nIn: u32,
         flags: u32,
         consensus_branch_id: u32,
-    ) -> Result<(), zcashconsensus_error_t> {
+    ) -> Result<(), zcash_script_error_t> {
         let script_ptr = script_pub_key.as_ptr();
         let script_len = script_pub_key.len();
         let tx_to_ptr = tx_to.as_ptr();
@@ -27,7 +27,7 @@ mod tests {
         let mut err = 0;
 
         let ret = unsafe {
-            super::zcashconsensus_verify_script(
+            super::zcash_script_verify(
                 script_ptr,
                 script_len as u32,
                 amount,

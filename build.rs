@@ -1,22 +1,41 @@
-use color_eyre::eyre::{eyre, Context, Result};
+use color_eyre::{
+    eyre::{eyre, Context, Result},
+    Help, SectionExt,
+};
 use std::{env, path::PathBuf};
 
 fn bindgen_headers() -> Result<()> {
+    let crate_root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+
+    let cd_section = || {
+        (std::env::current_dir().unwrap().display().to_string()
+            + "\n"
+            + crate_root.to_string_lossy().as_ref())
+        .header("Current Dir:")
+    };
+
     let bindings = bindgen::Builder::default()
-        .header("depend/zcash/src/script/zcashconsensus.h")
+        .header(
+            crate_root
+                .join("depend/zcash/src/script/zcash_script.h")
+                .to_str()
+                .unwrap(),
+        )
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
         // Finish the builder and generate the bindings.
         .generate()
-        .map_err(|_| eyre!("Unable to generate bindings"))?;
+        .map_err(|_| eyre!("Unable to generate bindings"))
+        .with_section(cd_section)?;
 
     // Write the bindings to the $OUT_DIR/bindings.rs file.
     let out_path = env::var("OUT_DIR")?;
     let out_path = PathBuf::from(out_path);
     bindings
         .write_to_file(out_path.join("bindings.rs"))
-        .wrap_err("unable to write bindings")?;
+        .wrap_err("unable to write bindings")
+        .with_section(cd_section)?;
 
     Ok(())
 }
@@ -99,7 +118,7 @@ fn main() -> Result<()> {
     }
 
     base_config
-        .file("depend/zcash/src/script/zcashconsensus.cpp")
+        .file("depend/zcash/src/script/zcash_script.cpp")
         .file("depend/zcash/src/utilstrencodings.cpp")
         .file("depend/zcash/src/uint256.cpp")
         .file("depend/zcash/src/pubkey.cpp")
@@ -113,7 +132,7 @@ fn main() -> Result<()> {
         .file("depend/zcash/src/script/interpreter.cpp")
         .file("depend/zcash/src/script/script.cpp")
         .file("depend/zcash/src/script/script_error.cpp")
-        .compile("libzcashconsensus.a");
+        .compile("libzcash_script.a");
 
     Ok(())
 }
