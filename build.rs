@@ -2,10 +2,10 @@ use color_eyre::eyre::{eyre, Context, Result};
 use std::{env, path::PathBuf};
 
 fn bindgen_headers() -> Result<()> {
-    println!("cargo:rerun-if-changed=depend/zcash/src/script/zcashconsensus.h");
+    println!("cargo:rerun-if-changed=depend/zcash/src/script/zcash_script.h");
 
     let bindings = bindgen::Builder::default()
-        .header("depend/zcash/src/script/zcashconsensus.h")
+        .header("depend/zcash/src/script/zcash_script.h")
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
@@ -101,7 +101,7 @@ fn main() -> Result<()> {
     }
 
     base_config
-        .file("depend/zcash/src/script/zcashconsensus.cpp")
+        .file("depend/zcash/src/script/zcash_script.cpp")
         .file("depend/zcash/src/utilstrencodings.cpp")
         .file("depend/zcash/src/uint256.cpp")
         .file("depend/zcash/src/pubkey.cpp")
@@ -115,7 +115,7 @@ fn main() -> Result<()> {
         .file("depend/zcash/src/script/interpreter.cpp")
         .file("depend/zcash/src/script/script.cpp")
         .file("depend/zcash/src/script/script_error.cpp")
-        .compile("libzcashconsensus.a");
+        .compile("libzcash_script.a");
 
     Ok(())
 }
