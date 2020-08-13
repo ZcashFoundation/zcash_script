@@ -1,5 +1,5 @@
 [package]
-name = "zcashconsensus"
+name = "zcash_script"
 version = "0.1.0"
 authors = ["Tamas Blummer <tamas.blummer@gmail.com>", "Zcash Foundation <zebra@zfnd.org>"]
 license = "Apache-2.0"
@@ -7,23 +7,40 @@ readme = "README.md"
 build = "build.rs"
 edition = "2018"
 include = [
-    ".github/workflows/ci.yml",
-    ".gitignore",
-    ".gitmodules",
+    "/.github/workflows/ci.yml",
+    "/.gitignore",
+    "/.gitmodules",
     "Cargo.toml",
     "Cargo.toml.orig",
-    "LICENSE",
-    "README.md",
+    "/LICENSE",
+    "/README.md",
     "build.rs",
     "depend/check_uint128_t.c",
     "src/blake2b.rs",
     "src/lib.rs",
-    "zcash/src/script/zcashconsensus.h"
+    "/depend/zcash/src/script/zcash_script.h",
+    "/depend/zcash/src/script/zcash_script.cpp",
+    "/depend/zcash/src/utilstrencodings.cpp",
+    "/depend/zcash/src/uint256.cpp",
+    "/depend/zcash/src/pubkey.cpp",
+    "/depend/zcash/src/hash.cpp",
+    "/depend/zcash/src/primitives/transaction.cpp",
+    "/depend/zcash/src/crypto/ripemd160.cpp",
+    "/depend/zcash/src/crypto/sha1.cpp",
+    "/depend/zcash/src/crypto/sha256.cpp",
+    "/depend/zcash/src/crypto/sha512.cpp",
+    "/depend/zcash/src/crypto/hmac_sha512.cpp",
+    "/depend/zcash/src/script/interpreter.cpp",
+    "/depend/zcash/src/script/script.cpp",
+    "/depend/zcash/src/script/script_error.cpp",
+    "/depend/zcash/src",
+    "/depend/zcash/src/rust/include/",
+    "/depend/zcash/src/secp256k1/include",
+    "/depend/zcash/src/secp256k1",
 ]
 
-
 [lib]
-name = "zcashconsensus"
+name = "zcash_script"
 path = "src/lib.rs"
 
 [features]
