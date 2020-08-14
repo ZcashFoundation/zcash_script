@@ -6,6 +6,9 @@ license = "Apache-2.0"
 readme = "README.md"
 build = "build.rs"
 edition = "2018"
+description = "ffi bindings to zcashd's zcash_script library"
+documentation = "https://docs.rs/zcash_script"
+repository = "https://github.com/ZcashFoundation/zcash_script"
 include = [
     "/.github/workflows/ci.yml",
     "/.gitignore",
