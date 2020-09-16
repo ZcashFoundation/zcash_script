@@ -84,6 +84,7 @@ exactly = 1
 file = "CHANGELOG.md"
 search = "ReleaseDate"
 replace="{{date}}"
+exactly=1
 
 [[package.metadata.release.pre-release-replacements]]
 file="CHANGELOG.md"
