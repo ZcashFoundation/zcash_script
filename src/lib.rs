@@ -1,5 +1,5 @@
 #![doc(html_logo_url = "https://www.zfnd.org/images/zebra-icon.png")]
-#![doc(html_root_url = "https://doc.zebra.zfnd.org/zebra_script")]
+#![doc(html_root_url = "https://docs.rs/zcash_script/0.1.0")]
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
