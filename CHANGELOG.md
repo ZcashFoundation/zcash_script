@@ -7,8 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+### Removed
+- dependency on `color-eyre` in build.rs
 
-## [0.1.0] - 2020-09-15
+## [0.1.1] - 2020-09-15
 ### Changed
 - enabled the `parallel` feature of `cc` to enable parallel compilation
 
