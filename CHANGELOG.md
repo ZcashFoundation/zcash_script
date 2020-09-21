@@ -8,7 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
-## [0.1.0] - 2020-09-15
+## [0.1.2] - 2020-09-21
+### Removed
+- dependency on `color-eyre` in build.rs
+
+## [0.1.1] - 2020-09-15
 ### Changed
 - enabled the `parallel` feature of `cc` to enable parallel compilation
 
@@ -16,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated `bindgen` to a non yanked version
 
 <!-- next-url -->
-[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/ZcashFoundation/zcash_script/releases/tag/v0.1.0

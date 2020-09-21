@@ -1,5 +1,25 @@
-use color_eyre::eyre::{eyre, Context, Result};
-use std::{env, path::PathBuf};
+use std::{env, fmt, path::PathBuf};
+
+type Result<T, E = Error> = std::result::Result<T, E>;
+
+#[derive(Debug)]
+enum Error {
+    GenerateBindings,
+    WriteBindings(std::io::Error),
+    Env(std::env::VarError),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::GenerateBindings => write!(f, "unable to generate bindings"),
+            Error::WriteBindings(source) => write!(f, "unable to write bindings: {}", source),
+            Error::Env(source) => source.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
 
 fn bindgen_headers() -> Result<()> {
     println!("cargo:rerun-if-changed=depend/zcash/src/script/zcash_script.h");
@@ -11,21 +31,19 @@ fn bindgen_headers() -> Result<()> {
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
         // Finish the builder and generate the bindings.
         .generate()
-        .map_err(|_| eyre!("Unable to generate bindings"))?;
+        .map_err(|_| Error::GenerateBindings)?;
 
     // Write the bindings to the $OUT_DIR/bindings.rs file.
-    let out_path = env::var("OUT_DIR")?;
+    let out_path = env::var("OUT_DIR").map_err(Error::Env)?;
     let out_path = PathBuf::from(out_path);
     bindings
         .write_to_file(out_path.join("bindings.rs"))
-        .wrap_err("unable to write bindings")?;
+        .map_err(Error::WriteBindings)?;
 
     Ok(())
 }
 
 fn main() -> Result<()> {
-    color_eyre::install()?;
-
     bindgen_headers()?;
 
     // Check whether we can use 64-bit compilation
