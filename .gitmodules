@@ -1,4 +1,0 @@
-[submodule "depend/zcash"]
-	path = depend/zcash
-	url = https://github.com/str4d/zcash.git
-	branch = zcashconsensus-fixes
