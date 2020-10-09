@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased] - ReleaseDate
 
 ## [0.1.3] - 2020-10-09
+### Changed
+- Enabled endomorphism optimization
+- Changed zcash dependency from a submodule to a subtree
+
+### Fixed
+- Can now run `cargo publish` and `cargo release` without errors
 
 ## [0.1.2] - 2020-09-21
 ### Removed
