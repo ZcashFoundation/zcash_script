@@ -86,6 +86,8 @@ fn main() -> Result<()> {
             .define("USE_NUM_NONE", "1")
             .define("USE_FIELD_INV_BUILTIN", "1")
             .define("USE_SCALAR_INV_BUILTIN", "1")
+            // Use the endomorphism optimization now that the patents have expired.
+            .define("USE_ENDOMORPHISM", "1")
             // Technically libconsensus doesn't require the recovery feature, but `pubkey.cpp` does.
             .define("ENABLE_MODULE_RECOVERY", "1")
             // The actual libsecp256k1 C code.
