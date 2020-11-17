@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+### Changed
+- switched from bindgen `0.55` to bindgen `0.54` to avoid a dependency
+  conflict with `rocksdb`
 
 ## [0.1.3] - 2020-10-09
 ### Changed
