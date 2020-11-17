@@ -55,7 +55,7 @@ blake2b_simd = "0.5.10"
 
 [build-dependencies]
 cc = { version = ">= 1.0.36, <= 1.0.41", features = ["parallel"] }
-bindgen = "0.55"
+bindgen = "0.54"
 
 [dev-dependencies]
 rustc-serialize = "0.3"
