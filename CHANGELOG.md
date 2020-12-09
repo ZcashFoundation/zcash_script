@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+### Changed
+- Updated `depend/zcash` to new version including a precompute API
 
 ## [0.1.4] - 2020-11-17
 ### Changed
