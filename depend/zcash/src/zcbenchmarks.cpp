@@ -36,6 +36,8 @@
 #include "zcash/Note.hpp"
 #include "librustzcash.h"
 
+#include <rust/ed25519/types.h>
+
 using namespace libzcash;
 // This method is based on Shutdown from init.cpp
 void pre_wallet_load()
@@ -96,7 +98,7 @@ double benchmark_sleep()
 
 double benchmark_create_joinsplit()
 {
-    uint256 joinSplitPubKey;
+    Ed25519VerificationKey joinSplitPubKey;
 
     /* Get the anchor of an empty commitment tree. */
     uint256 anchor = SproutMerkleTree().root();
@@ -141,7 +143,7 @@ double benchmark_verify_joinsplit(const JSDescription &joinsplit)
 {
     struct timeval tv_start;
     timer_start(tv_start);
-    uint256 joinSplitPubKey;
+    Ed25519VerificationKey joinSplitPubKey;
     auto verifier = ProofVerifier::Strict();
     verifier.VerifySprout(joinsplit, joinSplitPubKey);
     return timer_stop(tv_start);
@@ -155,7 +157,7 @@ double benchmark_solve_equihash()
     CDataStream ss(SER_NETWORK, PROTOCOL_VERSION);
     ss << I;
 
-    auto params = Params(CBaseChainParams::MAIN).GetConsensus();
+    const Consensus::Params& params = Params(CBaseChainParams::MAIN).GetConsensus();
     unsigned int n = params.nEquihashN;
     unsigned int k = params.nEquihashK;
     eh_HashState eh_state;
@@ -288,7 +290,7 @@ double benchmark_try_decrypt_sprout_notes(size_t nKeys)
 double benchmark_try_decrypt_sapling_notes(size_t nKeys)
 {
     // Set params
-    auto consensusParams = Params().GetConsensus();
+    const Consensus::Params& consensusParams = Params().GetConsensus();
 
     auto masterKey = GetTestMasterSaplingSpendingKey();
 
@@ -327,7 +329,7 @@ CWalletTx CreateSproutTxWithNoteData(const libzcash::SproutSpendingKey& sk) {
 
 double benchmark_increment_sprout_note_witnesses(size_t nTxs)
 {
-    auto consensusParams = Params().GetConsensus();
+    const Consensus::Params& consensusParams = Params().GetConsensus();
 
     CWallet wallet;
     SproutMerkleTree sproutTree;
@@ -389,7 +391,7 @@ CWalletTx CreateSaplingTxWithNoteData(const Consensus::Params& consensusParams,
 
 double benchmark_increment_sapling_note_witnesses(size_t nTxs)
 {
-    auto consensusParams = Params().GetConsensus();
+    const Consensus::Params& consensusParams = Params().GetConsensus();
 
     CWallet wallet;
     SproutMerkleTree sproutTree;

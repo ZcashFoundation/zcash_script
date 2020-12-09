@@ -17,10 +17,10 @@ std::array<unsigned char, 64> PRF_expand(const uint256& sk, unsigned char t)
     memcpy(&blob[0], sk.begin(), 32);
     blob[32] = t;
 
-    auto state = rust_blake2b_init(64, ZCASH_EXPANDSEED_PERSONALIZATION);
-    rust_blake2b_update(state, blob, 33);
-    rust_blake2b_finalize(state, res.data(), 64);
-    rust_blake2b_free(state);
+    auto state = blake2b_init(64, ZCASH_EXPANDSEED_PERSONALIZATION);
+    blake2b_update(state, blob, 33);
+    blake2b_finalize(state, res.data(), 64);
+    blake2b_free(state);
 
     return res;
 }
@@ -28,7 +28,7 @@ std::array<unsigned char, 64> PRF_expand(const uint256& sk, unsigned char t)
 uint256 PRF_rcm(const uint256& rseed)
 {
     uint256 rcm;
-    auto tmp = PRF_expand(rseed, 4);
+    auto tmp = PRF_expand(rseed, PRF_RCM_TAG);
     librustzcash_to_scalar(tmp.data(), rcm.begin());
     return rcm;
 }
@@ -36,7 +36,7 @@ uint256 PRF_rcm(const uint256& rseed)
 uint256 PRF_esk(const uint256& rseed)
 {
     uint256 esk;
-    auto tmp = PRF_expand(rseed, 5);
+    auto tmp = PRF_expand(rseed, PRF_ESK_TAG);
     librustzcash_to_scalar(tmp.data(), esk.begin());
     return esk;
 }
@@ -44,7 +44,7 @@ uint256 PRF_esk(const uint256& rseed)
 uint256 PRF_ask(const uint256& sk)
 {
     uint256 ask;
-    auto tmp = PRF_expand(sk, 0);
+    auto tmp = PRF_expand(sk, PRF_ASK_TAG);
     librustzcash_to_scalar(tmp.data(), ask.begin());
     return ask;
 }
@@ -52,7 +52,7 @@ uint256 PRF_ask(const uint256& sk)
 uint256 PRF_nsk(const uint256& sk)
 {
     uint256 nsk;
-    auto tmp = PRF_expand(sk, 1);
+    auto tmp = PRF_expand(sk, PRF_NSK_TAG);
     librustzcash_to_scalar(tmp.data(), nsk.begin());
     return nsk;
 }
@@ -60,7 +60,7 @@ uint256 PRF_nsk(const uint256& sk)
 uint256 PRF_ovk(const uint256& sk)
 {
     uint256 ovk;
-    auto tmp = PRF_expand(sk, 2);
+    auto tmp = PRF_expand(sk, PRF_OVK_TAG);
     memcpy(ovk.begin(), tmp.data(), 32);
     return ovk;
 }
@@ -75,10 +75,10 @@ std::array<unsigned char, 11> default_diversifier(const uint256& sk)
     
     blob[33] = 0;
     while (true) {
-        auto state = rust_blake2b_init(64, ZCASH_EXPANDSEED_PERSONALIZATION);
-        rust_blake2b_update(state, blob, 34);
-        rust_blake2b_finalize(state, res.data(), 11);
-        rust_blake2b_free(state);
+        auto state = blake2b_init(64, ZCASH_EXPANDSEED_PERSONALIZATION);
+        blake2b_update(state, blob, 34);
+        blake2b_finalize(state, res.data(), 11);
+        blake2b_free(state);
 
         if (librustzcash_check_diversifier(res.data())) {
             break;

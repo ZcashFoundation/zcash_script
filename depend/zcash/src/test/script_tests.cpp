@@ -2,8 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
-#include "data/script_invalid.json.h"
-#include "data/script_valid.json.h"
+#include "test/data/script_invalid.json.h"
+#include "test/data/script_valid.json.h"
 
 #include "consensus/upgrades.h"
 #include "core_io.h"
@@ -15,8 +15,9 @@
 #include "script/sign.h"
 #include "util.h"
 #include "test/test_bitcoin.h"
+#include "test/test_util.h"
 
-#if defined(HAVE_CONSENSUS_LIB)
+#if defined(HAVE_SCRIPT_LIB)
 #include "script/zcash_script.h"
 #endif
 
@@ -37,22 +38,6 @@ using namespace std;
 // #define UPDATE_JSON_TESTS
 
 static const unsigned int flags = SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_STRICTENC;
-
-unsigned int ParseScriptFlags(string strFlags);
-string FormatScriptFlags(unsigned int flags);
-
-UniValue
-read_json(const std::string& jsondata)
-{
-    UniValue v;
-
-    if (!v.read(jsondata) || !v.isArray())
-    {
-        BOOST_ERROR("Parse error.");
-        return UniValue(UniValue::VARR);
-    }
-    return v.get_array();
-}
 
 BOOST_FIXTURE_TEST_SUITE(script_tests, BasicTestingSetup)
 
@@ -97,7 +82,7 @@ void DoTest(const CScript& scriptPubKey, const CScript& scriptSig, int flags, ui
     CMutableTransaction tx2 = tx;
     BOOST_CHECK_MESSAGE(VerifyScript(scriptSig, scriptPubKey, flags, MutableTransactionSignatureChecker(&tx, 0, txCredit.vout[0].nValue), consensusBranchId, &err) == expect, message);
     BOOST_CHECK_MESSAGE(expect == (err == SCRIPT_ERR_OK), std::string(ScriptErrorString(err)) + ": " + message);
-#if defined(HAVE_CONSENSUS_LIB)
+#if defined(HAVE_SCRIPT_LIB)
     CDataStream stream(SER_NETWORK, PROTOCOL_VERSION);
     stream << tx2;
     BOOST_CHECK_MESSAGE(zcash_script_verify(

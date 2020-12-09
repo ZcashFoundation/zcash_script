@@ -28,7 +28,7 @@ namespace libzcash {
         std::array<SproutNote, NumOutputs>& out_notes,
         std::array<ZCNoteEncryption::Ciphertext, NumOutputs>& out_ciphertexts,
         uint256& out_ephemeralKey,
-        const uint256& joinSplitPubKey,
+        const Ed25519VerificationKey& joinSplitPubKey,
         uint256& out_randomSeed,
         std::array<uint256, NumInputs>& out_macs,
         std::array<uint256, NumInputs>& out_nullifiers,
@@ -206,7 +206,7 @@ template<size_t NumInputs, size_t NumOutputs>
 uint256 JoinSplit<NumInputs, NumOutputs>::h_sig(
     const uint256& randomSeed,
     const std::array<uint256, NumInputs>& nullifiers,
-    const uint256& joinSplitPubKey
+    const Ed25519VerificationKey& joinSplitPubKey
 ) {
     const unsigned char personalization[BLAKE2bPersonalBytes]
         = {'Z','c','a','s','h','C','o','m','p','u','t','e','h','S','i','g'};
@@ -217,14 +217,14 @@ uint256 JoinSplit<NumInputs, NumOutputs>::h_sig(
         block.insert(block.end(), nullifiers[i].begin(), nullifiers[i].end());
     }
 
-    block.insert(block.end(), joinSplitPubKey.begin(), joinSplitPubKey.end());
+    block.insert(block.end(), joinSplitPubKey.bytes, joinSplitPubKey.bytes + ED25519_VERIFICATION_KEY_LEN);
 
     uint256 output;
 
-    auto state = rust_blake2b_init(32, personalization);
-    rust_blake2b_update(state, &block[0], block.size());
-    rust_blake2b_finalize(state, output.begin(), 32);
-    rust_blake2b_free(state);
+    auto state = blake2b_init(32, personalization);
+    blake2b_update(state, &block[0], block.size());
+    blake2b_finalize(state, output.begin(), 32);
+    blake2b_free(state);
 
     return output;
 }

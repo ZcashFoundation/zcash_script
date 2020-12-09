@@ -1,7 +1,9 @@
 #include "Note.hpp"
+
 #include "prf.h"
 #include "crypto/sha256.h"
 #include "consensus/consensus.h"
+#include "logging.h"
 
 #include "random.h"
 #include "version.h"
@@ -64,7 +66,7 @@ SaplingNote::SaplingNote(
 std::optional<uint256> SaplingNote::cmu() const {
     uint256 result;
     uint256 rcm_tmp = rcm();
-    if (!librustzcash_sapling_compute_cm(
+    if (!librustzcash_sapling_compute_cmu(
             d.data(),
             pk_d.begin(),
             value(),
@@ -175,6 +177,7 @@ std::optional<SaplingNote> SaplingNotePlaintext::note(const SaplingIncomingViewi
     if (addr) {
         Zip212Enabled zip_212_enabled = Zip212Enabled::BeforeZip212;
         if (leadbyte != 0x01) {
+            assert(leadbyte == 0x02);
             zip_212_enabled = Zip212Enabled::AfterZip212;
         };
         auto tmp = SaplingNote(d, addr.value().pk_d, value_, rseed, zip_212_enabled);
@@ -230,6 +233,8 @@ std::optional<SaplingNotePlaintext> SaplingNotePlaintext::decrypt(
 
         // Check leadbyte is allowed at block height
         if (!plaintext_version_is_valid(params, height, plaintext.get_leadbyte())) {
+            LogPrint("receiveunsafe", "Received note plaintext with invalid lead byte %d at height %d",
+                     plaintext.get_leadbyte(), height);
             return std::nullopt;
         }
 
@@ -278,7 +283,7 @@ std::optional<SaplingNotePlaintext> SaplingNotePlaintext::plaintext_checks_witho
 
     uint256 cmu_expected;
     uint256 rcm = plaintext.rcm();
-    if (!librustzcash_sapling_compute_cm(
+    if (!librustzcash_sapling_compute_cmu(
         plaintext.d.data(),
         pk_d.begin(),
         plaintext.value(),
@@ -294,6 +299,7 @@ std::optional<SaplingNotePlaintext> SaplingNotePlaintext::plaintext_checks_witho
     }
 
     if (plaintext.get_leadbyte() != 0x01) {
+        assert(plaintext.get_leadbyte() == 0x02);
         // ZIP 212: Check that epk is consistent to guard against linkability
         // attacks without relying on the soundness of the SNARK.
         uint256 expected_epk;
@@ -328,6 +334,8 @@ std::optional<SaplingNotePlaintext> SaplingNotePlaintext::decrypt(
 
         // Check leadbyte is allowed at block height
         if (!plaintext_version_is_valid(params, height, plaintext.get_leadbyte())) {
+            LogPrint("receiveunsafe", "Received note plaintext with invalid lead byte %d at height %d",
+                     plaintext.get_leadbyte(), height);
             return std::nullopt;
         }
 
@@ -371,7 +379,17 @@ std::optional<SaplingNotePlaintext> SaplingNotePlaintext::plaintext_checks_witho
     const uint256 &cmu
 )
 {
-    // Check that epk is consistent with esk
+    if (plaintext.get_leadbyte() != 0x01) {
+        assert(plaintext.get_leadbyte() == 0x02);
+        // ZIP 212: Additionally check that the esk provided to this function
+        // is consistent with the esk we can derive
+        if (esk != plaintext.generate_or_derive_esk()) {
+            return std::nullopt;
+        }
+    }
+
+    // ZIP 212: The recipient MUST derive esk and check that epk is consistent with it.
+    // https://zips.z.cash/zip-0212#changes-to-the-process-of-receiving-sapling-notes
     uint256 expected_epk;
     if (!librustzcash_sapling_ka_derivepublic(plaintext.d.data(), esk.begin(), expected_epk.begin())) {
         return std::nullopt;
@@ -382,7 +400,7 @@ std::optional<SaplingNotePlaintext> SaplingNotePlaintext::plaintext_checks_witho
 
     uint256 cmu_expected;
     uint256 rcm = plaintext.rcm();
-    if (!librustzcash_sapling_compute_cm(
+    if (!librustzcash_sapling_compute_cmu(
         plaintext.d.data(),
         pk_d.begin(),
         plaintext.value(),
@@ -395,14 +413,6 @@ std::optional<SaplingNotePlaintext> SaplingNotePlaintext::plaintext_checks_witho
 
     if (cmu_expected != cmu) {
         return std::nullopt;
-    }
-
-    if (plaintext.get_leadbyte() != 0x01) {
-        // ZIP 212: Additionally check that the esk provided to this function
-        // is consistent with the esk we can derive
-        if (esk != plaintext.generate_or_derive_esk()) {
-            return std::nullopt;
-        }
     }
 
     return plaintext;
@@ -452,6 +462,7 @@ SaplingOutCiphertext SaplingOutgoingPlaintext::encrypt(
 
 uint256 SaplingNotePlaintext::rcm() const {
     if (leadbyte != 0x01) {
+        assert(leadbyte == 0x02);
         return PRF_rcm(rseed);
     } else {
         return rseed;
@@ -468,6 +479,7 @@ uint256 SaplingNote::rcm() const {
 
 uint256 SaplingNotePlaintext::generate_or_derive_esk() const {
     if (leadbyte != 0x01) {
+        assert(leadbyte == 0x02);
         return PRF_esk(rseed);
     } else {
         uint256 esk;

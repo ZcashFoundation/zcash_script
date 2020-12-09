@@ -36,10 +36,10 @@ void PRF_ock(
     unsigned char personalization[BLAKE2bPersonalBytes] = {};
     memcpy(personalization, "Zcash_Derive_ock", 16);
 
-    auto state = rust_blake2b_init(NOTEENCRYPTION_CIPHER_KEYSIZE, personalization);
-    rust_blake2b_update(state, block, 128);
-    rust_blake2b_finalize(state, K, NOTEENCRYPTION_CIPHER_KEYSIZE);
-    rust_blake2b_free(state);
+    auto state = blake2b_init(NOTEENCRYPTION_CIPHER_KEYSIZE, personalization);
+    blake2b_update(state, block, 128);
+    blake2b_finalize(state, K, NOTEENCRYPTION_CIPHER_KEYSIZE);
+    blake2b_free(state);
 }
 
 void KDF_Sapling(
@@ -55,10 +55,10 @@ void KDF_Sapling(
     unsigned char personalization[BLAKE2bPersonalBytes] = {};
     memcpy(personalization, "Zcash_SaplingKDF", 16);
 
-    auto state = rust_blake2b_init(NOTEENCRYPTION_CIPHER_KEYSIZE, personalization);
-    rust_blake2b_update(state, block, 64);
-    rust_blake2b_finalize(state, K, NOTEENCRYPTION_CIPHER_KEYSIZE);
-    rust_blake2b_free(state);
+    auto state = blake2b_init(NOTEENCRYPTION_CIPHER_KEYSIZE, personalization);
+    blake2b_update(state, block, 64);
+    blake2b_finalize(state, K, NOTEENCRYPTION_CIPHER_KEYSIZE);
+    blake2b_free(state);
 }
 
 void KDF(unsigned char K[NOTEENCRYPTION_CIPHER_KEYSIZE],
@@ -83,10 +83,10 @@ void KDF(unsigned char K[NOTEENCRYPTION_CIPHER_KEYSIZE],
     memcpy(personalization, "ZcashKDF", 8);
     memcpy(personalization+8, &nonce, 1);
 
-    auto state = rust_blake2b_init(NOTEENCRYPTION_CIPHER_KEYSIZE, personalization);
-    rust_blake2b_update(state, block, 128);
-    rust_blake2b_finalize(state, K, NOTEENCRYPTION_CIPHER_KEYSIZE);
-    rust_blake2b_free(state);
+    auto state = blake2b_init(NOTEENCRYPTION_CIPHER_KEYSIZE, personalization);
+    blake2b_update(state, block, 128);
+    blake2b_finalize(state, K, NOTEENCRYPTION_CIPHER_KEYSIZE);
+    blake2b_free(state);
 }
 
 namespace libzcash {

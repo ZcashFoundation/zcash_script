@@ -41,12 +41,12 @@ enum verify_code { POW_OK, POW_DUPLICATE, POW_OUT_OF_ORDER, POW_NONZERO_XOR };
 const char *errstr[] = { "OK", "duplicate index", "indices out of order", "nonzero xor" };
 
 void genhash(const BLAKE2bState *ctx, u32 idx, uchar *hash) {
-  auto state = rust_blake2b_clone(ctx);
+  auto state = blake2b_clone(ctx);
   u32 leb = htole32(idx / HASHESPERBLAKE);
-  rust_blake2b_update(state, (uchar *)&leb, sizeof(u32));
+  blake2b_update(state, (uchar *)&leb, sizeof(u32));
   uchar blakehash[HASHOUT];
-  rust_blake2b_finalize(state, blakehash, HASHOUT);
-  rust_blake2b_free(state);
+  blake2b_finalize(state, blakehash, HASHOUT);
+  blake2b_free(state);
   memcpy(hash, blakehash + (idx % HASHESPERBLAKE) * WN/8, WN/8);
 }
 

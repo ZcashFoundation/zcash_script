@@ -194,7 +194,6 @@ UniValue blockToDeltasJSON(const CBlock& block, const CBlockIndex* blockindex)
             if (IsValidDestination(dest)) {
                 delta.pushKV("address", keyIO.EncodeDestination(dest));
             }
-            delta.pushKV("address", keyIO.EncodeDestination(dest));
             delta.pushKV("satoshis", out.nValue);
             delta.pushKV("index", (int)k);
 
@@ -996,6 +995,7 @@ UniValue getblockchaininfo(const UniValue& params, bool fHelp)
             "{\n"
             "  \"chain\": \"xxxx\",        (string) current network name as defined in BIP70 (main, test, regtest)\n"
             "  \"blocks\": xxxxxx,         (numeric) the current number of blocks processed in the server\n"
+            "  \"initial_block_download_complete\": xx, (boolean) true if the initial download of the blockchain is complete\n"
             "  \"headers\": xxxxxx,        (numeric) the current number of headers we have validated\n"
             "  \"bestblockhash\": \"...\", (string) the hash of the currently best block\n"
             "  \"difficulty\": xxxxxx,     (numeric) the current difficulty\n"
@@ -1040,6 +1040,7 @@ UniValue getblockchaininfo(const UniValue& params, bool fHelp)
     UniValue obj(UniValue::VOBJ);
     obj.pushKV("chain",                 Params().NetworkIDString());
     obj.pushKV("blocks",                (int)chainActive.Height());
+    obj.pushKV("initial_block_download_complete", !IsInitialBlockDownload(Params()));
     obj.pushKV("headers",               pindexBestHeader ? pindexBestHeader->nHeight : -1);
     obj.pushKV("bestblockhash",         chainActive.Tip()->GetBlockHash().GetHex());
     obj.pushKV("difficulty",            (double)GetNetworkDifficulty());
@@ -1049,9 +1050,9 @@ UniValue getblockchaininfo(const UniValue& params, bool fHelp)
     obj.pushKV("size_on_disk",          CalculateCurrentUsage());
 
     if (IsInitialBlockDownload(Params()))
-        obj.push_back(Pair("estimatedheight",       EstimateNetHeight(Params().GetConsensus(), (int)chainActive.Height(), chainActive.Tip()->GetMedianTimePast())));
+        obj.pushKV("estimatedheight",       EstimateNetHeight(Params().GetConsensus(), (int)chainActive.Height(), chainActive.Tip()->GetMedianTimePast()));
     else
-        obj.push_back(Pair("estimatedheight",       (int)chainActive.Height()));
+        obj.pushKV("estimatedheight",       (int)chainActive.Height());
 
     SproutMerkleTree tree;
     pcoinsTip->GetSproutAnchorAt(pcoinsTip->GetBestAnchor(SPROUT), tree);
