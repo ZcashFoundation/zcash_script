@@ -83,8 +83,6 @@
 #include <boost/program_options/detail/config_file.hpp>
 #include <boost/program_options/parsers.hpp>
 #include <boost/thread.hpp>
-#include <openssl/crypto.h>
-#include <openssl/conf.h>
 
 // Work around clang compilation problem in Boost 1.46:
 // /usr/include/boost/program_options/detail/config_file.hpp:163:17: error: call to function 'to_internal' that is neither visible in the template definition nor found by argument-dependent lookup
@@ -102,243 +100,14 @@ using namespace std;
 
 const char * const BITCOIN_CONF_FILENAME = "zcash.conf";
 const char * const BITCOIN_PID_FILENAME = "zcashd.pid";
-const char * const DEFAULT_DEBUGLOGFILE = "debug.log";
 
 map<string, string> mapArgs;
 map<string, vector<string> > mapMultiArgs;
 bool fDebug = false;
-bool fPrintToConsole = false;
-bool fPrintToDebugLog = true;
 bool fDaemon = false;
 bool fServer = false;
 
-bool fLogTimestamps = DEFAULT_LOGTIMESTAMPS;
-bool fLogTimeMicros = DEFAULT_LOGTIMEMICROS;
-bool fLogIPs = DEFAULT_LOGIPS;
-std::atomic<bool> fReopenDebugLog(false);
 CTranslationInterface translationInterface;
-
-/** Init OpenSSL library multithreading support */
-static CCriticalSection** ppmutexOpenSSL;
-void locking_callback(int mode, int i, const char* file, int line) NO_THREAD_SAFETY_ANALYSIS
-{
-    if (mode & CRYPTO_LOCK) {
-        ENTER_CRITICAL_SECTION(*ppmutexOpenSSL[i]);
-    } else {
-        LEAVE_CRITICAL_SECTION(*ppmutexOpenSSL[i]);
-    }
-}
-
-// Init
-static class CInit
-{
-public:
-    CInit()
-    {
-        // Init OpenSSL library multithreading support
-        ppmutexOpenSSL = (CCriticalSection**)OPENSSL_malloc(CRYPTO_num_locks() * sizeof(CCriticalSection*));
-        for (int i = 0; i < CRYPTO_num_locks(); i++)
-            ppmutexOpenSSL[i] = new CCriticalSection();
-        CRYPTO_set_locking_callback(locking_callback);
-
-        // OpenSSL can optionally load a config file which lists optional loadable modules and engines.
-        // We don't use them so we don't require the config. However some of our libs may call functions
-        // which attempt to load the config file, possibly resulting in an exit() or crash if it is missing
-        // or corrupt. Explicitly tell OpenSSL not to try to load the file. The result for our libs will be
-        // that the config appears to have been loaded and there are no modules/engines available.
-        OPENSSL_no_config();
-    }
-    ~CInit()
-    {
-        // Shutdown OpenSSL library multithreading support
-        CRYPTO_set_locking_callback(NULL);
-        for (int i = 0; i < CRYPTO_num_locks(); i++)
-            delete ppmutexOpenSSL[i];
-        OPENSSL_free(ppmutexOpenSSL);
-    }
-}
-instance_of_cinit;
-
-/**
- * LogPrintf() has been broken a couple of times now
- * by well-meaning people adding mutexes in the most straightforward way.
- * It breaks because it may be called by global destructors during shutdown.
- * Since the order of destruction of static/global objects is undefined,
- * defining a mutex as a global object doesn't work (the mutex gets
- * destroyed, and then some later destructor calls OutputDebugStringF,
- * maybe indirectly, and you get a core dump at shutdown trying to lock
- * the mutex).
- */
-
-static boost::once_flag debugPrintInitFlag = BOOST_ONCE_INIT;
-
-/**
- * We use boost::call_once() to make sure mutexDebugLog and
- * vMsgsBeforeOpenLog are initialized in a thread-safe manner.
- *
- * NOTE: fileout, mutexDebugLog and sometimes vMsgsBeforeOpenLog
- * are leaked on exit. This is ugly, but will be cleaned up by
- * the OS/libc. When the shutdown sequence is fully audited and
- * tested, explicit destruction of these objects can be implemented.
- */
-static FILE* fileout = NULL;
-static boost::mutex* mutexDebugLog = NULL;
-static list<string> *vMsgsBeforeOpenLog;
-
-[[noreturn]] void new_handler_terminate()
-{
-    // Rather than throwing std::bad-alloc if allocation fails, terminate
-    // immediately to (try to) avoid chain corruption.
-    // Since LogPrintf may itself allocate memory, set the handler directly
-    // to terminate first.
-    std::set_new_handler(std::terminate);
-    fputs("Error: Out of memory. Terminating.\n", stderr);
-    LogPrintf("Error: Out of memory. Terminating.\n");
-
-    // The log was successful, terminate now.
-    std::terminate();
-};
-
-static int FileWriteStr(const std::string &str, FILE *fp)
-{
-    return fwrite(str.data(), 1, str.size(), fp);
-}
-
-static void DebugPrintInit()
-{
-    assert(mutexDebugLog == NULL);
-    mutexDebugLog = new boost::mutex();
-    vMsgsBeforeOpenLog = new list<string>;
-}
-
-boost::filesystem::path GetDebugLogPath()
-{
-    boost::filesystem::path logfile(GetArg("-debuglogfile", DEFAULT_DEBUGLOGFILE));
-    if (logfile.is_absolute()) {
-        return logfile;
-    } else {
-        return GetDataDir() / logfile;
-    }
-}
-
-bool OpenDebugLog()
-{
-    boost::call_once(&DebugPrintInit, debugPrintInitFlag);
-    boost::mutex::scoped_lock scoped_lock(*mutexDebugLog);
-
-    assert(fileout == NULL);
-    assert(vMsgsBeforeOpenLog);
-
-    boost::filesystem::path pathDebug = GetDebugLogPath();
-    fileout = fopen(pathDebug.string().c_str(), "a");
-    if (!fileout) {
-        return false;
-    }
-
-    setbuf(fileout, nullptr); // unbuffered
-    // dump buffered messages from before we opened the log
-    while (!vMsgsBeforeOpenLog->empty()) {
-        FileWriteStr(vMsgsBeforeOpenLog->front(), fileout);
-        vMsgsBeforeOpenLog->pop_front();
-    }
-
-    delete vMsgsBeforeOpenLog;
-    vMsgsBeforeOpenLog = NULL;
-    return true;
-}
-
-bool LogAcceptCategory(const char* category)
-{
-    if (category != NULL)
-    {
-        if (!fDebug)
-            return false;
-
-        // Give each thread quick access to -debug settings.
-        // This helps prevent issues debugging global destructors,
-        // where mapMultiArgs might be deleted before another
-        // global destructor calls LogPrint()
-        static boost::thread_specific_ptr<set<string> > ptrCategory;
-        if (ptrCategory.get() == NULL)
-        {
-            const vector<string>& categories = mapMultiArgs["-debug"];
-            ptrCategory.reset(new set<string>(categories.begin(), categories.end()));
-            // thread_specific_ptr automatically deletes the set when the thread ends.
-        }
-        const set<string>& setCategories = *ptrCategory.get();
-
-        // if not debugging everything and not debugging specific category, LogPrint does nothing.
-        if (setCategories.count(string("")) == 0 &&
-            setCategories.count(string("1")) == 0 &&
-            setCategories.count(string(category)) == 0)
-            return false;
-    }
-    return true;
-}
-
-/**
- * fStartedNewLine is a state variable held by the calling context that will
- * suppress printing of the timestamp when multiple calls are made that don't
- * end in a newline. Initialize it to true, and hold it, in the calling context.
- */
-static std::string LogTimestampStr(const std::string &str, bool *fStartedNewLine)
-{
-    string strStamped;
-
-    if (!fLogTimestamps)
-        return str;
-
-    if (*fStartedNewLine)
-        strStamped =  DateTimeStrFormat("%Y-%m-%d %H:%M:%S", GetTime()) + ' ' + str;
-    else
-        strStamped = str;
-
-    if (!str.empty() && str[str.size()-1] == '\n')
-        *fStartedNewLine = true;
-    else
-        *fStartedNewLine = false;
-
-    return strStamped;
-}
-
-int LogPrintStr(const std::string &str)
-{
-    int ret = 0; // Returns total number of characters written
-    static bool fStartedNewLine = true;
-    if (fPrintToConsole)
-    {
-        // print to console
-        ret = fwrite(str.data(), 1, str.size(), stdout);
-        fflush(stdout);
-    }
-    else if (fPrintToDebugLog)
-    {
-        boost::call_once(&DebugPrintInit, debugPrintInitFlag);
-        boost::mutex::scoped_lock scoped_lock(*mutexDebugLog);
-
-        string strTimestamped = LogTimestampStr(str, &fStartedNewLine);
-
-        // buffer if we haven't opened the log yet
-        if (fileout == NULL) {
-            assert(vMsgsBeforeOpenLog);
-            ret = strTimestamped.length();
-            vMsgsBeforeOpenLog->push_back(strTimestamped);
-        }
-        else
-        {
-            // reopen the log file, if requested
-            if (fReopenDebugLog) {
-                fReopenDebugLog = false;
-                boost::filesystem::path pathDebug = GetDebugLogPath();
-                if (freopen(pathDebug.string().c_str(),"a",fileout) != NULL)
-                    setbuf(fileout, NULL); // unbuffered
-            }
-
-            ret = FileWriteStr(strTimestamped, fileout);
-        }
-    }
-    return ret;
-}
 
 /** Interpret string as boolean, for argument parsing */
 static bool InterpretBool(const std::string& strValue)
@@ -502,7 +271,7 @@ static boost::filesystem::path pathCachedNetSpecific;
 static boost::filesystem::path zc_paramsPathCached;
 static CCriticalSection csPathCached;
 
-static boost::filesystem::path ZC_GetBaseParamsDir()
+static boost::filesystem::path ZC_GetDefaultBaseParamsDir()
 {
     // Copied from GetDefaultDataDir and adapter for zcash params.
 
@@ -546,7 +315,14 @@ const boost::filesystem::path &ZC_GetParamsDir()
     if (!path.empty())
         return path;
 
-    path = ZC_GetBaseParamsDir();
+    if (mapArgs.count("-paramsdir")) {
+        path = fs::system_complete(mapArgs["-paramsdir"]);
+        if (!fs::is_directory(path)) {
+            throw std::runtime_error(strprintf("The -paramsdir '%s' does not exist or is not a directory", path.string()));
+        }
+    } else {
+        path = ZC_GetDefaultBaseParamsDir();
+    }
 
     return path;
 }
@@ -627,10 +403,38 @@ void ReadConfigFile(const std::string& confPath,
     set<string> setOptions;
     setOptions.insert("*");
 
+    const vector<string> allowed_duplicates = {
+        "addnode",
+        "bind",
+        "connect",
+        "debug",
+        "externalip",
+        "fundingstream",
+        "loadblock",
+        "nuparams",
+        "onlynet",
+        "rpcallowip",
+        "rpcauth",
+        "rpcbind",
+        "seednode",
+        "uacomment",
+        "whitebind",
+        "whitelist"
+    };
+    set<string> unique_options;
+
     for (boost::program_options::detail::config_file_iterator it(streamConfig, setOptions), end; it != end; ++it)
     {
         string strKey = string("-") + it->string_key;
         string strValue = it->value[0];
+
+        if (find(allowed_duplicates.begin(), allowed_duplicates.end(), it->string_key) == allowed_duplicates.end())
+        {
+            if (!unique_options.insert(strKey).second) {
+                throw std::runtime_error(strprintf("Option '%s' is duplicated, which is not allowed.", strKey));
+            }
+        }
+
         InterpretNegativeSetting(strKey, strValue);
         // Don't overwrite existing settings so command line settings override zcash.conf
         if (mapSettingsRet.count(strKey) == 0)
@@ -699,7 +503,7 @@ void FileCommit(FILE *fileout)
 #else
     #if defined(__linux__) || defined(__NetBSD__)
     fdatasync(fileno(fileout));
-    #elif defined(__APPLE__) && defined(F_FULLFSYNC)
+    #elif defined(MAC_OSX) && defined(F_FULLFSYNC)
     fcntl(fileno(fileout), F_FULLFSYNC, 0);
     #else
     fsync(fileno(fileout));
@@ -782,30 +586,6 @@ void AllocateFileRange(FILE *file, unsigned int offset, unsigned int length) {
         length -= now;
     }
 #endif
-}
-
-void ShrinkDebugFile()
-{
-    // Scroll debug.log if it's getting too big
-    boost::filesystem::path pathLog = GetDebugLogPath();
-    FILE* file = fopen(pathLog.string().c_str(), "r");
-    if (file && boost::filesystem::file_size(pathLog) > 10 * 1000000)
-    {
-        // Restart the file with some of the end
-        std::vector <char> vch(200000,0);
-        fseek(file, -((long)vch.size()), SEEK_END);
-        int nBytes = fread(begin_ptr(vch), 1, vch.size(), file);
-        fclose(file);
-
-        file = fopen(pathLog.string().c_str(), "w");
-        if (file)
-        {
-            fwrite(begin_ptr(vch), 1, nBytes, file);
-            fclose(file);
-        }
-    }
-    else if (file != NULL)
-        fclose(file);
 }
 
 #ifdef WIN32
@@ -929,9 +709,7 @@ std::string LicenseInfo()
            "\n" +
            FormatParagraph(_("This is experimental software.")) + "\n" +
            "\n" +
-           FormatParagraph(_("Distributed under the MIT software license, see the accompanying file COPYING or <https://www.opensource.org/licenses/mit-license.php>.")) + "\n" +
-           "\n" +
-           FormatParagraph(_("This product includes software developed by the OpenSSL Project for use in the OpenSSL Toolkit <https://www.openssl.org/> and cryptographic software written by Eric Young.")) +
+           FormatParagraph(_("Distributed under the MIT software license, see the accompanying file COPYING or <https://www.opensource.org/licenses/mit-license.php>.")) +
            "\n";
 }
 

@@ -136,7 +136,7 @@ TEST(Validation, ContextualCheckInputsDetectsOldBranchId) {
     UpdateNetworkUpgradeParameters(Consensus::UPGRADE_OVERWINTER, 10);
     UpdateNetworkUpgradeParameters(Consensus::UPGRADE_SAPLING, 20);
     UpdateNetworkUpgradeParameters(Consensus::UPGRADE_BLOSSOM, 30);
-    auto consensusParams = Params(CBaseChainParams::REGTEST).GetConsensus();
+    const Consensus::Params& consensusParams = Params(CBaseChainParams::REGTEST).GetConsensus();
 
     auto overwinterBranchId = NetworkUpgradeInfo[Consensus::UPGRADE_OVERWINTER].nBranchId;
     auto saplingBranchId = NetworkUpgradeInfo[Consensus::UPGRADE_SAPLING].nBranchId;

@@ -1,9 +1,8 @@
 ---
-name: "zcash-3.1.0-rc2"
+name: "zcash-4.0.0"
 enable_cache: true
 distro: "debian"
 suites:
-- "jessie"
 - "stretch"
 architectures:
 - "amd64"
@@ -32,7 +31,7 @@ remotes:
 files: []
 script: |
   WRAP_DIR=$HOME/wrapped
-  HOSTS="x86_64-unknown-linux-gnu"
+  HOSTS="x86_64-linux-gnu"
   CONFIGFLAGS="--enable-glibc-back-compat --enable-reduce-exports --disable-bench --enable-hardening"
   MAKEOPTS="V=1"
   FAKETIME_HOST_PROGS=""
@@ -87,7 +86,7 @@ script: |
   BASEPREFIX=`pwd`/depends
   # Build dependencies for each host
   for i in $HOSTS; do
-    NO_PROTON="x" make ${MAKEOPTS} -C ${BASEPREFIX} HOST="${i}"
+    make ${MAKEOPTS} -C ${BASEPREFIX} HOST="${i}"
   done
 
   # Faketime for binaries

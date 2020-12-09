@@ -32,7 +32,7 @@ TEST(CheckBlock, VersionTooLow) {
 
     MockCValidationState state;
     EXPECT_CALL(state, DoS(100, false, REJECT_INVALID, "version-too-low", false)).Times(1);
-    EXPECT_FALSE(CheckBlock(block, state, Params(), verifier, false, false));
+    EXPECT_FALSE(CheckBlock(block, state, Params(), verifier, false, false, true));
 }
 
 
@@ -65,7 +65,7 @@ TEST(CheckBlock, BlockSproutRejectsBadVersion) {
     auto verifier = ProofVerifier::Strict();
 
     EXPECT_CALL(state, DoS(100, false, REJECT_INVALID, "bad-txns-version-too-low", false)).Times(1);
-    EXPECT_FALSE(CheckBlock(block, state, Params(), verifier, false, false));
+    EXPECT_FALSE(CheckBlock(block, state, Params(), verifier, false, false, true));
 }
 
 
@@ -119,7 +119,7 @@ protected:
 
         // We now expect this to be a valid block.
         MockCValidationState state;
-        EXPECT_TRUE(ContextualCheckBlock(block, state, Params(), &indexPrev));
+        EXPECT_TRUE(ContextualCheckBlock(block, state, Params(), &indexPrev, true));
     }
 
     // Expects a height-1 block containing a given transaction to fail
@@ -137,7 +137,7 @@ protected:
         // We now expect this to be an invalid block, for the given reason.
         MockCValidationState state;
         EXPECT_CALL(state, DoS(level, false, REJECT_INVALID, reason, false)).Times(1);
-        EXPECT_FALSE(ContextualCheckBlock(block, state, Params(), &indexPrev));
+        EXPECT_FALSE(ContextualCheckBlock(block, state, Params(), &indexPrev, true));
     }
 
 };
@@ -154,7 +154,7 @@ TEST_F(ContextualCheckBlockTest, BadCoinbaseHeight) {
 
     // Treating block as genesis should pass
     MockCValidationState state;
-    EXPECT_TRUE(ContextualCheckBlock(block, state, Params(), NULL));
+    EXPECT_TRUE(ContextualCheckBlock(block, state, Params(), NULL, true));
 
     // Give the transaction a Founder's Reward vout
     mtx.vout.push_back(CTxOut(
@@ -168,20 +168,20 @@ TEST_F(ContextualCheckBlockTest, BadCoinbaseHeight) {
     CBlockIndex indexPrev {prev};
     indexPrev.nHeight = 0;
     EXPECT_CALL(state, DoS(100, false, REJECT_INVALID, "bad-cb-height", false)).Times(1);
-    EXPECT_FALSE(ContextualCheckBlock(block, state, Params(), &indexPrev));
+    EXPECT_FALSE(ContextualCheckBlock(block, state, Params(), &indexPrev, true));
 
     // Setting to an incorrect height should fail
     mtx.vin[0].scriptSig = CScript() << 2 << OP_0;
     CTransaction tx3 {mtx};
     block.vtx[0] = tx3;
     EXPECT_CALL(state, DoS(100, false, REJECT_INVALID, "bad-cb-height", false)).Times(1);
-    EXPECT_FALSE(ContextualCheckBlock(block, state, Params(), &indexPrev));
+    EXPECT_FALSE(ContextualCheckBlock(block, state, Params(), &indexPrev, true));
 
     // After correcting the scriptSig, should pass
     mtx.vin[0].scriptSig = CScript() << 1 << OP_0;
     CTransaction tx4 {mtx};
     block.vtx[0] = tx4;
-    EXPECT_TRUE(ContextualCheckBlock(block, state, Params(), &indexPrev));
+    EXPECT_TRUE(ContextualCheckBlock(block, state, Params(), &indexPrev, true));
 }
 
 // TEST PLAN: first, check that each ruleset accepts its own transaction type.
@@ -311,7 +311,7 @@ TEST_F(ContextualCheckBlockTest, BlockOverwinterRulesRejectOtherTx) {
 
     {
         SCOPED_TRACE("BlockOverwinterRulesRejectSproutTx");
-        ExpectInvalidBlockFromTx(CTransaction(mtx), 100, "tx-overwinter-active");
+        ExpectInvalidBlockFromTx(CTransaction(mtx), 100, "tx-overwintered-flag-not-set");
     }
 
     // Make it a Sapling transaction
@@ -321,7 +321,7 @@ TEST_F(ContextualCheckBlockTest, BlockOverwinterRulesRejectOtherTx) {
 
     {
         SCOPED_TRACE("BlockOverwinterRulesRejectSaplingTx");
-        ExpectInvalidBlockFromTx(CTransaction(mtx), 100, "bad-overwinter-tx-version-group-id");
+        ExpectInvalidBlockFromTx(CTransaction(mtx), 100, "bad-tx-overwinter-version-too-high");
     }
 }
 
@@ -339,7 +339,7 @@ TEST_F(ContextualCheckBlockTest, BlockSaplingRulesRejectOtherTx) {
 
     {
         SCOPED_TRACE("BlockSaplingRulesRejectSproutTx");
-        ExpectInvalidBlockFromTx(CTransaction(mtx), 100, "tx-overwinter-active");
+        ExpectInvalidBlockFromTx(CTransaction(mtx), 100, "tx-overwintered-flag-not-set");
     }
 
     // Make it an Overwinter transaction
@@ -368,7 +368,7 @@ TEST_F(ContextualCheckBlockTest, BlockBlossomRulesRejectOtherTx) {
 
     {
         SCOPED_TRACE("BlockBlossomRulesRejectSproutTx");
-        ExpectInvalidBlockFromTx(CTransaction(mtx), 100, "tx-overwinter-active");
+        ExpectInvalidBlockFromTx(CTransaction(mtx), 100, "tx-overwintered-flag-not-set");
     }
 
     // Make it an Overwinter transaction

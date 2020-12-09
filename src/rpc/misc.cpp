@@ -106,7 +106,9 @@ UniValue getinfo(const UniValue& params, bool fHelp)
     obj.pushKV("paytxfee",      ValueFromAmount(payTxFee.GetFeePerK()));
 #endif
     obj.pushKV("relayfee",      ValueFromAmount(::minRelayTxFee.GetFeePerK()));
-    obj.pushKV("errors",        GetWarnings("statusbar"));
+    auto warnings = GetWarnings("statusbar");
+    obj.pushKV("errors",           warnings.first);
+    obj.pushKV("errorstimestamp",  warnings.second);
     return obj;
 }
 
@@ -667,8 +669,8 @@ UniValue getaddressmempool(const UniValue& params, bool fHelp)
 UniValue getaddressutxos(const UniValue& params, bool fHelp)
 {
     std::string disabledMsg = "";
-    if (!fExperimentalInsightExplorer) {
-        disabledMsg = experimentalDisabledHelpMsg("getaddressutxos", {"insightexplorer"});
+    if (!(fExperimentalInsightExplorer || fExperimentalLightWalletd)) {
+        disabledMsg = experimentalDisabledHelpMsg("getaddressutxos", {"insightexplorer", "lightwalletd"});
     }
     if (fHelp || params.size() != 1)
         throw runtime_error(
@@ -718,7 +720,7 @@ UniValue getaddressutxos(const UniValue& params, bool fHelp)
             + HelpExampleRpc("getaddressutxos", "{\"addresses\": [\"tmYXBYJj1K7vhejSec5osXK2QsGa5MTisUQ\"], \"chainInfo\": true}")
             );
 
-    if (!fExperimentalInsightExplorer) {
+    if (!(fExperimentalInsightExplorer || fExperimentalLightWalletd)) {
         throw JSONRPCError(RPC_MISC_ERROR, "Error: getaddressutxos is disabled. "
             "Run './zcash-cli help getaddressutxos' for instructions on how to enable this feature.");
     }

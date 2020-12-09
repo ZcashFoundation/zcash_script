@@ -19,8 +19,9 @@
 #include <unordered_map>
 #include <tuple>
 
-#include <sodium.h>
 #include <univalue.h>
+
+#include <rust/ed25519/types.h>
 
 // Default transaction fee if caller does not specify one.
 #define ASYNC_RPC_OPERATION_DEFAULT_MINERS_FEE   10000
@@ -41,11 +42,12 @@ class SendManyInputUTXO {
 public:
     uint256 txid;
     int vout;
+    CScript scriptPubKey;
     CAmount amount;
     bool coinbase;
 
-    SendManyInputUTXO(uint256 txid_, int vout_, CAmount amount_, bool coinbase_) :
-        txid(txid_), vout(vout_), amount(amount_), coinbase(coinbase_) {}
+    SendManyInputUTXO(uint256 txid_, int vout_, CScript scriptPubKey_, CAmount amount_, bool coinbase_) :
+        txid(txid_), vout(vout_), scriptPubKey(scriptPubKey_), amount(amount_), coinbase(coinbase_) {}
 };
 
 class SendManyInputJSOP {
@@ -111,14 +113,15 @@ private:
     CAmount fee_;
     int mindepth_;
     std::string fromaddress_;
+    bool useanyutxo_;
     bool isfromtaddr_;
     bool isfromzaddr_;
     CTxDestination fromtaddr_;
     PaymentAddress frompaymentaddress_;
     SpendingKey spendingkey_;
-    
-    uint256 joinSplitPubKey_;
-    unsigned char joinSplitPrivKey_[crypto_sign_SECRETKEYBYTES];
+
+    Ed25519VerificationKey joinSplitPubKey_;
+    Ed25519SigningKey joinSplitPrivKey_;
 
     // The key is the result string from calling JSOutPoint::ToString()
     std::unordered_map<std::string, WitnessAnchorData> jsopWitnessAnchorMap;

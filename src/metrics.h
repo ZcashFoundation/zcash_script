@@ -75,6 +75,8 @@ double GetLocalSolPS();
 int EstimateNetHeight(const Consensus::Params& params, int currentBlockHeight, int64_t currentBlockTime);
 std::optional<int64_t> SecondsLeftToNextEpoch(const Consensus::Params& params, int currentHeight);
 std::string DisplayDuration(int64_t time, DurationFormat format);
+std::string DisplaySize(size_t value);
+std::string DisplayHashRate(double value);
 
 void TriggerRefresh();
 

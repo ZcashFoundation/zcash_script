@@ -154,6 +154,7 @@ void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry)
 {
     const uint256 txid = tx.GetHash();
     entry.pushKV("txid", txid.GetHex());
+    entry.pushKV("size", (int)::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION));
     entry.pushKV("overwintered", tx.fOverwintered);
     entry.pushKV("version", tx.nVersion);
     if (tx.fOverwintered) {
@@ -236,8 +237,16 @@ void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry)
     }
 
     if (tx.nVersion >= 2 && tx.vJoinSplit.size() > 0) {
-        entry.pushKV("joinSplitPubKey", tx.joinSplitPubKey.GetHex());
-        entry.pushKV("joinSplitSig", HexStr(tx.joinSplitSig.begin(), tx.joinSplitSig.end()));
+        // Copy joinSplitPubKey into a uint256 so that
+        // it is byte-flipped in the RPC output.
+        uint256 joinSplitPubKey;
+        std::copy(
+            tx.joinSplitPubKey.bytes,
+            tx.joinSplitPubKey.bytes + ED25519_VERIFICATION_KEY_LEN,
+            joinSplitPubKey.begin());
+        entry.pushKV("joinSplitPubKey", joinSplitPubKey.GetHex());
+        entry.pushKV("joinSplitSig",
+            HexStr(tx.joinSplitSig.bytes, tx.joinSplitSig.bytes + ED25519_SIGNATURE_LEN));
     }
 
     if (!hashBlock.IsNull()) {
@@ -281,6 +290,7 @@ UniValue getrawtransaction(const UniValue& params, bool fHelp)
             "{\n"
             "  \"hex\" : \"data\",       (string) The serialized, hex-encoded data for 'txid'\n"
             "  \"txid\" : \"id\",        (string) The transaction id (same as provided)\n"
+            "  \"size\" : n,             (numeric) The transaction size\n"
             "  \"version\" : n,          (numeric) The version\n"
             "  \"locktime\" : ttt,       (numeric) The lock time\n"
             "  \"expiryheight\" : ttt,   (numeric, optional) The block height after which the transaction expires\n"
@@ -625,6 +635,7 @@ UniValue decoderawtransaction(const UniValue& params, bool fHelp)
             "\nResult:\n"
             "{\n"
             "  \"txid\" : \"id\",        (string) The transaction id\n"
+            "  \"size\" : n,             (numeric) The transaction size\n"
             "  \"overwintered\" : bool   (boolean) The Overwintered flag\n"
             "  \"version\" : n,          (numeric) The version\n"
             "  \"versiongroupid\": \"hex\"   (string, optional) The version group id (Overwintered txs)\n"

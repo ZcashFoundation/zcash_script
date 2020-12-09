@@ -770,6 +770,7 @@ private:
     int64_t nNextResend;
     int64_t nLastResend;
     int64_t nLastSetChain;
+    int nSetChainUpdates;
     bool fBroadcastTransactions;
 
     template <class T>
@@ -931,6 +932,7 @@ public:
         nNextResend = 0;
         nLastResend = 0;
         nLastSetChain = 0;
+        nSetChainUpdates = 0;
         nTimeFirstKey = 0;
         fBroadcastTransactions = false;
         nWitnessCacheSize = 0;

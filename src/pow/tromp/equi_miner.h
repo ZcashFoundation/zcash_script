@@ -227,12 +227,10 @@ struct equi {
     hta.dealloctrees();
     free(nslots);
     free(sols);
-    if (blake_ctx != nullptr) {
-      rust_blake2b_free(blake_ctx);
-    }
+    blake2b_free(blake_ctx);
   }
   void setstate(const BLAKE2bState *ctx) {
-    blake_ctx = rust_blake2b_clone(ctx);
+    blake_ctx = blake2b_clone(ctx);
     memset(nslots, 0, NBUCKETS * sizeof(au32)); // only nslots[0] needs zeroing
     nsols = 0;
   }
@@ -438,11 +436,11 @@ struct equi {
     htlayout htl(this, 0);
     const u32 hashbytes = hashsize(0);
     for (u32 block = id; block < NBLOCKS; block += nthreads) {
-      state = rust_blake2b_clone(blake_ctx);
+      state = blake2b_clone(blake_ctx);
       u32 leb = htole32(block);
-      rust_blake2b_update(state, (uchar *)&leb, sizeof(u32));
-      rust_blake2b_finalize(state, hash, HASHOUT);
-      rust_blake2b_free(state);
+      blake2b_update(state, (uchar *)&leb, sizeof(u32));
+      blake2b_finalize(state, hash, HASHOUT);
+      blake2b_free(state);
       for (u32 i = 0; i<HASHESPERBLAKE; i++) {
         const uchar *ph = hash + i * WN/8;
 #if BUCKBITS == 16 && RESTBITS == 4

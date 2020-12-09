@@ -38,11 +38,11 @@ uint256 ovkForShieldingFromTaddr(HDSeed& seed) {
     auto rawSeed = seed.RawSeed();
 
     // I = BLAKE2b-512("ZcTaddrToSapling", seed)
-    auto state = rust_blake2b_init(64, ZCASH_TADDR_OVK_PERSONAL);
-    rust_blake2b_update(state, rawSeed.data(), rawSeed.size());
+    auto state = blake2b_init(64, ZCASH_TADDR_OVK_PERSONAL);
+    blake2b_update(state, rawSeed.data(), rawSeed.size());
     auto intermediate = std::array<unsigned char, 64>();
-    rust_blake2b_finalize(state, intermediate.data(), 64);
-    rust_blake2b_free(state);
+    blake2b_finalize(state, intermediate.data(), 64);
+    blake2b_free(state);
 
     // I_L = I[0..32]
     uint256 intermediate_L;

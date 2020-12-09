@@ -2,12 +2,13 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php 
 
-#include "core_memusage.h"
 #include "mempool_limit.h"
+
+#include "core_memusage.h"
+#include "logging.h"
 #include "random.h"
 #include "serialize.h"
 #include "timedata.h"
-#include "util.h"
 #include "utiltime.h"
 #include "version.h"
 
