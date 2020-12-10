@@ -12,3 +12,11 @@
 [docs-url]: https://docs.rs/zcash_script
 
 Rust bindings to the ECC's `zcash_script` c++ library.
+
+### Updating `depend/zcash`
+
+To pull in recent changes from the upstream repo run the following:
+
+```console
+git subtree pull -P depend/zcash <repo> <branch> --squash
+```

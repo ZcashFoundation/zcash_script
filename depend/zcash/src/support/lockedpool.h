@@ -1,6 +1,6 @@
 // Copyright (c) 2016 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 #ifndef BITCOIN_SUPPORT_LOCKEDPOOL_H
 #define BITCOIN_SUPPORT_LOCKEDPOOL_H
@@ -10,6 +10,7 @@
 #include <map>
 #include <mutex>
 #include <memory>
+#include <unordered_map>
 
 /**
  * OS-dependent allocation and deallocation of locked/pinned memory pages.
@@ -21,7 +22,7 @@ public:
     virtual ~LockedPageAllocator() {}
     /** Allocate and lock memory pages.
      * If len is not a multiple of the system page size, it is rounded up.
-     * Returns 0 in case of allocation failure.
+     * Returns nullptr in case of allocation failure.
      *
      * If locking the memory pages could not be accomplished it will still
      * return the memory, however the lockingSuccess flag will be false.
@@ -50,27 +51,9 @@ public:
     Arena(void *base, size_t size, size_t alignment);
     virtual ~Arena();
 
-    /** A chunk of memory.
-     */
-    struct Chunk
-    {
-        /** Most significant bit of size_t. This is used to mark
-         * in-usedness of chunk.
-         */
-        const static size_t SIZE_MSB = 1LLU << ((sizeof(size_t)*8)-1);
-        /** Maximum size of a chunk */
-        const static size_t MAX_SIZE = SIZE_MSB - 1;
+    Arena(const Arena& other) = delete; // non construction-copyable
+    Arena& operator=(const Arena&) = delete; // non copyable
 
-        Chunk(size_t size_in, bool used_in):
-            size(size_in | (used_in ? SIZE_MSB : 0)) {}
-
-        bool isInUse() const { return size & SIZE_MSB; }
-        void setInUse(bool used_in) { size = (size & ~SIZE_MSB) | (used_in ? SIZE_MSB : 0); }
-        size_t getSize() const { return size & ~SIZE_MSB; }
-        void setSize(size_t size_in) { size = (size & SIZE_MSB) | size_in; }
-    private:
-        size_t size;
-    };
     /** Memory statistics. */
     struct Stats
     {
@@ -89,9 +72,8 @@ public:
 
     /** Free a previously allocated chunk of memory.
      * Freeing the zero pointer has no effect.
-     * Raises std::runtime_error in case of error.
      */
-    void free(void *ptr);
+    void free(void *ptr) noexcept;
 
     /** Get arena usage statistics */
     Stats stats() const;
@@ -106,13 +88,19 @@ public:
      */
     bool addressInArena(void *ptr) const { return ptr >= base && ptr < end; }
 private:
-    Arena(const Arena& other) = delete; // non construction-copyable
-    Arena& operator=(const Arena&) = delete; // non copyable
+    typedef std::multimap<size_t, char*> SizeToChunkSortedMap;
+    /** Map to enable O(log(n)) best-fit allocation, as it's sorted by size */
+    SizeToChunkSortedMap size_to_free_chunk;
 
-    /** Map of chunk address to chunk information. This class makes use of the
-     * sorted order to merge previous and next chunks during deallocation.
-     */
-    std::map<char*, Chunk> chunks;
+    typedef std::unordered_map<char*, SizeToChunkSortedMap::const_iterator> ChunkToSizeMap;
+    /** Map from begin of free chunk to its node in size_to_free_chunk */
+    ChunkToSizeMap chunks_free;
+    /** Map from end of free chunk to its node in size_to_free_chunk */
+    ChunkToSizeMap chunks_free_end;
+
+    /** Map from begin of used chunk to its size */
+    std::unordered_map<char*, size_t> chunks_used;
+
     /** Base address of arena */
     char* base;
     /** End address of arena */
@@ -129,7 +117,7 @@ private:
  * An arena manages a contiguous region of memory. The pool starts out with one arena
  * but can grow to multiple arenas if the need arises.
  *
- * Unlike a normal C heap, the administrative structures are seperate from the managed
+ * Unlike a normal C heap, the administrative structures are separate from the managed
  * memory. This has been done as the sizes and bases of objects are not in themselves sensitive
  * information, as to conserve precious locked memory. In some operating systems
  * the amount of memory that can be locked is small.
@@ -170,8 +158,11 @@ public:
      * If this callback is provided and returns false, the allocation fails (hard fail), if
      * it returns true the allocation proceeds, but it could warn.
      */
-    LockedPool(std::unique_ptr<LockedPageAllocator> allocator, LockingFailed_Callback lf_cb_in = 0);
+    explicit LockedPool(std::unique_ptr<LockedPageAllocator> allocator, LockingFailed_Callback lf_cb_in = nullptr);
     ~LockedPool();
+
+    LockedPool(const LockedPool& other) = delete; // non construction-copyable
+    LockedPool& operator=(const LockedPool&) = delete; // non copyable
 
     /** Allocate size bytes from this arena.
      * Returns pointer on success, or 0 if memory is full or
@@ -181,16 +172,12 @@ public:
 
     /** Free a previously allocated chunk of memory.
      * Freeing the zero pointer has no effect.
-     * Raises std::runtime_error in case of error.
      */
-    void free(void *ptr);
+    void free(void *ptr) noexcept;
 
     /** Get pool usage statistics */
     Stats stats() const;
 private:
-    LockedPool(const LockedPool& other) = delete; // non construction-copyable
-    LockedPool& operator=(const LockedPool&) = delete; // non copyable
-
     std::unique_ptr<LockedPageAllocator> allocator;
 
     /** Create an arena from locked pages */
@@ -232,12 +219,13 @@ public:
     /** Return the current instance, or create it once */
     static LockedPoolManager& Instance()
     {
-        std::call_once(LockedPoolManager::init_flag, LockedPoolManager::CreateInstance);
+        static std::once_flag init_flag;
+        std::call_once(init_flag, LockedPoolManager::CreateInstance);
         return *LockedPoolManager::_instance;
     }
 
 private:
-    LockedPoolManager(std::unique_ptr<LockedPageAllocator> allocator);
+    explicit LockedPoolManager(std::unique_ptr<LockedPageAllocator> allocator);
 
     /** Create a new LockedPoolManager specialized to the OS */
     static void CreateInstance();
@@ -245,7 +233,6 @@ private:
     static bool LockingFailed();
 
     static LockedPoolManager* _instance;
-    static std::once_flag init_flag;
 };
 
 #endif // BITCOIN_SUPPORT_LOCKEDPOOL_H

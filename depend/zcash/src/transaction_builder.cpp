@@ -13,7 +13,7 @@
 #include "zcash/Note.hpp"
 
 #include <librustzcash.h>
-#include <sodium.h>
+#include <rust/ed25519.h>
 
 SpendDescriptionInfo::SpendDescriptionInfo(
     libzcash::SaplingExpandedSpendingKey expsk,
@@ -418,8 +418,8 @@ TransactionBuilderResult TransactionBuilder::Build()
     // Sprout JoinSplits
     //
 
-    unsigned char joinSplitPrivKey[crypto_sign_SECRETKEYBYTES];
-    crypto_sign_keypair(mtx.joinSplitPubKey.begin(), joinSplitPrivKey);
+    Ed25519SigningKey joinSplitPrivKey;
+    ed25519_generate_keypair(&joinSplitPrivKey, &mtx.joinSplitPubKey);
 
     // Create Sprout JSDescriptions
     if (!jsInputs.empty() || !jsOutputs.empty()) {
@@ -467,19 +467,19 @@ TransactionBuilderResult TransactionBuilder::Build()
     librustzcash_sapling_proving_ctx_free(ctx);
 
     // Create Sprout joinSplitSig
-    if (crypto_sign_detached(
-        mtx.joinSplitSig.data(), NULL,
+    if (!ed25519_sign(
+        &joinSplitPrivKey,
         dataToBeSigned.begin(), 32,
-        joinSplitPrivKey) != 0)
+        &mtx.joinSplitSig))
     {
         return TransactionBuilderResult("Failed to create Sprout joinSplitSig");
     }
 
     // Sanity check Sprout joinSplitSig
-    if (crypto_sign_verify_detached(
-        mtx.joinSplitSig.data(),
-        dataToBeSigned.begin(), 32,
-        mtx.joinSplitPubKey.begin()) != 0)
+    if (!ed25519_verify(
+        &mtx.joinSplitPubKey,
+        &mtx.joinSplitSig,
+        dataToBeSigned.begin(), 32))
     {
         return TransactionBuilderResult("Sprout joinSplitSig sanity check failed");
     }

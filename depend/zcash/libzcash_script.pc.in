@@ -8,4 +8,3 @@ Description: Library for verifying scripts against the Zcash consensus protocol.
 Version: @PACKAGE_VERSION@
 Libs: -L${libdir} -lzcash_script
 Cflags: -I${includedir}
-Requires.private: libcrypto

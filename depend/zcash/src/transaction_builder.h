@@ -51,7 +51,7 @@ struct OutputDescriptionInfo {
 };
 
 struct JSDescriptionInfo {
-    uint256 joinSplitPubKey;
+    Ed25519VerificationKey joinSplitPubKey;
     uint256 anchor;
     std::array<libzcash::JSInput, ZC_NUM_JS_INPUTS> inputs;
     std::array<libzcash::JSOutput, ZC_NUM_JS_OUTPUTS> outputs;
@@ -59,7 +59,7 @@ struct JSDescriptionInfo {
     CAmount vpub_new;
 
     JSDescriptionInfo(
-        uint256 joinSplitPubKey,
+        Ed25519VerificationKey joinSplitPubKey,
         uint256 anchor,
         std::array<libzcash::JSInput, ZC_NUM_JS_INPUTS> inputs,
         std::array<libzcash::JSOutput, ZC_NUM_JS_OUTPUTS> outputs,
