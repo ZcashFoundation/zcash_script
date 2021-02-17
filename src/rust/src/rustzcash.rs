@@ -3,7 +3,7 @@
 //! This is internal to zcashd and is not an officially-supported API.
 
 // Catch documentation errors caused by code changes.
-#![deny(intra_doc_link_resolution_failure)]
+#![deny(broken_intra_doc_links)]
 // Clippy has a default-deny lint to prevent dereferencing raw pointer arguments
 // in a non-unsafe function. However, declaring a function as unsafe has the
 // side-effect that the entire function body is treated as an unsafe {} block,
@@ -1249,44 +1249,4 @@ pub extern "system" fn librustzcash_mmr_hash_node(
 pub extern "C" fn librustzcash_getrandom(buf: *mut u8, buf_len: usize) {
     let buf = unsafe { slice::from_raw_parts_mut(buf, buf_len) };
     OsRng.fill_bytes(buf);
-}
-
-// The `librustzcash_zebra_crypto_sign_verify_detached` API attempts to
-// mimic the `crypto_sign_verify_detached` API in libsodium, but uses
-// the ed25519-zebra crate internally instead.
-const LIBSODIUM_OK: isize = 0;
-const LIBSODIUM_ERROR: isize = -1;
-
-#[no_mangle]
-pub extern "system" fn librustzcash_zebra_crypto_sign_verify_detached(
-    sig: *const [u8; 64],
-    m: *const u8,
-    mlen: u64,
-    pk: *const [u8; 32],
-) -> isize {
-    use ed25519_zebra::{Signature, VerificationKey};
-    use std::convert::TryFrom;
-
-    let sig = Signature::from(*unsafe {
-        match sig.as_ref() {
-            Some(sig) => sig,
-            None => return LIBSODIUM_ERROR,
-        }
-    });
-
-    let pk = match VerificationKey::try_from(*match unsafe { pk.as_ref() } {
-        Some(pk) => pk,
-        None => return LIBSODIUM_ERROR,
-    }) {
-        Ok(pk) => pk,
-        Err(_) => return LIBSODIUM_ERROR,
-    };
-
-    let m = unsafe { slice::from_raw_parts(m, mlen as usize) };
-
-    if pk.verify(&sig, m).is_err() {
-        LIBSODIUM_ERROR
-    } else {
-        LIBSODIUM_OK
-    }
 }

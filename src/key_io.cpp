@@ -10,6 +10,7 @@
 #include <script/script.h>
 #include <utilstrencodings.h>
 
+
 #include <assert.h>
 #include <string.h>
 #include <algorithm>

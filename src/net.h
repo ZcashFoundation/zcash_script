@@ -8,6 +8,7 @@
 
 #include "bloom.h"
 #include "compat.h"
+#include "fs.h"
 #include "hash.h"
 #include "limitedmap.h"
 #include "mruset.h"
@@ -18,6 +19,7 @@
 #include "sync.h"
 #include "uint256.h"
 #include "utilstrencodings.h"
+#include "chainparams.h"
 
 #include <deque>
 #include <stdint.h>
@@ -26,8 +28,6 @@
 #include <arpa/inet.h>
 #endif
 
-#include <boost/filesystem/path.hpp>
-#include <boost/foreach.hpp>
 #include <boost/signals2/signal.hpp>
 
 #include <tracing.h>
@@ -112,8 +112,8 @@ struct CombinerAll
 struct CNodeSignals
 {
     boost::signals2::signal<int ()> GetHeight;
-    boost::signals2::signal<bool (CNode*), CombinerAll> ProcessMessages;
-    boost::signals2::signal<bool (CNode*, bool), CombinerAll> SendMessages;
+    boost::signals2::signal<bool (const CChainParams&, CNode*), CombinerAll> ProcessMessages;
+    boost::signals2::signal<bool (const Consensus::Params&, CNode*, bool), CombinerAll> SendMessages;
     boost::signals2::signal<void (NodeId, const CNode*)> InitializeNode;
     boost::signals2::signal<void (NodeId)> FinalizeNode;
 };
@@ -287,7 +287,7 @@ public:
     bool fInbound;
     bool fNetworkNode;
     bool fSuccessfullyConnected;
-    bool fDisconnect;
+    std::atomic_bool fDisconnect;
     // We use fRelayTxes for two purposes -
     // a) it allows us to not relay tx invs before receiving the peer's version message
     // b) the peer may tell us in its version message that we should not relay tx invs
@@ -299,6 +299,8 @@ public:
     CBloomFilter* pfilter;
     int nRefCount;
     NodeId id;
+    // Stored so we can pass a pointer to it across the Rust FFI for span.
+    std::string idStr;
 
     tracing::Span span;
 protected:
@@ -360,6 +362,10 @@ private:
 
 public:
 
+    // Regenerate the span for this CNode. This re-queries the log filter to see
+    // if the span should be enabled, and re-collects the logged variables.
+    void ReloadTracingSpan();
+
     NodeId GetId() const {
       return id;
     }
@@ -374,7 +380,7 @@ public:
     unsigned int GetTotalRecvSize()
     {
         unsigned int total = 0;
-        BOOST_FOREACH(const CNetMessage &msg, vRecvMsg)
+        for (const CNetMessage &msg : vRecvMsg)
             total += msg.vRecv.size() + 24;
         return total;
     }
@@ -386,7 +392,7 @@ public:
     void SetRecvVersion(int nVersionIn)
     {
         nRecvVersion = nVersionIn;
-        BOOST_FOREACH(CNetMessage &msg, vRecvMsg)
+        for (CNetMessage &msg : vRecvMsg)
             msg.SetVersion(nVersionIn);
     }
 
@@ -660,7 +666,7 @@ void RelayTransaction(const CTransaction& tx, const CDataStream& ss);
 class CAddrDB
 {
 private:
-    boost::filesystem::path pathAddr;
+    fs::path pathAddr;
 public:
     CAddrDB();
     bool Write(const CAddrMan& addr);

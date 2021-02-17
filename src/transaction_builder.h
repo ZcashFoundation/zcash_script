@@ -2,8 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
-#ifndef TRANSACTION_BUILDER_H
-#define TRANSACTION_BUILDER_H
+#ifndef ZCASH_TRANSACTION_BUILDER_H
+#define ZCASH_TRANSACTION_BUILDER_H
 
 #include "coins.h"
 #include "consensus/params.h"
@@ -53,16 +53,17 @@ struct OutputDescriptionInfo {
 struct JSDescriptionInfo {
     Ed25519VerificationKey joinSplitPubKey;
     uint256 anchor;
-    std::array<libzcash::JSInput, ZC_NUM_JS_INPUTS> inputs;
-    std::array<libzcash::JSOutput, ZC_NUM_JS_OUTPUTS> outputs;
+    // We store references to these so they are correctly randomised for the caller.
+    std::array<libzcash::JSInput, ZC_NUM_JS_INPUTS>& inputs;
+    std::array<libzcash::JSOutput, ZC_NUM_JS_OUTPUTS>& outputs;
     CAmount vpub_old;
     CAmount vpub_new;
 
     JSDescriptionInfo(
         Ed25519VerificationKey joinSplitPubKey,
         uint256 anchor,
-        std::array<libzcash::JSInput, ZC_NUM_JS_INPUTS> inputs,
-        std::array<libzcash::JSOutput, ZC_NUM_JS_OUTPUTS> outputs,
+        std::array<libzcash::JSInput, ZC_NUM_JS_INPUTS>& inputs,
+        std::array<libzcash::JSOutput, ZC_NUM_JS_OUTPUTS>& outputs,
         CAmount vpub_old,
         CAmount vpub_new) : joinSplitPubKey(joinSplitPubKey), anchor(anchor), inputs(inputs), outputs(outputs), vpub_old(vpub_old), vpub_new(vpub_new) {}
 
@@ -188,4 +189,4 @@ private:
         std::array<size_t, ZC_NUM_JS_OUTPUTS>& outputMap);
 };
 
-#endif /* TRANSACTION_BUILDER_H */
+#endif // ZCASH_TRANSACTION_BUILDER_H

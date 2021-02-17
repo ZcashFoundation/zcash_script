@@ -3,6 +3,7 @@
 
 #include "base58.h"
 #include "chainparams.h"
+#include "fs.h"
 #include "key_io.h"
 #include "main.h"
 #include "primitives/block.h"
@@ -15,8 +16,6 @@
 #include "zcash/NoteEncryption.hpp"
 
 #include <optional>
-
-#include <boost/filesystem.hpp>
 
 using ::testing::Return;
 
@@ -120,8 +119,8 @@ std::pair<uint256, uint256> GetWitnessesAndAnchors(TestWallet& wallet,
 
 TEST(WalletTests, SetupDatadirLocationRunAsFirstTest) {
     // Get temporary and unique path for file.
-    boost::filesystem::path pathTemp = boost::filesystem::temp_directory_path() / boost::filesystem::unique_path();
-    boost::filesystem::create_directories(pathTemp);
+    fs::path pathTemp = fs::temp_directory_path() / fs::unique_path();
+    fs::create_directories(pathTemp);
     mapArgs["-datadir"] = pathTemp.string();
 }
 
@@ -1960,7 +1959,7 @@ TEST(WalletTests, MarkAffectedSaplingTransactionsDirty) {
     auto scriptPubKey = GetScriptForDestination(tsk.GetPubKey().GetID());
 
     // Generate shielding tx from transparent to Sapling
-    // 0.0005 t-ZEC in, 0.0004 z-ZEC out, 0.0001 t-ZEC fee
+    // 0.0005 t-ZEC in, 0.0004 z-ZEC out, default fee
     auto builder = TransactionBuilder(consensusParams, 1, &keystore);
     builder.AddTransparentInput(COutPoint(), scriptPubKey, 50000);
     builder.AddSaplingOutput(extfvk.fvk.ovk, pk, 40000, {});
@@ -2014,7 +2013,7 @@ TEST(WalletTests, MarkAffectedSaplingTransactionsDirty) {
     auto witness = saplingTree.witness();
 
     // Create a Sapling-only transaction
-    // 0.0004 z-ZEC in, 0.00025 z-ZEC out, 0.0001 t-ZEC fee, 0.00005 z-ZEC change
+    // 0.0004 z-ZEC in, 0.00025 z-ZEC out, default fee, 0.00005 z-ZEC change
     auto builder2 = TransactionBuilder(consensusParams, 2);
     builder2.AddSaplingSpend(expsk, note, anchor, witness);
     builder2.AddSaplingOutput(extfvk.fvk.ovk, pk, 25000, {});

@@ -10,6 +10,7 @@
 #include "chain.h"
 #include "chainparams.h"
 #include "clientversion.h"
+#include "fs.h"
 #include "test/data/alertTests.raw.h"
 
 #include "main.h"
@@ -17,7 +18,6 @@
 #include "rpc/server.h"
 #include "serialize.h"
 #include "streams.h"
-#include "util.h"
 #include "utilstrencodings.h"
 #include "utiltest.h"
 #include "warnings.h"
@@ -26,8 +26,6 @@
 
 #include <fstream>
 
-#include <boost/filesystem/operations.hpp>
-#include <boost/foreach.hpp>
 #include <boost/test/unit_test.hpp>
 
 #include "key.h"
@@ -272,7 +270,7 @@ struct ReadAlerts : public TestingSetup
     }
     ~ReadAlerts() { }
 
-    static std::vector<std::string> read_lines(boost::filesystem::path filepath)
+    static std::vector<std::string> read_lines(fs::path filepath)
     {
         std::vector<std::string> result;
 
@@ -295,7 +293,7 @@ BOOST_AUTO_TEST_CASE(AlertApplies)
     SetMockTime(11);
     const std::vector<unsigned char>& alertKey = Params(CBaseChainParams::MAIN).AlertKey();
 
-    BOOST_FOREACH(const CAlert& alert, alerts)
+    for (const CAlert& alert : alerts)
     {
         BOOST_CHECK(alert.CheckSignature(alertKey));
     }
@@ -354,12 +352,12 @@ BOOST_AUTO_TEST_CASE(AlertNotify)
     SetMockTime(11);
     const std::vector<unsigned char>& alertKey = Params(CBaseChainParams::MAIN).AlertKey();
 
-    boost::filesystem::path temp = GetTempPath() /
-        boost::filesystem::unique_path("alertnotify-%%%%.txt");
+    fs::path temp = fs::temp_directory_path() /
+        fs::unique_path("alertnotify-%%%%.txt");
 
     mapArgs["-alertnotify"] = std::string("echo %s >> ") + temp.string();
 
-    BOOST_FOREACH(CAlert alert, alerts)
+    for (CAlert alert : alerts)
         alert.ProcessAlert(alertKey, false);
 
     std::vector<std::string> r = read_lines(temp);
@@ -383,7 +381,7 @@ BOOST_AUTO_TEST_CASE(AlertNotify)
     BOOST_CHECK_EQUAL(r[4], "'Alert 4, reenables RPC' "); // dashes should be removed
     BOOST_CHECK_EQUAL(r[5], "'Evil Alert; /bin/ls; echo ' ");
 #endif
-    boost::filesystem::remove(temp);
+    fs::remove(temp);
 
     SetMockTime(0);
     mapAlerts.clear();
@@ -411,7 +409,7 @@ BOOST_AUTO_TEST_CASE(AlertDisablesRPC)
     mapAlerts.clear();
 }
 
-static bool falseFunc(const CChainParams&) { return false; }
+static bool falseFunc(const Consensus::Params&) { return false; }
 
 void PartitionAlertTestImpl(const Consensus::Params& params, int startTime, int expectedTotal, int expectedSlow, int expectedFast)
 {
@@ -437,14 +435,14 @@ void PartitionAlertTestImpl(const Consensus::Params& params, int startTime, int 
     // Test 1: chain with blocks every nPowTargetSpacing seconds,
     // as normal, no worries:
     SetMiscWarning("", 0);
-    PartitionCheck(falseFunc, csDummy, &indexDummy[799]);
+    PartitionCheck(falseFunc, params, csDummy, &indexDummy[799]);
     BOOST_CHECK_EQUAL("", GetMiscWarning().first);
 
     // Test 2: go 3.5 hours without a block, expect a warning:
     now += 3*60*60+30*60;
     SetMockTime(now);
     SetMiscWarning("", 0);
-    PartitionCheck(falseFunc, csDummy, &indexDummy[799]);
+    PartitionCheck(falseFunc, params, csDummy, &indexDummy[799]);
     std::string expectedSlowErr = strprintf("WARNING: Check your network connection, %d blocks received in the last 4 hours (%d expected)", expectedSlow, expectedTotal);
     auto warning = GetMiscWarning();
     // advance 5 seconds so alert time will be in the past
@@ -458,7 +456,7 @@ void PartitionAlertTestImpl(const Consensus::Params& params, int startTime, int 
     now += 60*10;
     SetMockTime(now);
     SetMiscWarning("", 0);
-    PartitionCheck(falseFunc, csDummy, &indexDummy[799]);
+    PartitionCheck(falseFunc, params, csDummy, &indexDummy[799]);
     BOOST_CHECK_EQUAL("", GetMiscWarning().first);
 
     // Test 4: get 2.5 times as many blocks as expected:
@@ -471,7 +469,7 @@ void PartitionAlertTestImpl(const Consensus::Params& params, int startTime, int 
     SetMockTime(now);
 
     SetMiscWarning("", 0);
-    PartitionCheck(falseFunc, csDummy, &indexDummy[799]);
+    PartitionCheck(falseFunc, params, csDummy, &indexDummy[799]);
     std::string expectedFastErr = strprintf("WARNING: Abnormally high number of blocks generated, %d blocks received in the last 4 hours (%d expected)", expectedFast, expectedTotal);
     warning = GetMiscWarning();
     // advance 5 seconds so alert time will be in the past
@@ -492,7 +490,7 @@ BOOST_AUTO_TEST_CASE(PartitionAlert)
 
 BOOST_AUTO_TEST_CASE(PartitionAlertBlossomOnly)
 {
-    PartitionAlertTestImpl(RegtestActivateBlossom(false), 1500000000, 96 * 2, 12 * 2, 240 * 2);
+    PartitionAlertTestImpl(RegtestActivateBlossom(false).GetConsensus(), 1500000000, 96 * 2, 12 * 2, 240 * 2);
     RegtestDeactivateBlossom();
 }
 
@@ -502,7 +500,7 @@ BOOST_AUTO_TEST_CASE(PartitionAlertBlossomActivates)
     // in the slow case, all of the blocks will be blossom blocks
     // in the fast case, 96 blocks will be blossom => 96 * 75s * 2/5 = 2880s spent on blossom
     // => (14400 - 2880) / (150 * 2/5) = 11520 / 60 = 192 pre blossom blocks
-    PartitionAlertTestImpl(RegtestActivateBlossom(false, 799 - 96), 2000000000, 144, 12 * 2, 192 + 96);
+    PartitionAlertTestImpl(RegtestActivateBlossom(false, 799 - 96).GetConsensus(), 2000000000, 144, 12 * 2, 192 + 96);
     RegtestDeactivateBlossom();
 }
 

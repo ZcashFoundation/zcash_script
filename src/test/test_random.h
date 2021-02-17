@@ -1,10 +1,10 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2014 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
-#ifndef BITCOIN_TEST_RANDOM_H
-#define BITCOIN_TEST_RANDOM_H
+#ifndef BITCOIN_TEST_TEST_RANDOM_H
+#define BITCOIN_TEST_TEST_RANDOM_H
 
 #include "random.h"
 

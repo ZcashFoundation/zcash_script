@@ -2,8 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
-#ifndef ASYNCRPCOPERATION_MERGETOADDRESS_H
-#define ASYNCRPCOPERATION_MERGETOADDRESS_H
+#ifndef ZCASH_WALLET_ASYNCRPCOPERATION_MERGETOADDRESS_H
+#define ZCASH_WALLET_ASYNCRPCOPERATION_MERGETOADDRESS_H
 
 #include "amount.h"
 #include "asyncrpcoperation.h"
@@ -22,9 +22,6 @@
 #include <univalue.h>
 
 #include <rust/ed25519/types.h>
-
-// Default transaction fee if caller does not specify one.
-#define MERGE_TO_ADDRESS_OPERATION_DEFAULT_MINERS_FEE 10000
 
 using namespace libzcash;
 
@@ -65,7 +62,7 @@ public:
         std::vector<MergeToAddressInputSproutNote> sproutNoteInputs,
         std::vector<MergeToAddressInputSaplingNote> saplingNoteInputs,
         MergeToAddressRecipient recipient,
-        CAmount fee = MERGE_TO_ADDRESS_OPERATION_DEFAULT_MINERS_FEE,
+        CAmount fee = DEFAULT_FEE,
         UniValue contextInfo = NullUniValue);
     virtual ~AsyncRPCOperation_mergetoaddress();
 
@@ -87,7 +84,7 @@ private:
     friend class TEST_FRIEND_AsyncRPCOperation_mergetoaddress; // class for unit testing
 
     UniValue contextinfo_; // optional data to include in return value from getStatus()
-    
+
     bool isUsingBuilder_; // Indicates that no Sprout addresses are involved
     uint32_t consensusBranchId_;
     CAmount fee_;
@@ -194,4 +191,4 @@ public:
 };
 
 
-#endif /* ASYNCRPCOPERATION_MERGETOADDRESS_H */
+#endif // ZCASH_WALLET_ASYNCRPCOPERATION_MERGETOADDRESS_H

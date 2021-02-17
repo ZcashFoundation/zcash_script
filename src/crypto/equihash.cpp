@@ -22,6 +22,7 @@
 
 #include <optional>
 
+#ifdef ENABLE_MINING
 void eh_HashState::Update(const unsigned char *input, size_t inputLen)
 {
     blake2b_update(inner.get(), input, inputLen);
@@ -31,6 +32,7 @@ void eh_HashState::Finalize(unsigned char *hash, size_t hLen)
 {
     blake2b_finalize(inner.get(), hash, hLen);
 }
+#endif
 
 // Used in TestEquihashValidator.
 
@@ -120,7 +122,7 @@ void ExpandArray(const unsigned char* in, size_t in_len,
 // comparison
 void EhIndexToArray(const eh_index i, unsigned char* array)
 {
-    BOOST_STATIC_ASSERT(sizeof(eh_index) == 4);
+    static_assert(sizeof(eh_index) == 4);
     eh_index bei = htobe32(i);
     memcpy(array, &bei, sizeof(eh_index));
 }
@@ -149,7 +151,6 @@ std::vector<unsigned char> GetMinimalFromIndices(std::vector<eh_index> indices,
 #include <iostream>
 #include <stdexcept>
 
-#include <boost/optional.hpp>
 
 static EhSolverCancelledException solver_cancelled;
 
@@ -178,7 +179,7 @@ void GenerateHash(const eh_HashState& base_state, eh_index g,
 // comparison
 eh_index ArrayToEhIndex(const unsigned char* array)
 {
-    BOOST_STATIC_ASSERT(sizeof(eh_index) == 4);
+    static_assert(sizeof(eh_index) == 4);
     eh_index bei;
     memcpy(&bei, array, sizeof(eh_index));
     return be32toh(bei);
@@ -187,7 +188,7 @@ eh_index ArrayToEhIndex(const unsigned char* array)
 eh_trunc TruncateIndex(const eh_index i, const unsigned int ilen)
 {
     // Truncate to 8 bits
-    BOOST_STATIC_ASSERT(sizeof(eh_trunc) == 1);
+    static_assert(sizeof(eh_trunc) == 1);
     return (i >> (ilen - 8)) & 0xff;
 }
 
@@ -224,7 +225,7 @@ StepRow<WIDTH>::StepRow(const unsigned char* hashIn, size_t hInLen,
 template<size_t WIDTH> template<size_t W>
 StepRow<WIDTH>::StepRow(const StepRow<W>& a)
 {
-    BOOST_STATIC_ASSERT(W <= WIDTH);
+    static_assert(W <= WIDTH);
     std::copy(a.hash, a.hash+W, hash);
 }
 
@@ -237,19 +238,19 @@ FullStepRow<WIDTH>::FullStepRow(const unsigned char* hashIn, size_t hInLen,
 }
 
 template<size_t WIDTH> template<size_t W>
-FullStepRow<WIDTH>::FullStepRow(const FullStepRow<W>& a, const FullStepRow<W>& b, size_t len, size_t lenIndices, int trim) :
+FullStepRow<WIDTH>::FullStepRow(const FullStepRow<W>& a, const FullStepRow<W>& b, size_t len, size_t lenIndices, int lenTrim) :
         StepRow<WIDTH> {a}
 {
     assert(len+lenIndices <= W);
-    assert(len-trim+(2*lenIndices) <= WIDTH);
-    for (int i = trim; i < len; i++)
-        hash[i-trim] = a.hash[i] ^ b.hash[i];
+    assert(len-lenTrim+(2*lenIndices) <= WIDTH);
+    for (int i = lenTrim; i < len; i++)
+        hash[i-lenTrim] = a.hash[i] ^ b.hash[i];
     if (a.IndicesBefore(b, len, lenIndices)) {
-        std::copy(a.hash+len, a.hash+len+lenIndices, hash+len-trim);
-        std::copy(b.hash+len, b.hash+len+lenIndices, hash+len-trim+lenIndices);
+        std::copy(a.hash+len, a.hash+len+lenIndices, hash+len-lenTrim);
+        std::copy(b.hash+len, b.hash+len+lenIndices, hash+len-lenTrim+lenIndices);
     } else {
-        std::copy(b.hash+len, b.hash+len+lenIndices, hash+len-trim);
-        std::copy(a.hash+len, a.hash+len+lenIndices, hash+len-trim+lenIndices);
+        std::copy(b.hash+len, b.hash+len+lenIndices, hash+len-lenTrim);
+        std::copy(a.hash+len, a.hash+len+lenIndices, hash+len-lenTrim+lenIndices);
     }
 }
 
@@ -304,19 +305,19 @@ TruncatedStepRow<WIDTH>::TruncatedStepRow(const unsigned char* hashIn, size_t hI
 }
 
 template<size_t WIDTH> template<size_t W>
-TruncatedStepRow<WIDTH>::TruncatedStepRow(const TruncatedStepRow<W>& a, const TruncatedStepRow<W>& b, size_t len, size_t lenIndices, int trim) :
+TruncatedStepRow<WIDTH>::TruncatedStepRow(const TruncatedStepRow<W>& a, const TruncatedStepRow<W>& b, size_t len, size_t lenIndices, int lenTrim) :
         StepRow<WIDTH> {a}
 {
     assert(len+lenIndices <= W);
-    assert(len-trim+(2*lenIndices) <= WIDTH);
-    for (int i = trim; i < len; i++)
-        hash[i-trim] = a.hash[i] ^ b.hash[i];
+    assert(len-lenTrim+(2*lenIndices) <= WIDTH);
+    for (int i = lenTrim; i < len; i++)
+        hash[i-lenTrim] = a.hash[i] ^ b.hash[i];
     if (a.IndicesBefore(b, len, lenIndices)) {
-        std::copy(a.hash+len, a.hash+len+lenIndices, hash+len-trim);
-        std::copy(b.hash+len, b.hash+len+lenIndices, hash+len-trim+lenIndices);
+        std::copy(a.hash+len, a.hash+len+lenIndices, hash+len-lenTrim);
+        std::copy(b.hash+len, b.hash+len+lenIndices, hash+len-lenTrim+lenIndices);
     } else {
-        std::copy(b.hash+len, b.hash+len+lenIndices, hash+len-trim);
-        std::copy(a.hash+len, a.hash+len+lenIndices, hash+len-trim+lenIndices);
+        std::copy(b.hash+len, b.hash+len+lenIndices, hash+len-lenTrim);
+        std::copy(a.hash+len, a.hash+len+lenIndices, hash+len-lenTrim+lenIndices);
     }
 }
 

@@ -8,7 +8,6 @@ from test_framework.authproxy import JSONRPCException
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
-    initialize_chain,
     start_nodes, get_coinbase_address,
     wait_and_assert_operationid_status,
     nuparams, BLOSSOM_BRANCH_ID, HEARTWOOD_BRANCH_ID, CANOPY_BRANCH_ID
@@ -21,14 +20,11 @@ HAS_CANOPY = ['-nurejectoldversions=false',
     nuparams(HEARTWOOD_BRANCH_ID, 210),
     nuparams(CANOPY_BRANCH_ID, 220),
 ]
+
 class RemoveSproutShieldingTest (BitcoinTestFramework):
 
-    def setup_chain(self):
-        print("Initializing test directory "+self.options.tmpdir)
-        initialize_chain(self.options.tmpdir)
-
     def setup_nodes(self):
-        return start_nodes(4, self.options.tmpdir, extra_args=[HAS_CANOPY]*4)
+        return start_nodes(self.num_nodes, self.options.tmpdir, extra_args=[HAS_CANOPY] * self.num_nodes)
 
     def run_test (self):
 
@@ -84,7 +80,7 @@ class RemoveSproutShieldingTest (BitcoinTestFramework):
         except JSONRPCException as e:
             errorString = e.error['message']
         assert("Sprout shielding is not supported after Canopy" in errorString)
-        print("taddr -> Sprout z_shieldcoinbase tx rejected at Canopy activation on node 0")        
+        print("taddr -> Sprout z_shieldcoinbase tx rejected at Canopy activation on node 0")
 
         # Create taddr -> Sprout z_sendmany transaction on node 0. Should fail
         errorString = ''
@@ -99,7 +95,7 @@ class RemoveSproutShieldingTest (BitcoinTestFramework):
         # Create z_mergetoaddress [taddr, Sprout] -> Sprout transaction on node 0. Should fail
         errorString = ''
         try:
-            self.nodes[0].z_mergetoaddress(["ANY_TADDR", "ANY_SPROUT"], self.nodes[1].z_getnewaddress('sprout'))        
+            self.nodes[0].z_mergetoaddress(["ANY_TADDR", "ANY_SPROUT"], self.nodes[1].z_getnewaddress('sprout'))
         except JSONRPCException as e:
             errorString = e.error['message']
         assert("Sprout shielding is not supported after Canopy" in errorString)

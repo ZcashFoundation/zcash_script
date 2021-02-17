@@ -102,14 +102,15 @@ void* zcash_script_new_precomputed_tx(
     }
 }
 
-void zcash_script_free_precomputed_tx(PrecomputedTransaction* preTx)
+void zcash_script_free_precomputed_tx(void* pre_preTx)
 {
+    PrecomputedTransaction* preTx = static_cast<PrecomputedTransaction*>(pre_preTx);
     delete preTx;
     preTx = nullptr;
 }
 
 int zcash_script_verify_precomputed(
-    const PrecomputedTransaction* preTx,
+    const void* pre_preTx,
     unsigned int nIn,
     const unsigned char* scriptPubKey,
     unsigned int scriptPubKeyLen,
@@ -118,6 +119,7 @@ int zcash_script_verify_precomputed(
     uint32_t consensusBranchId,
     zcash_script_error* err)
 {
+    const PrecomputedTransaction* preTx = static_cast<const PrecomputedTransaction*>(pre_preTx);
     if (nIn >= preTx->tx.vin.size())
         return set_error(err, zcash_script_ERR_TX_INDEX);
 

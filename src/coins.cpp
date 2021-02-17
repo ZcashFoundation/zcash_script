@@ -11,6 +11,8 @@
 
 #include <assert.h>
 
+#include <tracing.h>
+
 /**
  * calculate number of bytes for the bitmask, and its number of non-zero bytes
  * each bit in the bitmask represents the availability of one output, but the
@@ -93,7 +95,11 @@ bool CCoinsViewBacked::BatchWrite(CCoinsMap &mapCoins,
 }
 bool CCoinsViewBacked::GetStats(CCoinsStats &stats) const { return base->GetStats(stats); }
 
-CCoinsKeyHasher::CCoinsKeyHasher() : salt(GetRandHash()) {}
+SaltedTxidHasher::SaltedTxidHasher()
+{
+    GetRandBytes((unsigned char*)&k0, sizeof(k0));
+    GetRandBytes((unsigned char*)&k1, sizeof(k1));
+}
 
 CCoinsViewCache::CCoinsViewCache(CCoinsView *baseIn) : CCoinsViewBacked(baseIn), hasModifier(false), cachedCoinsUsage(0) { }
 
@@ -914,18 +920,23 @@ CAmount CCoinsViewCache::GetValueIn(const CTransaction& tx) const
     return nResult;
 }
 
-bool CCoinsViewCache::HaveShieldedRequirements(const CTransaction& tx) const
+std::optional<UnsatisfiedShieldedReq> CCoinsViewCache::HaveShieldedRequirements(const CTransaction& tx) const
 {
-    boost::unordered_map<uint256, SproutMerkleTree, CCoinsKeyHasher> intermediates;
+    boost::unordered_map<uint256, SproutMerkleTree, SaltedTxidHasher> intermediates;
 
-    BOOST_FOREACH(const JSDescription &joinsplit, tx.vJoinSplit)
+    for (const JSDescription &joinsplit : tx.vJoinSplit)
     {
-        BOOST_FOREACH(const uint256& nullifier, joinsplit.nullifiers)
+        for (const uint256& nullifier : joinsplit.nullifiers)
         {
             if (GetNullifier(nullifier, SPROUT)) {
                 // If the nullifier is set, this transaction
                 // double-spends!
-                return false;
+                auto txid = tx.GetHash().ToString();
+                auto nf = nullifier.ToString();
+                TracingWarn("consensus", "Sprout double-spend detected",
+                    "txid", txid.c_str(),
+                    "nf", nf.c_str());
+                return UnsatisfiedShieldedReq::SproutDuplicateNullifier;
             }
         }
 
@@ -934,10 +945,15 @@ bool CCoinsViewCache::HaveShieldedRequirements(const CTransaction& tx) const
         if (it != intermediates.end()) {
             tree = it->second;
         } else if (!GetSproutAnchorAt(joinsplit.anchor, tree)) {
-            return false;
+            auto txid = tx.GetHash().ToString();
+            auto anchor = joinsplit.anchor.ToString();
+            TracingWarn("consensus", "Transaction uses unknown Sprout anchor",
+                "txid", txid.c_str(),
+                "anchor", anchor.c_str());
+            return UnsatisfiedShieldedReq::SproutUnknownAnchor;
         }
 
-        BOOST_FOREACH(const uint256& commitment, joinsplit.commitments)
+        for (const uint256& commitment : joinsplit.commitments)
         {
             tree.append(commitment);
         }
@@ -946,16 +962,27 @@ bool CCoinsViewCache::HaveShieldedRequirements(const CTransaction& tx) const
     }
 
     for (const SpendDescription &spendDescription : tx.vShieldedSpend) {
-        if (GetNullifier(spendDescription.nullifier, SAPLING)) // Prevent double spends
-            return false;
+        if (GetNullifier(spendDescription.nullifier, SAPLING)) { // Prevent double spends
+            auto txid = tx.GetHash().ToString();
+            auto nf = spendDescription.nullifier.ToString();
+            TracingWarn("consensus", "Sapling double-spend detected",
+                "txid", txid.c_str(),
+                "nf", nf.c_str());
+            return UnsatisfiedShieldedReq::SaplingDuplicateNullifier;
+        }
 
         SaplingMerkleTree tree;
         if (!GetSaplingAnchorAt(spendDescription.anchor, tree)) {
-            return false;
+            auto txid = tx.GetHash().ToString();
+            auto anchor = spendDescription.anchor.ToString();
+            TracingWarn("consensus", "Transaction uses unknown Sapling anchor",
+                "txid", txid.c_str(),
+                "anchor", anchor.c_str());
+            return UnsatisfiedShieldedReq::SaplingUnknownAnchor;
         }
     }
 
-    return true;
+    return std::nullopt;
 }
 
 bool CCoinsViewCache::HaveInputs(const CTransaction& tx) const
@@ -988,7 +1015,7 @@ double CCoinsViewCache::GetPriority(const CTransaction &tx, int nHeight) const
 
     // FIXME: this logic is partially duplicated between here and CreateNewBlock in miner.cpp.
     double dResult = 0.0;
-    BOOST_FOREACH(const CTxIn& txin, tx.vin)
+    for (const CTxIn& txin : tx.vin)
     {
         const CCoins* coins = AccessCoins(txin.prevout.hash);
         assert(coins);

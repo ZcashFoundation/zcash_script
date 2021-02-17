@@ -154,6 +154,7 @@ BITCOIN_CORE_H = \
   core_memusage.h \
   deprecation.h \
   experimental_features.h \
+  fs.h \
   hash.h \
   httprpc.h \
   httpserver.h \
@@ -184,6 +185,7 @@ BITCOIN_CORE_H = \
   protocol.h \
   pubkey.h \
   random.h \
+  reverse_iterator.h \
   reverselock.h \
   rpc/client.h \
   rpc/protocol.h \
@@ -414,6 +416,7 @@ libbitcoin_util_a_SOURCES = \
   compat/glibc_sanity.cpp \
   compat/glibcxx_sanity.cpp \
   compat/strnlen.cpp \
+  fs.cpp \
   logging.cpp \
   random.cpp \
   rpc/protocol.cpp \
@@ -590,6 +593,7 @@ clean-local:
 	rm -f fuzz.cpp
 	rm -rf fuzzing/*/output
 	-rm -f config.h
+	-rm -f *.lib bench/*.lib test/*.lib
 
 .rc.o:
 	@test -f $(WINDRES)
