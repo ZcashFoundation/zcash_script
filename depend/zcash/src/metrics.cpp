@@ -331,7 +331,7 @@ int printStats(MetricsStats stats, bool isScreen, bool mining)
     const Consensus::Params& params = Params().GetConsensus();
     auto localsolps = GetLocalSolPS();
 
-    if (IsInitialBlockDownload(Params())) {
+    if (IsInitialBlockDownload(Params().GetConsensus())) {
         if (fReindex) {
             int downloadPercent = nSizeReindexed * 100 / nFullSizeToReindex;
             std::cout << "      " << _("Reindexing blocks") << " | "
@@ -419,7 +419,7 @@ int printMiningStatus(bool mining)
             }
             if (fvNodesEmpty) {
                 std::cout << _("Mining is paused while waiting for connections.") << std::endl;
-            } else if (IsInitialBlockDownload(Params())) {
+            } else if (IsInitialBlockDownload(Params().GetConsensus())) {
                 std::cout << _("Mining is paused while downloading blocks.") << std::endl;
             } else {
                 std::cout << _("Mining is paused (a JoinSplit may be in progress).") << std::endl;

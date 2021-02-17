@@ -95,7 +95,7 @@ public:
         consensus.nMajorityRejectBlockOutdated = 950;
         consensus.nMajorityWindow = 4000;
         const size_t N = 200, K = 9;
-        BOOST_STATIC_ASSERT(equihash_parameters_acceptable(N, K));
+        static_assert(equihash_parameters_acceptable(N, K));
         consensus.nEquihashN = N;
         consensus.nEquihashK = K;
         consensus.powLimit = uint256S("0007ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
@@ -106,6 +106,7 @@ public:
         consensus.nPreBlossomPowTargetSpacing = Consensus::PRE_BLOSSOM_POW_TARGET_SPACING;
         consensus.nPostBlossomPowTargetSpacing = Consensus::POST_BLOSSOM_POW_TARGET_SPACING;
         consensus.nPowAllowMinDifficultyBlocksAfterHeight = std::nullopt;
+        consensus.fPowNoRetargeting = false;
         consensus.vUpgrades[Consensus::BASE_SPROUT].nProtocolVersion = 170002;
         consensus.vUpgrades[Consensus::BASE_SPROUT].nActivationHeight =
             Consensus::NetworkUpgrade::ALWAYS_ACTIVE;
@@ -122,10 +123,16 @@ public:
             uint256S("00000000025a57200d898ac7f21e26bf29028bbe96ec46e05b2c17cc9db9e4f3");
         consensus.vUpgrades[Consensus::UPGRADE_BLOSSOM].nProtocolVersion = 170009;
         consensus.vUpgrades[Consensus::UPGRADE_BLOSSOM].nActivationHeight = 653600;
+        consensus.vUpgrades[Consensus::UPGRADE_BLOSSOM].hashActivationBlock =
+            uint256S("00000000020bebb33c1b34b67a982a328ab212a206dacbe561a7cc94aab3e9bb");
         consensus.vUpgrades[Consensus::UPGRADE_HEARTWOOD].nProtocolVersion = 170011;
         consensus.vUpgrades[Consensus::UPGRADE_HEARTWOOD].nActivationHeight = 903000;
+        consensus.vUpgrades[Consensus::UPGRADE_HEARTWOOD].hashActivationBlock =
+            uint256S("0000000000aad1c8698964a93c35ecf8b4d05e848de9e2fe7606067139be5643");
         consensus.vUpgrades[Consensus::UPGRADE_CANOPY].nProtocolVersion = 170013;
         consensus.vUpgrades[Consensus::UPGRADE_CANOPY].nActivationHeight = 1046400;
+        consensus.vUpgrades[Consensus::UPGRADE_CANOPY].hashActivationBlock =
+            uint256S("00000000002038016f976744c369dce7419fca30e7171dfac703af5e5f7ad1d4");
 
         consensus.nFundingPeriodLength = consensus.nPostBlossomSubsidyHalvingInterval / 48;
 
@@ -210,7 +217,7 @@ public:
 
             consensus.AddZIP207FundingStream(
                 keyConstants,
-                Consensus::FS_ZIP214_ECC,
+                Consensus::FS_ZIP214_BP,
                 consensus.vUpgrades[Consensus::UPGRADE_CANOPY].nActivationHeight, 2726400,
                 ecc_addresses);
             consensus.AddZIP207FundingStream(
@@ -226,7 +233,7 @@ public:
         }
 
         // The best chain should have at least this much work.
-        consensus.nMinimumChainWork = uint256S("000000000000000000000000000000000000000000000000017e73a331fae01c");
+        consensus.nMinimumChainWork = uint256S("00000000000000000000000000000000000000000000000004a90edff47bbdc6");
 
         /**
          * The message start string should be awesome! ⓩ❤
@@ -372,7 +379,7 @@ public:
         consensus.nMajorityRejectBlockOutdated = 75;
         consensus.nMajorityWindow = 400;
         const size_t N = 200, K = 9;
-        BOOST_STATIC_ASSERT(equihash_parameters_acceptable(N, K));
+        static_assert(equihash_parameters_acceptable(N, K));
         consensus.nEquihashN = N;
         consensus.nEquihashK = K;
         consensus.powLimit = uint256S("07ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
@@ -383,6 +390,7 @@ public:
         consensus.nPreBlossomPowTargetSpacing = Consensus::PRE_BLOSSOM_POW_TARGET_SPACING;
         consensus.nPostBlossomPowTargetSpacing = Consensus::POST_BLOSSOM_POW_TARGET_SPACING;
         consensus.nPowAllowMinDifficultyBlocksAfterHeight = 299187;
+        consensus.fPowNoRetargeting = false;
         consensus.vUpgrades[Consensus::BASE_SPROUT].nProtocolVersion = 170002;
         consensus.vUpgrades[Consensus::BASE_SPROUT].nActivationHeight =
             Consensus::NetworkUpgrade::ALWAYS_ACTIVE;
@@ -407,6 +415,8 @@ public:
             uint256S("05688d8a0e9ff7c04f6f05e6d695dc5ab43b9c4803342d77ae360b2b27d2468e");
         consensus.vUpgrades[Consensus::UPGRADE_CANOPY].nProtocolVersion = 170012;
         consensus.vUpgrades[Consensus::UPGRADE_CANOPY].nActivationHeight = 1028500;
+        consensus.vUpgrades[Consensus::UPGRADE_CANOPY].hashActivationBlock =
+            uint256S("01a4d7c6aada30c87762c1bf33fff5df7266b1fd7616bfdb5227fa59bd79e7a2");
 
         consensus.nFundingPeriodLength = consensus.nPostBlossomSubsidyHalvingInterval / 48;
 
@@ -494,7 +504,7 @@ public:
 
             consensus.AddZIP207FundingStream(
                 keyConstants,
-                Consensus::FS_ZIP214_ECC,
+                Consensus::FS_ZIP214_BP,
                 consensus.vUpgrades[Consensus::UPGRADE_CANOPY].nActivationHeight, 2796000,
                 ecc_addresses);
             consensus.AddZIP207FundingStream(
@@ -527,7 +537,7 @@ public:
         consensus.nFutureTimestampSoftForkHeight = consensus.vUpgrades[Consensus::UPGRADE_BLOSSOM].nActivationHeight + 6;
 
         // The best chain should have at least this much work.
-        consensus.nMinimumChainWork = uint256S("0x00000000000000000000000000000000000000000000000000000025ba29b8d3");
+        consensus.nMinimumChainWork = uint256S("00000000000000000000000000000000000000000000000000000025eb805e9c");
 
         pchMessageStart[0] = 0xfa;
         pchMessageStart[1] = 0x1a;
@@ -615,7 +625,7 @@ public:
         consensus.nMajorityRejectBlockOutdated = 950;
         consensus.nMajorityWindow = 1000;
         const size_t N = 48, K = 5;
-        BOOST_STATIC_ASSERT(equihash_parameters_acceptable(N, K));
+        static_assert(equihash_parameters_acceptable(N, K));
         consensus.nEquihashN = N;
         consensus.nEquihashK = K;
         consensus.powLimit = uint256S("0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f");
@@ -626,6 +636,7 @@ public:
         consensus.nPreBlossomPowTargetSpacing = Consensus::PRE_BLOSSOM_POW_TARGET_SPACING;
         consensus.nPostBlossomPowTargetSpacing = Consensus::POST_BLOSSOM_POW_TARGET_SPACING;
         consensus.nPowAllowMinDifficultyBlocksAfterHeight = 0;
+        consensus.fPowNoRetargeting = true;
         consensus.vUpgrades[Consensus::BASE_SPROUT].nProtocolVersion = 170002;
         consensus.vUpgrades[Consensus::BASE_SPROUT].nActivationHeight =
             Consensus::NetworkUpgrade::ALWAYS_ACTIVE;
@@ -721,11 +732,16 @@ public:
         consensus.vFundingStreams[idx] = fs;
     }
 
-    void UpdateRegtestPow(int64_t nPowMaxAdjustDown, int64_t nPowMaxAdjustUp, uint256 powLimit)
+    void UpdateRegtestPow(
+        int64_t nPowMaxAdjustDown,
+        int64_t nPowMaxAdjustUp,
+        uint256 powLimit,
+        bool noRetargeting)
     {
         consensus.nPowMaxAdjustDown = nPowMaxAdjustDown;
         consensus.nPowMaxAdjustUp = nPowMaxAdjustUp;
         consensus.powLimit = powLimit;
+        consensus.fPowNoRetargeting = noRetargeting;
     }
 
     void SetRegTestZIP209Enabled() {
@@ -818,6 +834,11 @@ void UpdateFundingStreamParameters(Consensus::FundingStreamIndex idx, Consensus:
     regTestParams.UpdateFundingStreamParameters(idx, fs);
 }
 
-void UpdateRegtestPow(int64_t nPowMaxAdjustDown, int64_t nPowMaxAdjustUp, uint256 powLimit) {
-    regTestParams.UpdateRegtestPow(nPowMaxAdjustDown, nPowMaxAdjustUp, powLimit);
+void UpdateRegtestPow(
+    int64_t nPowMaxAdjustDown,
+    int64_t nPowMaxAdjustUp,
+    uint256 powLimit,
+    bool noRetargeting)
+{
+    regTestParams.UpdateRegtestPow(nPowMaxAdjustDown, nPowMaxAdjustUp, powLimit, noRetargeting);
 }

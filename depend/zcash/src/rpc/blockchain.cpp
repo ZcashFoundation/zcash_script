@@ -55,7 +55,7 @@ double GetDifficultyINTERNAL(const CBlockIndex* blockindex, bool networkDifficul
     int nShiftAmount = (powLimit >> 24) & 0xff;
 
     double dDiff =
-        (double)(powLimit & 0x00ffffff) / 
+        (double)(powLimit & 0x00ffffff) /
         (double)(bits & 0x00ffffff);
 
     while (nShift < nShiftAmount)
@@ -234,7 +234,7 @@ UniValue blockToJSON(const CBlock& block, const CBlockIndex* blockindex, bool tx
     result.pushKV("finalsaplingroot", blockindex->hashFinalSaplingRoot.GetHex());
     result.pushKV("chainhistoryroot", blockindex->hashChainHistoryRoot.GetHex());
     UniValue txs(UniValue::VARR);
-    BOOST_FOREACH(const CTransaction&tx, block.vtx)
+    for (const CTransaction&tx : block.vtx)
     {
         if(txDetails)
         {
@@ -324,7 +324,7 @@ UniValue mempoolToJSON(bool fVerbose = false)
     {
         LOCK(mempool.cs);
         UniValue o(UniValue::VOBJ);
-        BOOST_FOREACH(const CTxMemPoolEntry& e, mempool.mapTx)
+        for (const CTxMemPoolEntry& e : mempool.mapTx)
         {
             const uint256& hash = e.GetTx().GetHash();
             UniValue info(UniValue::VOBJ);
@@ -336,14 +336,14 @@ UniValue mempoolToJSON(bool fVerbose = false)
             info.pushKV("currentpriority", e.GetPriority(chainActive.Height()));
             const CTransaction& tx = e.GetTx();
             set<string> setDepends;
-            BOOST_FOREACH(const CTxIn& txin, tx.vin)
+            for (const CTxIn& txin : tx.vin)
             {
                 if (mempool.exists(txin.prevout.hash))
                     setDepends.insert(txin.prevout.hash.ToString());
             }
 
             UniValue depends(UniValue::VARR);
-            BOOST_FOREACH(const string& dep, setDepends)
+            for (const string& dep : setDepends)
             {
                 depends.push_back(dep);
             }
@@ -359,7 +359,7 @@ UniValue mempoolToJSON(bool fVerbose = false)
         mempool.queryHashes(vtxid);
 
         UniValue a(UniValue::VARR);
-        BOOST_FOREACH(const uint256& hash, vtxid)
+        for (const uint256& hash : vtxid)
             a.push_back(hash.ToString());
 
         return a;
@@ -571,6 +571,37 @@ UniValue getblockhashes(const UniValue& params, bool fHelp)
     return result;
 }
 
+//! Sanity-check a height argument and interpret negative values.
+int interpretHeightArg(int nHeight, int currentHeight)
+{
+    if (nHeight < 0) {
+        nHeight += currentHeight + 1;
+    }
+    if (nHeight < 0 || nHeight > currentHeight) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Block height out of range");
+    }
+    return nHeight;
+}
+
+//! Parse and sanity-check a height argument, return its integer representation.
+int parseHeightArg(const std::string& strHeight, int currentHeight)
+{
+    // std::stoi allows (locale-dependent) whitespace and optional '+' sign,
+    // whereas we want to be strict.
+    regex r("(?:(-?)[1-9][0-9]*|[0-9]+)");
+    if (!regex_match(strHeight, r)) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid block height parameter");
+    }
+    int nHeight;
+    try {
+        nHeight = std::stoi(strHeight);
+    }
+    catch (const std::exception &e) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid block height parameter");
+    }
+    return interpretHeightArg(nHeight, currentHeight);
+}
+
 UniValue getblockhash(const UniValue& params, bool fHelp)
 {
     if (fHelp || params.size() != 1)
@@ -588,16 +619,7 @@ UniValue getblockhash(const UniValue& params, bool fHelp)
 
     LOCK(cs_main);
 
-    int nHeight = params[0].get_int();
-
-    if (nHeight < 0) {
-        nHeight += chainActive.Height() + 1;
-    }
-
-    if (nHeight < 0 || nHeight > chainActive.Height())
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Block height out of range");
-
-    CBlockIndex* pblockindex = chainActive[nHeight];
+    const CBlockIndex* pblockindex = chainActive[interpretHeightArg(params[0].get_int(), chainActive.Height())];
     return pblockindex->GetBlockHash().GetHex();
 }
 
@@ -712,29 +734,7 @@ UniValue getblock(const UniValue& params, bool fHelp)
 
     // If height is supplied, find the hash
     if (strHash.size() < (2 * sizeof(uint256))) {
-        // std::stoi allows characters, whereas we want to be strict
-        regex r("(?:(-?)[1-9][0-9]*|[0-9]+)");
-        if (!regex_match(strHash, r)) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid block height parameter");
-        }
-
-        int nHeight = -1;
-        try {
-            nHeight = std::stoi(strHash);
-        }
-        catch (const std::exception &e) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid block height parameter");
-        }
-
-        if (nHeight < 0) {
-            nHeight += chainActive.Height() + 1;
-        }
-
-        if (nHeight < 0 || nHeight > chainActive.Height()) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Block height out of range");
-        }
-
-        strHash = chainActive[nHeight]->GetBlockHash().GetHex();
+        strHash = chainActive[parseHeightArg(strHash, chainActive.Height())]->GetBlockHash().GetHex();
     }
 
     uint256 hash(uint256S(strHash));
@@ -1040,7 +1040,7 @@ UniValue getblockchaininfo(const UniValue& params, bool fHelp)
     UniValue obj(UniValue::VOBJ);
     obj.pushKV("chain",                 Params().NetworkIDString());
     obj.pushKV("blocks",                (int)chainActive.Height());
-    obj.pushKV("initial_block_download_complete", !IsInitialBlockDownload(Params()));
+    obj.pushKV("initial_block_download_complete", !IsInitialBlockDownload(Params().GetConsensus()));
     obj.pushKV("headers",               pindexBestHeader ? pindexBestHeader->nHeight : -1);
     obj.pushKV("bestblockhash",         chainActive.Tip()->GetBlockHash().GetHex());
     obj.pushKV("difficulty",            (double)GetNetworkDifficulty());
@@ -1049,7 +1049,7 @@ UniValue getblockchaininfo(const UniValue& params, bool fHelp)
     obj.pushKV("pruned",                fPruneMode);
     obj.pushKV("size_on_disk",          CalculateCurrentUsage());
 
-    if (IsInitialBlockDownload(Params()))
+    if (IsInitialBlockDownload(Params().GetConsensus()))
         obj.pushKV("estimatedheight",       EstimateNetHeight(Params().GetConsensus(), (int)chainActive.Height(), chainActive.Tip()->GetMedianTimePast()));
     else
         obj.pushKV("estimatedheight",       (int)chainActive.Height());
@@ -1064,7 +1064,9 @@ UniValue getblockchaininfo(const UniValue& params, bool fHelp)
     valuePools.push_back(ValuePoolDesc("sapling", tip->nChainSaplingValue, std::nullopt));
     obj.pushKV("valuePools",            valuePools);
 
-    const Consensus::Params& consensusParams = Params().GetConsensus();
+    const CChainParams& chainparams = Params();
+    const Consensus::Params& consensusParams = chainparams.GetConsensus();
+
     UniValue softforks(UniValue::VARR);
     softforks.push_back(SoftForkDesc("bip34", 2, tip, consensusParams));
     softforks.push_back(SoftForkDesc("bip66", 3, tip, consensusParams));
@@ -1092,7 +1094,7 @@ UniValue getblockchaininfo(const UniValue& params, bool fHelp)
     }
 
     if (Params().NetworkIDString() == "regtest") {
-        obj.pushKV("fullyNotified", ChainIsFullyNotified());
+        obj.pushKV("fullyNotified", ChainIsFullyNotified(chainparams));
     }
 
     return obj;
@@ -1152,9 +1154,9 @@ UniValue getchaintips(const UniValue& params, bool fHelp)
        known blocks, and successively remove blocks that appear as pprev
        of another block.  */
     std::set<const CBlockIndex*, CompareBlocksByHeight> setTips;
-    BOOST_FOREACH(const PAIRTYPE(const uint256, CBlockIndex*)& item, mapBlockIndex)
+    for (const std::pair<const uint256, CBlockIndex*>& item : mapBlockIndex)
         setTips.insert(item.second);
-    BOOST_FOREACH(const PAIRTYPE(const uint256, CBlockIndex*)& item, mapBlockIndex)
+    for (const std::pair<const uint256, CBlockIndex*>& item : mapBlockIndex)
     {
         const CBlockIndex* pprev = item.second->pprev;
         if (pprev)
@@ -1166,7 +1168,7 @@ UniValue getchaintips(const UniValue& params, bool fHelp)
 
     /* Construct the output array.  */
     UniValue res(UniValue::VARR);
-    BOOST_FOREACH(const CBlockIndex* block, setTips)
+    for (const CBlockIndex* block : setTips)
     {
         UniValue obj(UniValue::VOBJ);
         obj.pushKV("height", block->nHeight);
@@ -1198,6 +1200,114 @@ UniValue getchaintips(const UniValue& params, bool fHelp)
         obj.pushKV("status", status);
 
         res.push_back(obj);
+    }
+
+    return res;
+}
+
+UniValue z_gettreestate(const UniValue& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "z_gettreestate \"hash|height\"\n"
+            "Return information about the given block's tree state.\n"
+            "\nArguments:\n"
+            "1. \"hash|height\"          (string, required) The block hash or height. Height can be negative where -1 is the last known valid block\n"
+            "\nResult:\n"
+            "{\n"
+            "  \"hash\": \"hash\",         (string) hex block hash\n"
+            "  \"height\": n,            (numeric) block height\n"
+            "  \"sprout\": {\n"
+            "    \"skipHash\": \"hash\",   (string) hash of most recent block with more information\n"
+            "    \"commitments\": {\n"
+            "      \"finalRoot\": \"hex\", (string)\n"
+            "      \"finalState\": \"hex\" (string)\n"
+            "    }\n"
+            "  },\n"
+            "  \"sapling\": {\n"
+            "    \"skipHash\": \"hash\",   (string) hash of most recent block with more information\n"
+            "    \"commitments\": {\n"
+            "      \"finalRoot\": \"hex\", (string)\n"
+            "      \"finalState\": \"hex\" (string)\n"
+            "    }\n"
+            "  }\n"
+            "}\n"
+            "\nExamples:\n"
+            + HelpExampleCli("z_gettreestate", "\"00000000febc373a1da2bd9f887b105ad79ddc26ac26c2b28652d64e5207c5b5\"")
+            + HelpExampleRpc("z_gettreestate", "\"00000000febc373a1da2bd9f887b105ad79ddc26ac26c2b28652d64e5207c5b5\"")
+            + HelpExampleCli("z_gettreestate", "12800")
+            + HelpExampleRpc("z_gettreestate", "12800")
+        );
+
+    LOCK(cs_main);
+
+    std::string strHash = params[0].get_str();
+
+    // If height is supplied, find the hash
+    if (strHash.size() < (2 * sizeof(uint256))) {
+        strHash = chainActive[parseHeightArg(strHash, chainActive.Height())]->GetBlockHash().GetHex();
+    }
+    uint256 hash(uint256S(strHash));
+
+    if (mapBlockIndex.count(hash) == 0)
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
+    const CBlockIndex* const pindex = mapBlockIndex[hash];
+    if (!chainActive.Contains(pindex)) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Requested block is not part of the main chain");
+    }
+
+    UniValue res(UniValue::VOBJ);
+    res.pushKV("hash", pindex->GetBlockHash().GetHex());
+    res.pushKV("height", pindex->nHeight);
+    res.pushKV("time", int64_t(pindex->nTime));
+
+    // sprout
+    {
+        UniValue sprout_result(UniValue::VOBJ);
+        UniValue sprout_commitments(UniValue::VOBJ);
+        sprout_commitments.pushKV("finalRoot", pindex->hashFinalSproutRoot.GetHex());
+        SproutMerkleTree tree;
+        if (pcoinsTip->GetSproutAnchorAt(pindex->hashFinalSproutRoot, tree)) {
+            CDataStream s(SER_NETWORK, PROTOCOL_VERSION);
+            s << tree;
+            sprout_commitments.pushKV("finalState", HexStr(s.begin(), s.end()));
+        } else {
+            // Set skipHash to the most recent block that has a finalState.
+            const CBlockIndex* pindex_skip = pindex->pprev;
+            while (pindex_skip && !pcoinsTip->GetSproutAnchorAt(pindex_skip->hashFinalSproutRoot, tree)) {
+                pindex_skip = pindex_skip->pprev;
+            }
+            if (pindex_skip) {
+                sprout_result.pushKV("skipHash", pindex_skip->GetBlockHash().GetHex());
+            }
+        }
+        sprout_result.pushKV("commitments", sprout_commitments);
+        res.pushKV("sprout", sprout_result);
+    }
+
+    // sapling
+    {
+        UniValue sapling_result(UniValue::VOBJ);
+        UniValue sapling_commitments(UniValue::VOBJ);
+        sapling_commitments.pushKV("finalRoot", pindex->hashFinalSaplingRoot.GetHex());
+        bool need_skiphash = false;
+        SaplingMerkleTree tree;
+        if (pcoinsTip->GetSaplingAnchorAt(pindex->hashFinalSaplingRoot, tree)) {
+            CDataStream s(SER_NETWORK, PROTOCOL_VERSION);
+            s << tree;
+            sapling_commitments.pushKV("finalState", HexStr(s.begin(), s.end()));
+        } else {
+            // Set skipHash to the most recent block that has a finalState.
+            const CBlockIndex* pindex_skip = pindex->pprev;
+            while (pindex_skip && !pcoinsTip->GetSaplingAnchorAt(pindex_skip->hashFinalSaplingRoot, tree)) {
+                pindex_skip = pindex_skip->pprev;
+            }
+            if (pindex_skip) {
+                sapling_result.pushKV("skipHash", pindex_skip->GetBlockHash().GetHex());
+            }
+        }
+        sapling_result.pushKV("commitments", sapling_commitments);
+        res.pushKV("sapling", sapling_result);
     }
 
     return res;
@@ -1324,6 +1434,7 @@ static const CRPCCommand commands[] =
     { "blockchain",         "getblockhash",           &getblockhash,           true  },
     { "blockchain",         "getblockheader",         &getblockheader,         true  },
     { "blockchain",         "getchaintips",           &getchaintips,           true  },
+    { "blockchain",         "z_gettreestate",         &z_gettreestate,         true  },
     { "blockchain",         "getdifficulty",          &getdifficulty,          true  },
     { "blockchain",         "getmempoolinfo",         &getmempoolinfo,         true  },
     { "blockchain",         "getrawmempool",          &getrawmempool,          true  },
@@ -1332,7 +1443,7 @@ static const CRPCCommand commands[] =
     { "blockchain",         "verifychain",            &verifychain,            true  },
 
     // insightexplorer
-    { "blockchain",         "getblockdeltas",         &getblockdeltas,         false },    
+    { "blockchain",         "getblockdeltas",         &getblockdeltas,         false },
     { "blockchain",         "getblockhashes",         &getblockhashes,         true  },
 
     /* Not shown in help */

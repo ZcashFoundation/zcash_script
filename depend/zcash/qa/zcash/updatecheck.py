@@ -39,10 +39,6 @@ import sys
 import datetime
 
 SOURCE_ROOT = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..")
-# The email for this account is taylor@electriccoin.co and the token does not
-# have any privileges.
-GITHUB_API_BASIC_AUTH_USER = "taylor-ecc"
-GITHUB_API_BASIC_AUTH_PASSWORD = "df2cb6d13a29837e9dc97c7db1eff058e8fa6618"
 
 def get_dependency_list():
     dependencies = [
@@ -70,6 +66,11 @@ def get_dependency_list():
             GithubTagReleaseLister("jedisct1", "libsodium", "^(\d+)\.(\d+)\.(\d+)$",
                 { "1.0.17": (1, 0, 17) }),
             DependsVersionGetter("libsodium")),
+        # b2 matches the Boost version
+        Dependency("native_b2",
+            GithubTagReleaseLister("boostorg", "boost", "^boost-(\d+)\.(\d+)\.(\d+)$",
+                { "boost-1.69.0": (1, 69, 0), "boost-1.69.0-beta1": None }),
+            DependsVersionGetter("boost")),
         Dependency("native_ccache",
             GithubTagReleaseLister("ccache", "ccache", "^v?(\d+)\.(\d+)(?:\.(\d+))?$",
                 { "v3.5.1": (3, 5, 1), "v3.6": (3, 6)}),
@@ -100,63 +101,26 @@ def get_dependency_list():
             DependsVersionGetter("utfcpp"))
     ]
 
-    # Rust crates (filename portion: depends/packages/crate_<NAME>.mk).
-    crates = [
-        "addchain", "aes", "aesni", "aes_soft", "ansi_term",
-        "arrayvec", "arrayref", "autocfg",
-        "base64", "bellman", "bigint", "bit_vec", "blake2b_simd", "blake2s_simd",
-        "block_buffer", "block_cipher", "block_modes", "block_padding",
-        "bls12_381", "byteorder",
-        "cfg_if", "chrono", "constant_time_eq", "cpuid_bool",
-        "crossbeam_channel", "crossbeam_deque", "crossbeam_epoch",
-        "crossbeam_utils", "crossbeam_queue", "crossbeam",
-        "crunchy", "crypto_api", "crypto_api_chachapoly", "curve25519_dalek",
-        "directories", "dirs_sys", "digest",
-        "ed25519_zebra", "equihash",
-        "ff", "ff_derive", "fpe", "futures_cpupool", "futures",
-        "generic_array", "getrandom", "group",
-        "hermit_abi", "hex", "jubjub", "log",
-        "lazy_static", "libc", "matchers", "maybe_uninit", "memoffset",
-        "num_bigint", "num_cpus", "num_integer", "num_traits",
-        "ppv_lite86", "proc_macro2", "quote",
-        "opaque_debug", "pairing", "rand", "typenum",
-        "rand_chacha", "rand_core", "rand_hc", "rand_xorshift",
-        "redox_syscall", "redox_users",
-        "regex", "regex_automata", "regex_syntax", "rust_argon2",
-        "scopeguard", "serde",
-        "serde_derive", "sha2", "sharded_slab", "subtle", "syn", "thiserror",
-        "thiserror_impl", "thread_local", "time", "tracing", "tracing_appender",
-        "tracing_attributes", "tracing_core", "tracing_subscriber",
-        "unicode_xid", "version_check", "wasi",
-        "winapi_i686_pc_windows_gnu", "winapi",
-        "winapi_x86_64_pc_windows_gnu", "zcash_history", "zcash_primitives",
-        "zcash_proofs", "zeroize"
-    ]
-
-    # Sometimes we need multiple versions of a crate, in which case there can't
-    # be a direct mapping between the filename portion and the crate name.
-    crate_name_exceptions = {
-    }
-
-    for crate in crates:
-        if crate in crate_name_exceptions.keys():
-            crate_name = crate_name_exceptions[crate]
-        else:
-            crate_name = crate
-
-        # Rust dependency checks are temporarily disabled:
-        # https://github.com/zcash/zcash/issues/4726
-        # No-op statement to keep pyflakes happy:
-        crate_name = crate_name
-
-        # dependencies.append(
-        #     Dependency("crate_" + crate,
-        #         RustCrateReleaseLister(crate_name),
-        #         DependsVersionGetter("crate_" + crate)
-        #     )
-        # )
-
     return dependencies
+
+class GitHubToken:
+    def __init__(self):
+        token_path = os.path.join(SOURCE_ROOT, ".updatecheck-token")
+        try:
+            with open(token_path) as f:
+                token = f.read().strip()
+                self._user = token.split(":")[0]
+                self._password = token.split(":")[1]
+        except:
+            print("Please make sure a GitHub API token is in .updatecheck-token in the root of this repository.")
+            print("The format is username:hex-token.")
+            sys.exit(1)
+
+    def user(self):
+        return self.user
+
+    def password(self):
+        return self.password
 
 class Version(list):
     def __init__(self, version_tuple):
@@ -207,6 +171,7 @@ class GithubTagReleaseLister:
         self.repo = repo
         self.regex = regex
         self.testcases = testcases
+        self.token = GitHubToken()
 
         for tag, expected in testcases.items():
             match = re.match(self.regex, tag)
@@ -232,52 +197,11 @@ class GithubTagReleaseLister:
 
     def all_tag_names(self):
         url = "https://api.github.com/repos/" + safe(self.org) + "/" + safe(self.repo) + "/git/refs/tags"
-        r = requests.get(url, auth=requests.auth.HTTPBasicAuth(GITHUB_API_BASIC_AUTH_USER, GITHUB_API_BASIC_AUTH_PASSWORD))
+        r = requests.get(url, auth=requests.auth.HTTPBasicAuth(self.token.user(), self.token.password()))
         if r.status_code != 200:
             raise RuntimeError("Request to GitHub tag API failed.")
         json = r.json()
         return list(map(lambda t: t["ref"].split("/")[-1], json))
-
-class RustCrateReleaseLister:
-    def __init__(self, crate):
-        self.crate = crate
-
-    def known_releases(self):
-        url = "https://crates.io/api/v1/crates/" + safe(self.crate) + "/versions"
-        r = requests.get(url)
-        if r.status_code != 200:
-            raise RuntimeError("Request to crates.io versions API failed.")
-        json = r.json()
-        version_numbers = list(map(lambda t: t["num"], json["versions"]))
-
-        release_versions = []
-        for num in version_numbers:
-            match = re.match("^(\d+)\.(\d+)\.(\d+)$", num)
-            if match:
-                release_versions.append(Version(match.groups()))
-
-        if len(release_versions) == 0:
-            raise RuntimeError("Failed to list release versions from crates.io.")
-
-        return release_versions
-
-class LibGmpReleaseLister:
-    def known_releases(self):
-        url = "https://gmplib.org/download/gmp/"
-        r = requests.get(url)
-        if r.status_code != 200:
-            raise RuntimeError("Request to libgmp download directory failed.")
-        page = r.text
-
-        # We use a set because the search will result in duplicates.
-        release_versions = set()
-        for match in re.findall("gmp-(\d+)\.(\d+)\.(\d+)\.tar.bz2", page):
-            release_versions.add(Version(match))
-
-        if Version((6, 1, 2)) not in release_versions:
-            raise RuntimeError("Missing expected version from libgmp download directory.")
-
-        return list(release_versions)
 
 class BerkeleyDbReleaseLister:
     def known_releases(self):
@@ -303,7 +227,7 @@ class DependsVersionGetter:
 
     def current_version(self):
         mk_file_path = os.path.join(SOURCE_ROOT, "depends", "packages", safe_depends(self.name) + ".mk")
-        mk_file = open(mk_file_path, 'r').read()
+        mk_file = open(mk_file_path, 'r', encoding='utf8').read()
 
         regexp_whitelist = [
             "package\)_version=(\d+)\.(\d+)\.(\d+)$",
@@ -329,7 +253,7 @@ class DependsVersionGetter:
 class LevelDbVersionGetter:
     def current_version(self):
         header_path = os.path.join(SOURCE_ROOT, "src", "leveldb", "include", "leveldb", "db.h")
-        header_contents = open(header_path, 'r').read()
+        header_contents = open(header_path, 'r', encoding='utf8').read()
 
         match = re.search("kMajorVersion\s*=\s*(\d+);\s*.*kMinorVersion\s*=\s*(\d+);\s*$", header_contents, re.MULTILINE)
         if match:
@@ -340,7 +264,7 @@ class LevelDbVersionGetter:
 class UnivalueVersionGetter:
     def current_version(self):
         configure_path = os.path.join(SOURCE_ROOT, "src", "univalue", "configure.ac")
-        configure_contents = open(configure_path, 'r').read()
+        configure_contents = open(configure_path, 'r', encoding='utf8').read()
 
         match = re.search("AC_INIT.*univalue.*\[(\d+)\.(\d+)\.(\d+)\]", configure_contents)
         if match:
@@ -357,7 +281,7 @@ class PostponedUpdates():
             "postponed-updates.txt"
         )
 
-        file = open(postponedlist_path, 'r')
+        file = open(postponedlist_path, 'r', encoding='utf8')
         for line in file.readlines():
             stripped = re.sub('#.*$', '', line).strip()
             if stripped != "":
@@ -465,9 +389,19 @@ def main():
         sys.exit(0)
 
     if status == 0:
-        print("Ready to release. All dependencies are up-to-date or postponed.")
+        print("All non-Rust dependencies are up-to-date or postponed.")
     elif status == 1:
         print("Release is BLOCKED. There are new dependency updates that have not been postponed.")
+
+    print("""
+You should also check the Rust dependencies using cargo:
+
+  cargo install cargo-outdated cargo-audit
+  cargo outdated
+  cargo audit
+""")
+    if status == 0:
+        print("After checking those, you'll be ready for release! :-)")
 
     sys.exit(status)
 

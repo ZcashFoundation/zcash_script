@@ -2,8 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
-#ifndef MEMPOOLLIMIT_H
-#define MEMPOOLLIMIT_H
+#ifndef ZCASH_MEMPOOL_LIMIT_H
+#define ZCASH_MEMPOOL_LIMIT_H
 
 #include <deque>
 #include <map>
@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "primitives/transaction.h"
+#include "policy/fees.h"
 #include "uint256.h"
 
 const size_t DEFAULT_MEMPOOL_TOTAL_COST_LIMIT = 80000000;
@@ -23,7 +24,7 @@ const uint64_t LOW_FEE_PENALTY = 16000;
 
 
 // This class keeps track of transactions which have been recently evicted from the mempool
-// in order to prevent them from being re-accepted for a given amount of time. 
+// in order to prevent them from being re-accepted for a given amount of time.
 class RecentlyEvictedList
 {
     const size_t capacity;
@@ -38,7 +39,7 @@ class RecentlyEvictedList
     void pruneList();
 
 public:
-    RecentlyEvictedList(size_t capacity_, int64_t timeToKeep_) : capacity(capacity_), timeToKeep(timeToKeep_) 
+    RecentlyEvictedList(size_t capacity_, int64_t timeToKeep_) : capacity(capacity_), timeToKeep(timeToKeep_)
     {
         assert(capacity <= EVICTION_MEMORY_ENTRIES);
     }
@@ -89,7 +90,7 @@ class WeightedTxTree
 {
     const int64_t capacity;
     size_t size = 0;
-    
+
     // The following two vectors are the tree representation of this collection.
     // We keep track of 3 data points for each node: A transaction's txid, its cost,
     // and the sum of the weights of all children and descendant of that node.
@@ -127,4 +128,4 @@ public:
 };
 
 
-#endif // MEMPOOLLIMIT_H
+#endif // ZCASH_MEMPOOL_LIMIT_H

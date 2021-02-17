@@ -6,6 +6,8 @@
 #include "librustzcash.h"
 #include <sodium.h>
 
+const std::function<std::string(const char*)> G_TRANSLATION_FUN = nullptr;
+
 struct ECCryptoClosure
 {
     ECCVerifyHandle handle;
@@ -17,12 +19,12 @@ int main(int argc, char **argv) {
   assert(sodium_init() != -1);
   ECC_Start();
 
-  boost::filesystem::path sapling_spend = ZC_GetParamsDir() / "sapling-spend.params";
-  boost::filesystem::path sapling_output = ZC_GetParamsDir() / "sapling-output.params";
-  boost::filesystem::path sprout_groth16 = ZC_GetParamsDir() / "sprout-groth16.params";
+  fs::path sapling_spend = ZC_GetParamsDir() / "sapling-spend.params";
+  fs::path sapling_output = ZC_GetParamsDir() / "sapling-output.params";
+  fs::path sprout_groth16 = ZC_GetParamsDir() / "sprout-groth16.params";
 
     static_assert(
-        sizeof(boost::filesystem::path::value_type) == sizeof(codeunit),
+        sizeof(fs::path::value_type) == sizeof(codeunit),
         "librustzcash not configured correctly");
     auto sapling_spend_str = sapling_spend.native();
     auto sapling_output_str = sapling_output.native();
@@ -38,7 +40,11 @@ int main(int argc, char **argv) {
     );
 
   testing::InitGoogleMock(&argc, argv);
-  
+
+  // The "threadsafe" style is necessary for correct operation of death/exit
+  // tests on macOS (https://github.com/zcash/zcash/issues/4802).
+  testing::FLAGS_gtest_death_test_style = "threadsafe";
+
   auto ret = RUN_ALL_TESTS();
 
   ECC_Stop();

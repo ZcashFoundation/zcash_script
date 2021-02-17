@@ -15,10 +15,11 @@
 #include "consensus/upgrades.h"
 #include "consensus/validation.h"
 #include "experimental_features.h"
+#include "fs.h"
 #include "httpserver.h"
 #include "httprpc.h"
 #include "key.h"
-#ifdef ENABLE_MINING
+#if defined(ENABLE_MINING) || defined(ENABLE_WALLET)
 #include "key_io.h"
 #endif
 #include "main.h"
@@ -39,7 +40,6 @@
 #include "utilmoneystr.h"
 #include "validationinterface.h"
 #ifdef ENABLE_WALLET
-#include "key_io.h"
 #include "wallet/wallet.h"
 #include "wallet/walletdb.h"
 #endif
@@ -209,8 +209,8 @@ void Shutdown()
 
     if (fFeeEstimatesInitialized)
     {
-        boost::filesystem::path est_path = GetDataDir() / FEE_ESTIMATES_FILENAME;
-        CAutoFile est_fileout(fopen(est_path.string().c_str(), "wb"), SER_DISK, CLIENT_VERSION);
+        fs::path est_path = GetDataDir() / FEE_ESTIMATES_FILENAME;
+        CAutoFile est_fileout(fsbridge::fopen(est_path, "wb"), SER_DISK, CLIENT_VERSION);
         if (!est_fileout.IsNull())
             mempool.WriteFeeEstimates(est_fileout);
         else
@@ -247,8 +247,8 @@ void Shutdown()
 
 #ifndef WIN32
     try {
-        boost::filesystem::remove(GetPidFile());
-    } catch (const boost::filesystem::filesystem_error& e) {
+        fs::remove(GetPidFile());
+    } catch (const fs::filesystem_error& e) {
         LogPrintf("%s: Unable to remove pidfile: %s\n", __func__, e.what());
     }
 #endif
@@ -549,7 +549,7 @@ struct CImportingNow
 // works correctly.
 void CleanupBlockRevFiles()
 {
-    using namespace boost::filesystem;
+    using namespace fs;
     map<string, path> mapBlockFiles;
 
     // Glob all blk?????.dat and rev?????.dat files from the blocks directory.
@@ -574,7 +574,7 @@ void CleanupBlockRevFiles()
     // keeping a separate counter.  Once we hit a gap (or if 0 doesn't exist)
     // start removing block files.
     int nContigCounter = 0;
-    BOOST_FOREACH(const PAIRTYPE(string, path)& item, mapBlockFiles) {
+    for (const std::pair<string, path>& item : mapBlockFiles) {
         if (atoi(item.first) == nContigCounter) {
             nContigCounter++;
             continue;
@@ -583,9 +583,8 @@ void CleanupBlockRevFiles()
     }
 }
 
-void ThreadImport(std::vector<boost::filesystem::path> vImportFiles)
+void ThreadImport(std::vector<fs::path> vImportFiles, const CChainParams& chainparams)
 {
-    const CChainParams& chainparams = Params();
     RenameThread("zcash-loadblk");
     // -reindex
     if (fReindex) {
@@ -596,17 +595,17 @@ void ThreadImport(std::vector<boost::filesystem::path> vImportFiles)
         size_t fullSize = 0;
         while (true) {
             CDiskBlockPos pos(nFile, 0);
-            boost::filesystem::path blkFile = GetBlockPosFilename(pos, "blk");
-            if (!boost::filesystem::exists(blkFile))
+            fs::path blkFile = GetBlockPosFilename(pos, "blk");
+            if (!fs::exists(blkFile))
                 break; // No block files left to reindex
             nFile++;
-            fullSize += boost::filesystem::file_size(blkFile);
+            fullSize += fs::file_size(blkFile);
         }
         nFullSizeToReindex = std::max<size_t>(1, fullSize);
         nFile = 0;
         while (true) {
             CDiskBlockPos pos(nFile, 0);
-            if (!boost::filesystem::exists(GetBlockPosFilename(pos, "blk")))
+            if (!fs::exists(GetBlockPosFilename(pos, "blk")))
                 break; // No block files left to reindex
             FILE *file = OpenBlockFile(pos, true);
             if (!file)
@@ -625,12 +624,12 @@ void ThreadImport(std::vector<boost::filesystem::path> vImportFiles)
     }
 
     // hardcoded $DATADIR/bootstrap.dat
-    boost::filesystem::path pathBootstrap = GetDataDir() / "bootstrap.dat";
-    if (boost::filesystem::exists(pathBootstrap)) {
-        FILE *file = fopen(pathBootstrap.string().c_str(), "rb");
+    fs::path pathBootstrap = GetDataDir() / "bootstrap.dat";
+    if (fs::exists(pathBootstrap)) {
+        FILE *file = fsbridge::fopen(pathBootstrap, "rb");
         if (file) {
             CImportingNow imp;
-            boost::filesystem::path pathBootstrapOld = GetDataDir() / "bootstrap.dat.old";
+            fs::path pathBootstrapOld = GetDataDir() / "bootstrap.dat.old";
             LogPrintf("Importing bootstrap.dat...\n");
             LoadExternalBlockFile(chainparams, file);
             RenameOver(pathBootstrap, pathBootstrapOld);
@@ -640,8 +639,8 @@ void ThreadImport(std::vector<boost::filesystem::path> vImportFiles)
     }
 
     // -loadblock=
-    BOOST_FOREACH(const boost::filesystem::path& path, vImportFiles) {
-        FILE *file = fopen(path.string().c_str(), "rb");
+    for (const fs::path& path : vImportFiles) {
+        FILE *file = fsbridge::fopen(path, "rb");
         if (file) {
             CImportingNow imp;
             LogPrintf("Importing blocks file %s...\n", path.string());
@@ -674,45 +673,6 @@ bool InitSanityCheck(void)
 }
 
 
-int inline init_and_check_sodium()
-{
-    if (sodium_init() == -1) {
-        return -1;
-    }
-
-    // What follows is a runtime test that ensures the version of libsodium
-    // we're linked against checks that signatures are canonical (s < L).
-    const unsigned char message[1] = { 0 };
-
-    unsigned char pk[crypto_sign_PUBLICKEYBYTES];
-    unsigned char sk[crypto_sign_SECRETKEYBYTES];
-    unsigned char sig[crypto_sign_BYTES];
-
-    crypto_sign_keypair(pk, sk);
-    crypto_sign_detached(sig, NULL, message, sizeof(message), sk);
-
-    assert(crypto_sign_verify_detached(sig, message, sizeof(message), pk) == 0);
-
-    // Copied from libsodium/crypto_sign/ed25519/ref10/open.c
-    static const unsigned char L[32] =
-      { 0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58,
-        0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde, 0x14,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10 };
-
-    // Add L to S, which starts at sig[32].
-    unsigned int s = 0;
-    for (size_t i = 0; i < 32; i++) {
-        s = sig[32 + i] + L[i] + (s >> 8);
-        sig[32 + i] = s & 0xff;
-    }
-
-    assert(crypto_sign_verify_detached(sig, message, sizeof(message), pk) != 0);
-
-    return 0;
-}
-
-
 static void ZC_LoadParams(
     const CChainParams& chainparams
 )
@@ -720,14 +680,14 @@ static void ZC_LoadParams(
     struct timeval tv_start, tv_end;
     float elapsed;
 
-    boost::filesystem::path sapling_spend = ZC_GetParamsDir() / "sapling-spend.params";
-    boost::filesystem::path sapling_output = ZC_GetParamsDir() / "sapling-output.params";
-    boost::filesystem::path sprout_groth16 = ZC_GetParamsDir() / "sprout-groth16.params";
+    fs::path sapling_spend = ZC_GetParamsDir() / "sapling-spend.params";
+    fs::path sapling_output = ZC_GetParamsDir() / "sapling-output.params";
+    fs::path sprout_groth16 = ZC_GetParamsDir() / "sprout-groth16.params";
 
     if (!(
-        boost::filesystem::exists(sapling_spend) &&
-        boost::filesystem::exists(sapling_output) &&
-        boost::filesystem::exists(sprout_groth16)
+        fs::exists(sapling_spend) &&
+        fs::exists(sapling_output) &&
+        fs::exists(sprout_groth16)
     )) {
         uiInterface.ThreadSafeMessageBox(strprintf(
             _("Cannot find the Zcash network parameters in the following directory:\n"
@@ -740,7 +700,7 @@ static void ZC_LoadParams(
     }
 
     static_assert(
-        sizeof(boost::filesystem::path::value_type) == sizeof(codeunit),
+        sizeof(fs::path::value_type) == sizeof(codeunit),
         "librustzcash not configured correctly");
     auto sapling_spend_str = sapling_spend.native();
     auto sapling_output_str = sapling_output.native();
@@ -848,9 +808,9 @@ void InitLogging()
     // Set up the initial filtering directive from the -debug flags.
     std::string initialFilter = LogConfigFilter();
 
-    boost::filesystem::path pathDebug = GetDebugLogPath();
-    const boost::filesystem::path::string_type& pathDebugStr = pathDebug.native();
-    static_assert(sizeof(boost::filesystem::path::value_type) == sizeof(codeunit),
+    fs::path pathDebug = GetDebugLogPath();
+    const fs::path::string_type& pathDebugStr = pathDebug.native();
+    static_assert(sizeof(fs::path::value_type) == sizeof(codeunit),
                     "native path has unexpected code unit size");
     const codeunit* pathDebugCStr = nullptr;
     size_t pathDebugLen = 0;
@@ -867,6 +827,20 @@ void InitLogging()
     LogPrintf("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
     LogPrintf("Zcash version %s (%s)\n", FormatFullVersion(), CLIENT_DATE);
 }
+
+[[noreturn]] static void new_handler_terminate()
+{
+    // Rather than throwing std::bad-alloc if allocation fails, terminate
+    // immediately to (try to) avoid chain corruption.
+    // Since LogPrintf may itself allocate memory, set the handler directly
+    // to terminate first.
+    std::set_new_handler(std::terminate);
+    fputs("Error: Out of memory. Terminating.\n", stderr);
+    LogPrintf("Error: Out of memory. Terminating.\n");
+
+    // The log was successful, terminate now.
+    std::terminate();
+};
 
 /** Initialize bitcoin.
  *  @pre Parameters should be parsed and config file should be read.
@@ -1105,7 +1079,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
 
     if (!mapMultiArgs["-nuparams"].empty()) {
         // Allow overriding network upgrade parameters for testing
-        if (Params().NetworkIDString() != "regtest") {
+        if (chainparams.NetworkIDString() != "regtest") {
             return InitError("Network upgrade parameters may only be overridden on regtest.");
         }
         const vector<string>& deployments = mapMultiArgs["-nuparams"];
@@ -1137,14 +1111,14 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     }
 
     if (mapArgs.count("-nurejectoldversions")) {
-        if (Params().NetworkIDString() != "regtest") {
+        if (chainparams.NetworkIDString() != "regtest") {
             return InitError("-nurejectoldversions may only be set on regtest.");
         }
     }
 
     if (!mapMultiArgs["-fundingstream"].empty()) {
         // Allow overriding network upgrade parameters for testing
-        if (Params().NetworkIDString() != "regtest") {
+        if (chainparams.NetworkIDString() != "regtest") {
             return InitError("Funding stream parameters may only be overridden on regtest.");
         }
         const std::vector<std::string>& streams = mapMultiArgs["-fundingstream"];
@@ -1175,7 +1149,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
             boost::split(vStreamAddrs, vStreamParams[3], boost::is_any_of(","));
 
             auto fs = Consensus::FundingStream::ParseFundingStream(
-                    Params().GetConsensus(), Params(), nStartHeight, nEndHeight, vStreamAddrs);
+                    chainparams.GetConsensus(), chainparams, nStartHeight, nEndHeight, vStreamAddrs);
 
             UpdateFundingStreamParameters((Consensus::FundingStreamIndex) nFundingStreamId, fs);
         }
@@ -1184,7 +1158,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     // ********************************************************* Step 4: application initialization: dir lock, daemonize, pidfile, debug log
 
     // Initialize libsodium
-    if (init_and_check_sodium() == -1) {
+    if (sodium_init() == -1) {
         return false;
     }
 
@@ -1199,8 +1173,8 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     std::string strDataDir = GetDataDir().string();
 
     // Make sure only a single Bitcoin process is using the data directory.
-    boost::filesystem::path pathLockFile = GetDataDir() / ".lock";
-    FILE* file = fopen(pathLockFile.string().c_str(), "a"); // empty lock file; created if it doesn't exist.
+    fs::path pathLockFile = GetDataDir() / ".lock";
+    FILE* file = fsbridge::fopen(pathLockFile, "a"); // empty lock file; created if it doesn't exist.
     if (file) fclose(file);
 
     try {
@@ -1279,7 +1253,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
 
     // sanitize comments per BIP-0014, format user agent and check total size
     std::vector<string> uacomments;
-    BOOST_FOREACH(string cmt, mapMultiArgs["-uacomment"])
+    for (string cmt : mapMultiArgs["-uacomment"])
     {
         if (cmt != SanitizeString(cmt, SAFE_CHARS_UA_COMMENT))
             return InitError(strprintf("User Agent comment (%s) contains unsafe characters.", cmt));
@@ -1293,7 +1267,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
 
     if (mapArgs.count("-onlynet")) {
         std::set<enum Network> nets;
-        BOOST_FOREACH(const std::string& snet, mapMultiArgs["-onlynet"]) {
+        for (const std::string& snet : mapMultiArgs["-onlynet"]) {
             enum Network net = ParseNetwork(snet);
             if (net == NET_UNROUTABLE)
                 return InitError(strprintf(_("Unknown network specified in -onlynet: '%s'"), snet));
@@ -1307,7 +1281,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     }
 
     if (mapArgs.count("-whitelist")) {
-        BOOST_FOREACH(const std::string& net, mapMultiArgs["-whitelist"]) {
+        for (const std::string& net : mapMultiArgs["-whitelist"]) {
             CSubNet subnet(net);
             if (!subnet.IsValid())
                 return InitError(strprintf(_("Invalid netmask specified in -whitelist: '%s'"), net));
@@ -1356,13 +1330,13 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     bool fBound = false;
     if (fListen) {
         if (mapArgs.count("-bind") || mapArgs.count("-whitebind")) {
-            BOOST_FOREACH(const std::string& strBind, mapMultiArgs["-bind"]) {
+            for (const std::string& strBind : mapMultiArgs["-bind"]) {
                 CService addrBind;
                 if (!Lookup(strBind.c_str(), addrBind, GetListenPort(), false))
                     return InitError(strprintf(_("Cannot resolve -bind address: '%s'"), strBind));
                 fBound |= Bind(addrBind, (BF_EXPLICIT | BF_REPORT_ERROR));
             }
-            BOOST_FOREACH(const std::string& strBind, mapMultiArgs["-whitebind"]) {
+            for (const std::string& strBind : mapMultiArgs["-whitebind"]) {
                 CService addrBind;
                 if (!Lookup(strBind.c_str(), addrBind, 0, false))
                     return InitError(strprintf(_("Cannot resolve -whitebind address: '%s'"), strBind));
@@ -1382,7 +1356,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     }
 
     if (mapArgs.count("-externalip")) {
-        BOOST_FOREACH(const std::string& strAddr, mapMultiArgs["-externalip"]) {
+        for (const std::string& strAddr : mapMultiArgs["-externalip"]) {
             CService addrLocal(strAddr, GetListenPort(), fNameLookup);
             if (!addrLocal.IsValid())
                 return InitError(strprintf(_("Cannot resolve -externalip address: '%s'"), strAddr));
@@ -1390,7 +1364,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
         }
     }
 
-    BOOST_FOREACH(const std::string& strDest, mapMultiArgs["-seednode"])
+    for (const std::string& strDest : mapMultiArgs["-seednode"])
         AddOneShot(strDest);
 
 #if ENABLE_ZMQ
@@ -1405,7 +1379,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
 
     fReindex = GetBoolArg("-reindex", false);
 
-    boost::filesystem::create_directories(GetDataDir() / "blocks");
+    fs::create_directories(GetDataDir() / "blocks");
 
     // cache size calculations
     int64_t nTotalCache = (GetArg("-dbcache", nDefaultDbCache) << 20);
@@ -1576,8 +1550,8 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     }
     LogPrintf(" block index %15dms\n", GetTimeMillis() - nStart);
 
-    boost::filesystem::path est_path = GetDataDir() / FEE_ESTIMATES_FILENAME;
-    CAutoFile est_filein(fopen(est_path.string().c_str(), "rb"), SER_DISK, CLIENT_VERSION);
+    fs::path est_path = GetDataDir() / FEE_ESTIMATES_FILENAME;
+    CAutoFile est_filein(fsbridge::fopen(est_path, "rb"), SER_DISK, CLIENT_VERSION);
     // Allowed to fail as this file IS missing on first startup.
     if (!est_filein.IsNull())
         mempool.ReadFeeEstimates(est_filein);
@@ -1691,13 +1665,13 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     if (!ActivateBestChain(state, chainparams))
         strErrors << "Failed to connect best block";
 
-    std::vector<boost::filesystem::path> vImportFiles;
+    std::vector<fs::path> vImportFiles;
     if (mapArgs.count("-loadblock"))
     {
-        BOOST_FOREACH(const std::string& strFile, mapMultiArgs["-loadblock"])
+        for (const std::string& strFile : mapMultiArgs["-loadblock"])
             vImportFiles.push_back(strFile);
     }
-    threadGroup.create_thread(boost::bind(&ThreadImport, vImportFiles));
+    threadGroup.create_thread(boost::bind(&ThreadImport, vImportFiles, chainparams));
 
     // Wait for genesis block to be processed
     bool fHaveGenesis = false;
@@ -1746,6 +1720,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
 
     // Monitor the chain every minute, and alert if we get blocks much quicker or slower than expected.
     CScheduler::Function f = boost::bind(&PartitionCheck, &IsInitialBlockDownload,
+                                         boost::cref(chainparams.GetConsensus()),
                                          boost::ref(cs_main), boost::cref(pindexBestHeader));
     scheduler.scheduleEvery(f, 60);
 

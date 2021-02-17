@@ -9,9 +9,9 @@
 #include "script/interpreter.h"
 #include "uint256.h"
 
-#include <variant>
 
 #include <stdint.h>
+#include <variant>
 
 static const bool DEFAULT_ACCEPT_DATACARRIER = true;
 

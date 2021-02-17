@@ -2,8 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
-#ifndef ASYNCRPCOPERATION_SHIELDCOINBASE_H
-#define ASYNCRPCOPERATION_SHIELDCOINBASE_H
+#ifndef ZCASH_WALLET_ASYNCRPCOPERATION_SHIELDCOINBASE_H
+#define ZCASH_WALLET_ASYNCRPCOPERATION_SHIELDCOINBASE_H
 
 #include "asyncrpcoperation.h"
 #include "amount.h"
@@ -20,9 +20,6 @@
 #include <univalue.h>
 
 #include <rust/ed25519/types.h>
-
-// Default transaction fee if caller does not specify one.
-#define SHIELD_COINBASE_DEFAULT_MINERS_FEE   10000
 
 using namespace libzcash;
 
@@ -49,7 +46,7 @@ public:
         CMutableTransaction contextualTx,
         std::vector<ShieldCoinbaseUTXO> inputs,
         std::string toAddress,
-        CAmount fee = SHIELD_COINBASE_DEFAULT_MINERS_FEE,
+        CAmount fee = DEFAULT_FEE,
         UniValue contextInfo = NullUniValue);
     virtual ~AsyncRPCOperation_shieldcoinbase();
 
@@ -143,5 +140,5 @@ public:
 };
 
 
-#endif /* ASYNCRPCOPERATION_SHIELDCOINBASE_H */
+#endif // ZCASH_WALLET_ASYNCRPCOPERATION_SHIELDCOINBASE_H
 

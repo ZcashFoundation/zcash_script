@@ -5,9 +5,7 @@
 
 #include <memory>
 
-#include <boost/foreach.hpp>
 #include <boost/format.hpp>
-#include <boost/optional.hpp>
 #include <fstream>
 #include "tinyformat.h"
 #include "sync.h"

@@ -6,6 +6,7 @@
 #include "wallet/walletdb.h"
 
 #include "consensus/validation.h"
+#include "fs.h"
 #include "key_io.h"
 #include "main.h"
 #include "proof_verifier.h"
@@ -17,8 +18,6 @@
 #include "wallet/wallet.h"
 #include "zcash/Proof.hpp"
 
-#include <boost/filesystem.hpp>
-#include <boost/foreach.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <boost/thread.hpp>
 
@@ -307,7 +306,7 @@ CAmount CWalletDB::GetAccountCreditDebit(const string& strAccount)
     ListAccountCreditDebit(strAccount, entries);
 
     CAmount nCreditDebit = 0;
-    BOOST_FOREACH (const CAccountingEntry& entry, entries)
+    for (const CAccountingEntry& entry : entries)
         nCreditDebit += entry.nCreditDebit;
 
     return nCreditDebit;
@@ -374,7 +373,7 @@ DBErrors CWalletDB::ReorderTransactions(CWallet* pwallet)
     }
     list<CAccountingEntry> acentries;
     ListAccountCreditDebit("", acentries);
-    BOOST_FOREACH(CAccountingEntry& entry, acentries)
+    for (CAccountingEntry& entry : acentries)
     {
         txByTime.insert(make_pair(entry.nTime, TxPair((CWalletTx*)0, &entry)));
     }
@@ -405,7 +404,7 @@ DBErrors CWalletDB::ReorderTransactions(CWallet* pwallet)
         else
         {
             int64_t nOrderPosOff = 0;
-            BOOST_FOREACH(const int64_t& nOffsetStart, nOrderPosOffsets)
+            for (const int64_t& nOffsetStart : nOrderPosOffsets)
             {
                 if (nOrderPos >= nOffsetStart)
                     ++nOrderPosOff;
@@ -986,7 +985,7 @@ DBErrors CWalletDB::LoadWallet(CWallet* pwallet)
     if ((wss.nKeys + wss.nCKeys) != wss.nKeyMeta)
         pwallet->nTimeFirstKey = 1; // 0 would be considered 'no value'
 
-    BOOST_FOREACH(uint256 hash, wss.vWalletUpgrade)
+    for (uint256 hash : wss.vWalletUpgrade)
         WriteTx(hash, pwallet->mapWallet[hash]);
 
     // Rewrite encrypted wallets of versions 0.4.0 and 0.5.0rc:
@@ -1086,7 +1085,7 @@ DBErrors CWalletDB::ZapWalletTx(CWallet* pwallet, vector<CWalletTx>& vWtx)
         return err;
 
     // erase each wallet TX
-    BOOST_FOREACH (uint256& hash, vTxHash) {
+    for (uint256& hash : vTxHash) {
         if (!EraseTx(hash))
             return DB_CORRUPT;
     }
@@ -1172,16 +1171,16 @@ bool BackupWallet(const CWallet& wallet, const string& strDest)
                 bitdb.mapFileUseCount.erase(wallet.strWalletFile);
 
                 // Copy wallet file
-                boost::filesystem::path pathSrc = GetDataDir() / wallet.strWalletFile;
-                boost::filesystem::path pathDest(strDest);
-                if (boost::filesystem::is_directory(pathDest))
+                fs::path pathSrc = GetDataDir() / wallet.strWalletFile;
+                fs::path pathDest(strDest);
+                if (fs::is_directory(pathDest))
                     pathDest /= wallet.strWalletFile;
 
                 try {
-                    boost::filesystem::copy_file(pathSrc, pathDest, boost::filesystem::copy_option::overwrite_if_exists);
+                    fs::copy_file(pathSrc, pathDest, fs::copy_option::overwrite_if_exists);
                     LogPrintf("copied %s to %s\n", wallet.strWalletFile, pathDest.string());
                     return true;
-                } catch (const boost::filesystem::filesystem_error& e) {
+                } catch (const fs::filesystem_error& e) {
                     LogPrintf("error copying %s to %s - %s\n", wallet.strWalletFile, pathDest.string(), e.what());
                     return false;
                 }
@@ -1242,7 +1241,7 @@ bool CWalletDB::Recover(CDBEnv& dbenv, const std::string& filename, bool fOnlyKe
     CWalletScanState wss;
 
     DbTxn* ptxn = dbenv.TxnBegin();
-    BOOST_FOREACH(CDBEnv::KeyValPair& row, salvagedData)
+    for (CDBEnv::KeyValPair& row : salvagedData)
     {
         if (fOnlyKeys)
         {

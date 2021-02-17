@@ -1,13 +1,13 @@
 dnl require autoconf 2.60 (AS_ECHO/AS_ECHO_N)
 AC_PREREQ([2.60])
 define(_CLIENT_VERSION_MAJOR, 4)
-define(_CLIENT_VERSION_MINOR, 0)
+define(_CLIENT_VERSION_MINOR, 2)
 define(_CLIENT_VERSION_REVISION, 0)
 define(_CLIENT_VERSION_BUILD, 50)
 define(_ZC_BUILD_VAL, m4_if(m4_eval(_CLIENT_VERSION_BUILD < 25), 1, m4_incr(_CLIENT_VERSION_BUILD), m4_eval(_CLIENT_VERSION_BUILD < 50), 1, m4_eval(_CLIENT_VERSION_BUILD - 24), m4_eval(_CLIENT_VERSION_BUILD == 50), 1, , m4_eval(_CLIENT_VERSION_BUILD - 50)))
 define(_CLIENT_VERSION_SUFFIX, m4_if(m4_eval(_CLIENT_VERSION_BUILD < 25), 1, _CLIENT_VERSION_REVISION-beta$1, m4_eval(_CLIENT_VERSION_BUILD < 50), 1, _CLIENT_VERSION_REVISION-rc$1, m4_eval(_CLIENT_VERSION_BUILD == 50), 1, _CLIENT_VERSION_REVISION, _CLIENT_VERSION_REVISION-$1)))
 define(_CLIENT_VERSION_IS_RELEASE, true)
-define(_COPYRIGHT_YEAR, 2020)
+define(_COPYRIGHT_YEAR, 2021)
 AC_INIT([Zcash],[_CLIENT_VERSION_MAJOR._CLIENT_VERSION_MINOR._CLIENT_VERSION_SUFFIX(_ZC_BUILD_VAL)],[https://github.com/zcash/zcash/issues],[zcash])
 AC_CONFIG_SRCDIR([src/main.cpp])
 AC_CONFIG_HEADERS([src/config/bitcoin-config.h])
@@ -69,21 +69,45 @@ CHECK_ATOMIC
 dnl Libtool init checks.
 LT_INIT([pic-only])
 
+dnl Zcash macros for required programs. Configure exits with error if
+dnl they are not detected.
+AC_DEFUN(
+  ZC_REQUIRE_TOOL,
+  [
+    AC_PATH_TOOL($1, $2, $2_notfound)
+    if test x${$1} = x$2_notfound
+    then
+      AC_MSG_ERROR("Required tool $2 was not found")
+    fi
+  ]
+)
+
+AC_DEFUN(
+  ZC_REQUIRE_PROG,
+  [
+    AC_PATH_PROG($1, $2, $2_notfound)
+    if test x${$1} = x$2_notfound
+    then
+      AC_MSG_ERROR("Required program $2 was not found")
+    fi
+  ]
+)
+
 dnl Check/return PATH for base programs.
-AC_PATH_TOOL(AR, ar)
-AC_PATH_TOOL(RANLIB, ranlib)
-AC_PATH_TOOL(STRIP, strip)
-AC_PATH_TOOL(GCOV, gcov)
-AC_PATH_PROG(LCOV, lcov)
-AC_PATH_PROG(GENHTML, genhtml)
-AC_PATH_PROG([GIT], [git])
-AC_PATH_PROG(RUSTC, rustc)
-AC_PATH_PROG(CARGO, cargo)
+dnl Required tools and programs:
+ZC_REQUIRE_TOOL(AR, ar)
+ZC_REQUIRE_TOOL(RANLIB, ranlib)
+ZC_REQUIRE_TOOL(STRIP, strip)
+ZC_REQUIRE_PROG([GIT], [git])
+ZC_REQUIRE_PROG(RUSTC, rustc)
+ZC_REQUIRE_PROG(CARGO, cargo)
+dnl This one is still optional and checked by complicated logic below:
 AC_PATH_PROG(CCACHE,ccache)
+dnl This one is not currently used anywhere, thus not required:
 AC_PATH_PROG(XGETTEXT,xgettext)
-AC_PATH_PROG(HEXDUMP,hexdump)
-AC_PATH_TOOL(READELF,readelf)
-AC_PATH_TOOL(CPPFILT,c++filt)
+ZC_REQUIRE_PROG(HEXDUMP,hexdump)
+AC_PATH_PROG(READELF,readelf)
+ZC_REQUIRE_TOOL(CPPFILT,c++filt)
 
 AC_ARG_ENABLE([online-rust],
   [AS_HELP_STRING([--enable-online-rust],
@@ -379,10 +403,7 @@ case $host in
        AC_MSG_WARN("makensis not found. Cannot create installer.")
      fi
 
-     AC_PATH_TOOL(WINDRES, windres, none)
-     if test x$WINDRES = xnone; then
-       AC_MSG_ERROR("windres not found")
-     fi
+     ZC_REQUIRE_TOOL(WINDRES, windres)
 
      CPPFLAGS="$CPPFLAGS -D_MT -DWIN32 -D_WINDOWS -DBOOST_THREAD_USE_LIB"
      LEVELDB_TARGET_FLAGS="-DOS_WINDOWS"
@@ -458,12 +479,38 @@ case $host in
      CPPFLAGS="$CPPFLAGS -DMAC_OSX"
      OBJCXXFLAGS="$CXXFLAGS"
      ;;
+   *android*)
+     dnl make sure android stays above linux for hosts like *linux-android*
+     TARGET_OS=android
+     LEVELDB_TARGET_FLAGS="-DOS_ANDROID"
+     ;;
    *linux*)
+     TARGET_OS=linux
      LEVELDB_TARGET_FLAGS="-DOS_LINUX"
      ;;
+   *kfreebsd*)
+     LEVELDB_TARGET_FLAGS="-DOS_KFREEBSD"
+     ;;
+   *freebsd*)
+     LEVELDB_TARGET_FLAGS="-DOS_FREEBSD"
+     ;;
+   *openbsd*)
+     LEVELDB_TARGET_FLAGS="-DOS_OPENBSD"
+     ;;
+   *netbsd*)
+     LEVELDB_TARGET_FLAGS="-DOS_NETBSD"
+     ;;
+   *dragonfly*)
+     LEVELDB_TARGET_FLAGS="-DOS_DRAGONFLYBSD"
+     ;;
+   *solaris*)
+     LEVELDB_TARGET_FLAGS="-DOS_SOLARIS"
+     ;;
+   *hpux*)
+     LEVELDB_TARGET_FLAGS="-DOS_HPUX"
+     ;;
    *)
-     OTHER_OS=`echo ${host_os} | awk '{print toupper($0)}'`
-     LEVELDB_TARGET_FLAGS="-DOS_${OTHER_OS}"
+     AC_MSG_ERROR(Cannot build leveldb for $host. Please file a bug report.)
      ;;
 esac
 
@@ -478,15 +525,10 @@ if test x$use_pkgconfig = xyes; then
 fi
 
 if test x$use_lcov = xyes; then
-  if test x$LCOV = x; then
-    AC_MSG_ERROR("lcov testing requested but lcov not found")
-  fi
-  if test x$GCOV = x; then
-    AC_MSG_ERROR("lcov testing requested but gcov not found")
-  fi
-  if test x$GENHTML = x; then
-    AC_MSG_ERROR("lcov testing requested but genhtml not found")
-  fi
+  ZC_REQUIRE_TOOL(GCOV, gcov)
+  ZC_REQUIRE_PROG(LCOV, lcov)
+  ZC_REQUIRE_PROG(GENHTML, genhtml)
+
   LCOV="$LCOV --gcov-tool=$GCOV --rc lcov_branch_coverage=1"
   GENHTML="$GENHTML --branch-coverage"
   AX_CHECK_COMPILE_FLAG([--coverage],[CXXFLAGS="$CXXFLAGS --coverage"],
@@ -952,8 +994,8 @@ AC_SUBST(EVENT_PTHREADS_LIBS)
 AC_SUBST(ZMQ_LIBS)
 AC_SUBST(LIBZCASH_LIBS)
 AC_CONFIG_FILES([Makefile src/Makefile doc/man/Makefile src/test/buildenv.py])
-AC_CONFIG_FILES([qa/pull-tester/run-bitcoind-for-test.sh],[chmod +x qa/pull-tester/run-bitcoind-for-test.sh])
-AC_CONFIG_FILES([qa/pull-tester/tests-config.sh],[chmod +x qa/pull-tester/tests-config.sh])
+AC_CONFIG_FILES([qa/pull-tester/tests_config.ini],[chmod +x qa/pull-tester/tests_config.ini])
+AC_CONFIG_LINKS([qa/pull-tester/rpc-tests.py:qa/pull-tester/rpc-tests.py])
 
 dnl boost's m4 checks do something really nasty: they export these vars. As a
 dnl result, they leak into secp256k1's configure and crazy things happen.
@@ -978,7 +1020,7 @@ PKGCONFIG_LIBDIR_TEMP="$PKG_CONFIG_LIBDIR"
 unset PKG_CONFIG_LIBDIR
 PKG_CONFIG_LIBDIR="$PKGCONFIG_LIBDIR_TEMP"
 
-ac_configure_args="${ac_configure_args} --disable-shared --with-pic --with-bignum=no --enable-module-recovery"
+ac_configure_args="${ac_configure_args} --disable-shared --with-pic --enable-benchmark=no --with-bignum=no --enable-module-recovery"
 AC_CONFIG_SUBDIRS([src/secp256k1 src/univalue])
 
 AC_OUTPUT
@@ -991,6 +1033,15 @@ case $host in
      's/^hardcode_libdir_flag_spec.*$'/'hardcode_libdir_flag_spec=" -D__LIBTOOL_IS_A_FOOL__ "/'
      mv libtool-2 libtool
      chmod 755 libtool
+   ;;
+esac
+
+dnl Replace the BUILDDIR path with the correct Windows path if compiling on Native Windows
+case ${OS} in
+   *Windows*)
+     sed  's/BUILDDIR="\/\([[a-z]]\)/BUILDDIR="\1:/'  qa/pull-tester/tests_config.py > qa/pull-tester/tests_config-2.py
+     mv qa/pull-tester/tests_config-2.py qa/pull-tester/tests_config.py
+     chmod +x qa/pull-tester/tests_config.py
    ;;
 esac
 
