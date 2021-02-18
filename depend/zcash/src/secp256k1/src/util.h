@@ -222,7 +222,7 @@ static SECP256K1_INLINE void memczero(void *s, size_t len, int flag) {
  * https://gcc.gnu.org/bugzilla/show_bug.cgi?id=95189
  */
 static SECP256K1_INLINE int secp256k1_memcmp_var(const void *s1, const void *s2, size_t n) {
-    const unsigned char *p1 = s1, *p2 = s2;
+    const unsigned char *p1 = (const unsigned char*)s1, *p2 = (const unsigned char*)s2;
     size_t i;
 
     for (i = 0; i < n; i++) {

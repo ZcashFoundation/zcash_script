@@ -81,11 +81,14 @@ fn main() -> Result<()> {
         base_config
             .include("depend/zcash/src/secp256k1")
             .flag_if_supported("-Wno-unused-function") // some ecmult stuff is defined but not used upstream
+            .flag_if_supported("-Wno-missing-field-initializers")
             .define("SECP256K1_BUILD", "1")
             // zcash core defines libsecp to *not* use libgmp.
             .define("USE_NUM_NONE", "1")
             .define("USE_FIELD_INV_BUILTIN", "1")
             .define("USE_SCALAR_INV_BUILTIN", "1")
+            .define("ECMULT_WINDOW_SIZE", "15")
+            .define("ECMULT_GEN_PREC_BITS", "4")
             // Use the endomorphism optimization now that the patents have expired.
             .define("USE_ENDOMORPHISM", "1")
             // Technically libconsensus doesn't require the recovery feature, but `pubkey.cpp` does.
