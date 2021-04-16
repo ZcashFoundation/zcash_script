@@ -8,6 +8,7 @@
 #include <amount.h>
 #include <consensus/params.h>
 
+
 namespace Consensus
 {
 

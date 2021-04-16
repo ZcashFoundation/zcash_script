@@ -5,6 +5,7 @@
 #include "rpc/server.h"
 #include "rpc/client.h"
 
+#include "fs.h"
 #include "key_io.h"
 #include "main.h"
 #include "wallet/wallet.h"
@@ -37,8 +38,6 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/test/unit_test.hpp>
 #include <boost/format.hpp>
-#include <boost/filesystem.hpp>
-#include <boost/optional.hpp>
 
 #include <univalue.h>
 
@@ -56,15 +55,15 @@ bool find_error(const UniValue& objError, const std::string& expected) {
 class PushCurrentDirectory {
 public:
     PushCurrentDirectory(const std::string &new_cwd)
-        : old_cwd(boost::filesystem::current_path()) {
-        boost::filesystem::current_path(new_cwd);
+        : old_cwd(fs::current_path()) {
+        fs::current_path(new_cwd);
     }
 
     ~PushCurrentDirectory() {
-        boost::filesystem::current_path(old_cwd);
+        fs::current_path(old_cwd);
     }
 private:
-    boost::filesystem::path old_cwd;
+    fs::path old_cwd;
 };
 
 }
@@ -536,9 +535,9 @@ BOOST_AUTO_TEST_CASE(rpc_wallet_z_exportwallet)
     BOOST_CHECK(addrs.size()==1);
 
     // Set up paths
-    boost::filesystem::path tmppath = boost::filesystem::temp_directory_path();
-    boost::filesystem::path tmpfilename = boost::filesystem::unique_path("%%%%%%%%");
-    boost::filesystem::path exportfilepath = tmppath / tmpfilename;
+    fs::path tmppath = fs::temp_directory_path();
+    fs::path tmpfilename = fs::unique_path("%%%%%%%%");
+    fs::path exportfilepath = tmppath / tmpfilename;
 
     // export will fail since exportdir is not set
     BOOST_CHECK_THROW(CallRPC(string("z_exportwallet ") + tmpfilename.string()), runtime_error);
@@ -624,8 +623,8 @@ BOOST_AUTO_TEST_CASE(rpc_wallet_z_importwallet)
     std::string testWalletDump = (formatobject % testKey % testAddr).str();
 
     // write test data to file
-    boost::filesystem::path temp = boost::filesystem::temp_directory_path() /
-            boost::filesystem::unique_path();
+    fs::path temp = fs::temp_directory_path() /
+            fs::unique_path();
     const std::string path = temp.string();
     std::ofstream file(path);
     file << testWalletDump;
@@ -1087,7 +1086,7 @@ BOOST_AUTO_TEST_CASE(rpc_z_sendmany_parameters)
     BOOST_CHECK_THROW(CallRPC("z_sendmany "
             "tmRr6yJonqGK23UVhrKuyvTpF8qxQQjKigJ "
             "[{\"address\":\"tmQP9L3s31cLsghVYf2Jb5MhKj1jRBPoeQn\", \"amount\":50.0}] "
-            "1 -0.0001"
+            "1 -0.00001"
             ), runtime_error);
 
     // invalid fee amount, bigger than MAX_MONEY
@@ -1211,7 +1210,7 @@ BOOST_AUTO_TEST_CASE(rpc_z_sendmany_internals)
         operation->main();
         BOOST_CHECK(operation->isFailed());
         std::string msg = operation->getErrorMessage();
-        BOOST_CHECK( msg.find("Insufficient funds, no UTXOs found") != string::npos);
+        BOOST_CHECK( msg.find("Insufficient transparent funds") != string::npos);
     }
 
     // minconf cannot be zero when sending from zaddr
@@ -1346,7 +1345,7 @@ BOOST_AUTO_TEST_CASE(rpc_z_sendmany_internals)
         static_cast<AsyncRPCOperation_sendmany *>(operation.get())->testmode = true;
 
         AsyncJoinSplitInfo info;
-        std::vector<std::optional<SproutWitness>> witnesses;
+        std::vector<std::optional < SproutWitness>> witnesses;
         uint256 anchor;
         try {
             proxy.perform_joinsplit(info, witnesses, anchor);
@@ -1684,7 +1683,7 @@ BOOST_AUTO_TEST_CASE(rpc_z_shieldcoinbase_parameters)
     BOOST_CHECK_THROW(CallRPC("z_shieldcoinbase "
             "tmRr6yJonqGK23UVhrKuyvTpF8qxQQjKigJ "
             "tnpoQJVnYBZZqkFadj2bJJLThNCxbADGB5gSGeYTAGGrT5tejsxY9Zc1BtY8nnHmZkB "
-            "-0.0001"
+            "-0.00001"
             ), runtime_error);
 
     // invalid fee amount, bigger than MAX_MONEY
@@ -1840,7 +1839,7 @@ BOOST_AUTO_TEST_CASE(rpc_z_mergetoaddress_parameters)
         "Invalid parameter, duplicated address: " + taddr1);
 
     // invalid fee amount, cannot be negative
-    CheckRPCThrows("z_mergetoaddress [\"" + taddr1 + "\"] " + taddr2 + " -0.0001",
+    CheckRPCThrows("z_mergetoaddress [\"" + taddr1 + "\"] " + taddr2 + " -0.00001",
         "Amount out of range");
 
     // invalid fee amount, bigger than MAX_MONEY
@@ -1848,11 +1847,11 @@ BOOST_AUTO_TEST_CASE(rpc_z_mergetoaddress_parameters)
         "Amount out of range");
 
     // invalid transparent limit, must be at least 0
-    CheckRPCThrows("z_mergetoaddress [\"" + taddr1 + "\"] " + taddr2 + " 0.0001 -1",
+    CheckRPCThrows("z_mergetoaddress [\"" + taddr1 + "\"] " + taddr2 + " 0.00001 -1",
         "Limit on maximum number of UTXOs cannot be negative");
 
     // invalid shielded limit, must be at least 0
-    CheckRPCThrows("z_mergetoaddress [\"" + taddr1 + "\"] " + taddr2 + " 0.0001 100 -1",
+    CheckRPCThrows("z_mergetoaddress [\"" + taddr1 + "\"] " + taddr2 + " 0.00001 100 -1",
         "Limit on maximum number of notes cannot be negative");
 
     CheckRPCThrows("z_mergetoaddress [\"ANY_TADDR\",\"" + taddr1 + "\"] " + taddr2,
@@ -1868,7 +1867,7 @@ BOOST_AUTO_TEST_CASE(rpc_z_mergetoaddress_parameters)
     std::vector<char> v (2 * (ZC_MEMO_SIZE+1));     // x2 for hexadecimal string format
     std::fill(v.begin(),v.end(), 'A');
     std::string badmemo(v.begin(), v.end());
-    CheckRPCThrows("z_mergetoaddress [\"" + taddr1 + "\"] " + aSproutAddr + " 0.0001 100 100 " + badmemo, 
+    CheckRPCThrows("z_mergetoaddress [\"" + taddr1 + "\"] " + aSproutAddr + " 0.00001 100 100 " + badmemo,
         "Invalid parameter, size of memo is larger than maximum allowed 512");
 
     // Mutable tx containing contextual information we need to build tx
@@ -1969,7 +1968,7 @@ BOOST_AUTO_TEST_CASE(rpc_z_mergetoaddress_internals)
         operation->main();
         BOOST_CHECK(operation->isFailed());
         std::string msg = operation->getErrorMessage();
-        BOOST_CHECK( msg.find("Insufficient funds, have 0.00 and miners fee is 0.0001") != string::npos);
+        BOOST_CHECK( msg.find("Insufficient funds, have 0.00 and miners fee is 0.00001") != string::npos);
     }
 
     // get_memo_from_hex_string())
@@ -2037,7 +2036,7 @@ BOOST_AUTO_TEST_CASE(rpc_z_mergetoaddress_internals)
         static_cast<AsyncRPCOperation_mergetoaddress *>(operation.get())->testmode = true;
 
         MergeToAddressJSInfo info;
-        std::vector<std::optional<SproutWitness>> witnesses;
+        std::vector<std::optional < SproutWitness>> witnesses;
         uint256 anchor;
         try {
             proxy.perform_joinsplit(info, witnesses, anchor);
@@ -2161,8 +2160,9 @@ BOOST_AUTO_TEST_CASE(rpc_gettransaction_status_sapling)
 BOOST_AUTO_TEST_CASE(rpc_gettransaction_status_blossom)
 {
     LOCK2(cs_main, pwalletMain->cs_wallet);
+    auto params = RegtestActivateBlossom(true).GetConsensus();
 
-    TestWTxStatus(RegtestActivateBlossom(true), DEFAULT_POST_BLOSSOM_TX_EXPIRY_DELTA);
+    TestWTxStatus(params, DEFAULT_POST_BLOSSOM_TX_EXPIRY_DELTA);
 
     RegtestDeactivateBlossom();
 }

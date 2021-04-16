@@ -8,17 +8,14 @@ from test_framework.authproxy import JSONRPCException
 from test_framework.util import (
     assert_equal,
     get_coinbase_address,
-    start_nodes,
     wait_and_assert_operationid_status,
+    DEFAULT_FEE
 )
 
 from decimal import Decimal
 
 # Test wallet behaviour with Sapling addresses
 class WalletSaplingTest(BitcoinTestFramework):
-
-    def setup_nodes(self):
-        return start_nodes(4, self.options.tmpdir)
 
     def run_test(self):
         # Sanity-check the test harness
@@ -166,8 +163,9 @@ class WalletSaplingTest(BitcoinTestFramework):
         try:
             self.nodes[1].z_sendmany(
                 taddr1,
-                [{'address': node4_sproutaddr, 'amount': 2.5}, {'address': node4_saplingaddr, 'amount': 2.4999}],
-                1, 0.0001
+                [{'address': node4_sproutaddr, 'amount': Decimal('2.5')},
+                 {'address': node4_saplingaddr, 'amount': Decimal('2.5') - DEFAULT_FEE}],
+                1, DEFAULT_FEE
             )
             raise AssertionError("Should have thrown an exception")
         except JSONRPCException as e:

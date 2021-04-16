@@ -5,8 +5,10 @@
 
 #include "rpc/server.h"
 
+#include "fs.h"
 #include "init.h"
 #include "key_io.h"
+#include "net.h"
 #include "random.h"
 #include "sync.h"
 #include "ui_interface.h"
@@ -19,8 +21,6 @@
 #include <univalue.h>
 
 #include <boost/bind/bind.hpp>
-#include <boost/filesystem.hpp>
-#include <boost/foreach.hpp>
 #include <boost/iostreams/concepts.hpp>
 #include <boost/iostreams/stream.hpp>
 #include <boost/shared_ptr.hpp>
@@ -77,7 +77,7 @@ void RPCTypeCheck(const UniValue& params,
                   bool fAllowNull)
 {
     size_t i = 0;
-    BOOST_FOREACH(UniValue::VType t, typesExpected)
+    for (UniValue::VType t : typesExpected)
     {
         if (params.size() <= i)
             break;
@@ -97,7 +97,7 @@ void RPCTypeCheckObj(const UniValue& o,
                   const map<string, UniValue::VType>& typesExpected,
                   bool fAllowNull)
 {
-    BOOST_FOREACH(const PAIRTYPE(string, UniValue::VType)& t, typesExpected)
+    for (const std::pair<string, UniValue::VType>& t : typesExpected)
     {
         const UniValue& v = find_value(o, t.first);
         if (!fAllowNull && v.isNull())
@@ -178,7 +178,7 @@ std::string CRPCTable::help(const std::string& strCommand) const
         vCommands.push_back(make_pair(mi->second->category + mi->first, mi->second));
     sort(vCommands.begin(), vCommands.end());
 
-    BOOST_FOREACH(const PAIRTYPE(string, const CRPCCommand*)& command, vCommands)
+    for (const std::pair<string, const CRPCCommand*>& command : vCommands)
     {
         const CRPCCommand *pcmd = command.second;
         string strMethod = pcmd->name;
@@ -269,8 +269,18 @@ UniValue setlogfilter(const UniValue& params, bool fHelp)
     }
 
     if (pTracingHandle) {
+        TracingInfo("main", "Reloading log filter", "new_filter", newFilter.c_str());
+
         if (!tracing_reload(pTracingHandle, newFilter.c_str())) {
             throw JSONRPCError(RPC_INTERNAL_ERROR, "Filter reload failed; check logs");
+        }
+
+        // Now that we have reloaded the filter, reload any stored spans.
+        {
+            LOCK(cs_vNodes);
+            for (CNode* pnode : vNodes) {
+                pnode->ReloadTracingSpan();
+            }
         }
     }
 
@@ -494,6 +504,17 @@ UniValue CRPCTable::execute(const std::string &strMethod, const UniValue &params
     }
 
     g_rpcSignals.PostCommand(*pcmd);
+}
+
+std::vector<std::string> CRPCTable::listCommands() const
+{
+    std::vector<std::string> commandList;
+    typedef std::map<std::string, const CRPCCommand*> commandMap;
+
+    std::transform( mapCommands.begin(), mapCommands.end(),
+                   std::back_inserter(commandList),
+                   boost::bind(&commandMap::value_type::first,_1) );
+    return commandList;
 }
 
 std::string HelpExampleCli(const std::string& methodname, const std::string& args)

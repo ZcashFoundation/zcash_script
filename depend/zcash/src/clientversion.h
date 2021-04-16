@@ -1,5 +1,5 @@
 // Copyright (c) 2009-2014 The Bitcoin Core developers
-// Copyright (c) 2016-2020 The Zcash developers
+// Copyright (c) 2016-2021 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -16,7 +16,7 @@
 
 //! These need to be macros, as clientversion.cpp's and bitcoin*-res.rc's voodoo requires it
 #define CLIENT_VERSION_MAJOR 4
-#define CLIENT_VERSION_MINOR 0
+#define CLIENT_VERSION_MINOR 2
 #define CLIENT_VERSION_REVISION 0
 #define CLIENT_VERSION_BUILD 50
 
@@ -27,7 +27,7 @@
  * Copyright year (2009-this)
  * Todo: update this when changing our copyright comments in the source
  */
-#define COPYRIGHT_YEAR 2020
+#define COPYRIGHT_YEAR 2021
 
 #endif //HAVE_CONFIG_H
 

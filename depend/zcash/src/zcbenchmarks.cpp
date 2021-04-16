@@ -3,7 +3,6 @@
 #include <map>
 #include <thread>
 #include <unistd.h>
-#include <boost/filesystem.hpp>
 
 #include "coins.h"
 #include "util.h"
@@ -69,7 +68,7 @@ void post_wallet_load(){
     // Generate coins in the background
     if (pwalletMain || !GetArg("-mineraddress", "").empty())
         GenerateBitcoins(GetBoolArg("-gen", false), GetArg("-genproclimit", 1), Params());
-#endif    
+#endif
 }
 
 
@@ -102,13 +101,15 @@ double benchmark_create_joinsplit()
 
     /* Get the anchor of an empty commitment tree. */
     uint256 anchor = SproutMerkleTree().root();
+    std::array<libzcash::JSInput, ZC_NUM_JS_INPUTS> inputs({JSInput(), JSInput()});
+    std::array<libzcash::JSOutput, ZC_NUM_JS_OUTPUTS> outputs({JSOutput(), JSOutput()});
 
     struct timeval tv_start;
     timer_start(tv_start);
     auto jsdesc = JSDescriptionInfo(joinSplitPubKey,
                          anchor,
-                         {JSInput(), JSInput()},
-                         {JSOutput(), JSOutput()},
+                         inputs,
+                         outputs,
                          0,
                          0).BuildDeterministic();
     double ret = timer_stop(tv_start);
@@ -264,9 +265,9 @@ double benchmark_large_tx(size_t nInputs)
 }
 
 // The two benchmarks, try_decrypt_sprout_notes and try_decrypt_sapling_notes,
-// are checking worst-case scenarios. In both we add n keys to a wallet, 
+// are checking worst-case scenarios. In both we add n keys to a wallet,
 // create a transaction using a key not in our original list of n, and then
-// check that the transaction is not associated with any of the keys in our 
+// check that the transaction is not associated with any of the keys in our
 // wallet. We call assert(...) to ensure that this is true.
 double benchmark_try_decrypt_sprout_notes(size_t nKeys)
 {
@@ -434,7 +435,7 @@ double benchmark_increment_sapling_note_witnesses(size_t nTxs)
 
 // Fake the input of a given block
 // This class is based on the class CCoinsViewDB, but with limited functionality.
-// The construtor and the functions `GetCoins` and `HaveCoins` come directly from
+// The constructor and the functions `GetCoins` and `HaveCoins` come directly from
 // CCoinsViewDB, but the rest are either mocks and/or don't really do anything.
 
 // The following constant is a duplicate of the one found in txdb.cpp
@@ -515,7 +516,7 @@ double benchmark_connectblock_slow()
     // Test for issue 2017-05-01.a
     SelectParams(CBaseChainParams::MAIN);
     CBlock block;
-    FILE* fp = fopen((GetDataDir() / "benchmark/block-107134.dat").string().c_str(), "rb");
+    FILE* fp = fsbridge::fopen(GetDataDir() / "benchmark/block-107134.dat", "rb");
     if (!fp) throw new std::runtime_error("Failed to open block data file");
     CAutoFile blkFile(fp, SER_DISK, CLIENT_VERSION);
     blkFile >> block;

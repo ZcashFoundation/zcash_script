@@ -2,8 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
-#ifndef ASYNCRPCOPERATION_SENDMANY_H
-#define ASYNCRPCOPERATION_SENDMANY_H
+#ifndef ZCASH_WALLET_ASYNCRPCOPERATION_SENDMANY_H
+#define ZCASH_WALLET_ASYNCRPCOPERATION_SENDMANY_H
 
 #include "asyncrpcoperation.h"
 #include "amount.h"
@@ -23,10 +23,8 @@
 
 #include <rust/ed25519/types.h>
 
-// Default transaction fee if caller does not specify one.
-#define ASYNC_RPC_OPERATION_DEFAULT_MINERS_FEE   10000
-
 using namespace libzcash;
+class TxValues;
 
 class SendManyRecipient {
 public:
@@ -36,18 +34,6 @@ public:
 
     SendManyRecipient(std::string address_, CAmount amount_, std::string memo_) :
         address(address_), amount(amount_), memo(memo_) {}
-};
-
-class SendManyInputUTXO {
-public:
-    uint256 txid;
-    int vout;
-    CScript scriptPubKey;
-    CAmount amount;
-    bool coinbase;
-
-    SendManyInputUTXO(uint256 txid_, int vout_, CScript scriptPubKey_, CAmount amount_, bool coinbase_) :
-        txid(txid_), vout(vout_), scriptPubKey(scriptPubKey_), amount(amount_), coinbase(coinbase_) {}
 };
 
 class SendManyInputJSOP {
@@ -85,16 +71,16 @@ public:
         std::vector<SendManyRecipient> tOutputs,
         std::vector<SendManyRecipient> zOutputs,
         int minDepth,
-        CAmount fee = ASYNC_RPC_OPERATION_DEFAULT_MINERS_FEE,
+        CAmount fee = DEFAULT_FEE,
         UniValue contextInfo = NullUniValue);
     virtual ~AsyncRPCOperation_sendmany();
-    
+
     // We don't want to be copied or moved around
     AsyncRPCOperation_sendmany(AsyncRPCOperation_sendmany const&) = delete;             // Copy construct
     AsyncRPCOperation_sendmany(AsyncRPCOperation_sendmany&&) = delete;                  // Move construct
     AsyncRPCOperation_sendmany& operator=(AsyncRPCOperation_sendmany const&) = delete;  // Copy assign
     AsyncRPCOperation_sendmany& operator=(AsyncRPCOperation_sendmany &&) = delete;      // Move assign
-    
+
     virtual void main();
 
     virtual UniValue getStatus() const;
@@ -128,7 +114,7 @@ private:
 
     std::vector<SendManyRecipient> t_outputs_;
     std::vector<SendManyRecipient> z_outputs_;
-    std::vector<SendManyInputUTXO> t_inputs_;
+    std::vector<COutput> t_inputs_;
     std::vector<SendManyInputJSOP> z_sprout_inputs_;
     std::vector<SaplingNoteEntry> z_sapling_inputs_;
 
@@ -138,7 +124,9 @@ private:
     void add_taddr_change_output_to_tx(CReserveKey& keyChange, CAmount amount);
     void add_taddr_outputs_to_tx();
     bool find_unspent_notes();
-    bool find_utxos(bool fAcceptCoinbase);
+    bool find_utxos(bool fAcceptCoinbase, TxValues& txValues);
+    // Load transparent inputs into the transaction or the transactionBuilder (in case of have it)
+    bool load_inputs(TxValues& txValues);
     std::array<unsigned char, ZC_MEMO_SIZE> get_memo_from_hex_string(std::string s);
     bool main_impl();
 
@@ -163,39 +151,35 @@ private:
 class TEST_FRIEND_AsyncRPCOperation_sendmany {
 public:
     std::shared_ptr<AsyncRPCOperation_sendmany> delegate;
-    
+
     TEST_FRIEND_AsyncRPCOperation_sendmany(std::shared_ptr<AsyncRPCOperation_sendmany> ptr) : delegate(ptr) {}
-    
+
     CTransaction getTx() {
         return delegate->tx_;
     }
-    
+
     void setTx(CTransaction tx) {
         delegate->tx_ = tx;
     }
-    
+
     // Delegated methods
 
     void add_taddr_change_output_to_tx(CReserveKey& keyChange, CAmount amount) {
         delegate->add_taddr_change_output_to_tx(keyChange, amount);
     }
-    
+
     void add_taddr_outputs_to_tx() {
         delegate->add_taddr_outputs_to_tx();
     }
-    
+
     bool find_unspent_notes() {
         return delegate->find_unspent_notes();
     }
 
-    bool find_utxos(bool fAcceptCoinbase) {
-        return delegate->find_utxos(fAcceptCoinbase);
-    }
-    
     std::array<unsigned char, ZC_MEMO_SIZE> get_memo_from_hex_string(std::string s) {
         return delegate->get_memo_from_hex_string(s);
     }
-    
+
     bool main_impl() {
         return delegate->main_impl();
     }
@@ -222,4 +206,4 @@ public:
 };
 
 
-#endif /* ASYNCRPCOPERATION_SENDMANY_H */
+#endif // ZCASH_WALLET_ASYNCRPCOPERATION_SENDMANY_H

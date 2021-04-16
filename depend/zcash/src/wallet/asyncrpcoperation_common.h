@@ -1,15 +1,14 @@
 // Copyright (c) 2019 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
-#ifndef ASYNCRPCOPERATION_COMMON_H
-#define ASYNCRPCOPERATION_COMMON_H
+#ifndef ZCASH_WALLET_ASYNCRPCOPERATION_COMMON_H
+#define ZCASH_WALLET_ASYNCRPCOPERATION_COMMON_H
 
 #include "primitives/transaction.h"
 #include "univalue.h"
 #include "wallet.h"
 
-#include <functional>
 #include <optional>
 
 /**
@@ -21,10 +20,7 @@
  * If testmode is true, do not commit the transaction,
  * return {"test": 1, "txid": tx.GetHash().ToString(), "hex": EncodeHexTx(tx)}
  */
-UniValue SendTransaction(
-    CTransaction& tx,
-    std::optional<std::reference_wrapper<CReserveKey>> reservekey,
-    bool testmode);
+UniValue SendTransaction(CTransaction& tx, std::optional<std::reference_wrapper<CReserveKey>> reservekey, bool testmode);
 
 /**
  * Sign and send a raw transaction.
@@ -32,9 +28,6 @@ UniValue SendTransaction(
  * 
  * Returns a pair of (the parsed transaction, and the result of sending)
  */
-std::pair<CTransaction, UniValue> SignSendRawTransaction(
-    UniValue obj,
-    std::optional<std::reference_wrapper<CReserveKey>> reservekey,
-    bool testmode);
+std::pair<CTransaction, UniValue> SignSendRawTransaction(UniValue obj, std::optional<std::reference_wrapper<CReserveKey>> reservekey, bool testmode);
 
-#endif /* ASYNCRPCOPERATION_COMMON_H */
+#endif // ZCASH_WALLET_ASYNCRPCOPERATION_COMMON_H

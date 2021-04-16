@@ -14,6 +14,7 @@
 #include <optional>
 #include <variant>
 
+
 namespace Consensus {
 
 // Early declaration to ensure it is accessible.
@@ -90,12 +91,12 @@ typedef std::variant<libzcash::SaplingPaymentAddress, CScript> FundingStreamAddr
  * Being array indices, these MUST be numbered consecutively.
  */
 enum FundingStreamIndex : uint32_t {
-    FS_ZIP214_ECC,
+    FS_ZIP214_BP,
     FS_ZIP214_ZF,
     FS_ZIP214_MG,
     MAX_FUNDING_STREAMS,
 };
-const auto FIRST_FUNDING_STREAM = FS_ZIP214_ECC;
+const auto FIRST_FUNDING_STREAM = FS_ZIP214_BP;
 
 enum FundingStreamError {
     CANOPY_NOT_ACTIVE,
@@ -263,6 +264,7 @@ struct Params {
     unsigned int nEquihashK = 0;
     uint256 powLimit;
     std::optional<uint32_t> nPowAllowMinDifficultyBlocksAfterHeight;
+    bool fPowNoRetargeting;
     int64_t nPowAveragingWindow;
     int64_t nPowMaxAdjustDown;
     int64_t nPowMaxAdjustUp;
