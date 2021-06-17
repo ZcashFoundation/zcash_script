@@ -6,7 +6,12 @@
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
+static mut ORCHARD_VK: Option<orchard::circuit::VerifyingKey> = None;
+
 mod blake2b;
+mod orchard_ffi;
+mod streams_ffi;
+mod transaction_ffi;
 
 #[cfg(test)]
 mod tests {
