@@ -40,6 +40,8 @@ include = [
     "/depend/zcash/src/rust/include/",
     "/depend/zcash/src/secp256k1/include",
     "/depend/zcash/src/secp256k1",
+    "/depend/zcash/src/support/cleanse.cpp",
+    "/depend/zcash/src/support/cleanse.h",
 ]
 
 [lib]
