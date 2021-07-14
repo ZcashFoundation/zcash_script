@@ -66,38 +66,7 @@ fn main() -> Result<()> {
 
     // **Secp256k1**
     if !cfg!(feature = "external-secp") {
-        base_config
-            .include("depend/zcash/src/secp256k1")
-            .flag_if_supported("-Wno-unused-function") // some ecmult stuff is defined but not used upstream
-            .flag_if_supported("-Wno-missing-field-initializers")
-            .define("SECP256K1_BUILD", "1")
-            // zcash core defines libsecp to *not* use libgmp.
-            .define("USE_NUM_NONE", "1")
-            .define("USE_FIELD_INV_BUILTIN", "1")
-            .define("USE_SCALAR_INV_BUILTIN", "1")
-            .define("ECMULT_WINDOW_SIZE", "15")
-            .define("ECMULT_GEN_PREC_BITS", "4")
-            // Use the endomorphism optimization now that the patents have expired.
-            .define("USE_ENDOMORPHISM", "1")
-            // Technically libconsensus doesn't require the recovery feature, but `pubkey.cpp` does.
-            .define("ENABLE_MODULE_RECOVERY", "1")
-            // The actual libsecp256k1 C code.
-            .file("depend/zcash/src/secp256k1/src/secp256k1.c");
-
-        if is_big_endian() {
-            base_config.define("WORDS_BIGENDIAN", "1");
-        }
-
-        if is_64bit_compilation() {
-            base_config
-                .define("USE_FIELD_5X52", "1")
-                .define("USE_SCALAR_4X64", "1")
-                .define("HAVE___INT128", "1");
-        } else {
-            base_config
-                .define("USE_FIELD_10X26", "1")
-                .define("USE_SCALAR_8X32", "1");
-        }
+        build_secp256k1(&mut base_config);
     }
 
     if target.contains("windows") {
@@ -122,6 +91,42 @@ fn main() -> Result<()> {
         .compile("libzcash_script.a");
 
     Ok(())
+}
+
+/// Build the `secp256k1` library.
+fn build_secp256k1(build: &mut cc::Build) {
+    build
+        .include("depend/zcash/src/secp256k1")
+        .flag_if_supported("-Wno-unused-function") // some ecmult stuff is defined but not used upstream
+        .flag_if_supported("-Wno-missing-field-initializers")
+        .define("SECP256K1_BUILD", "1")
+        // zcash core defines libsecp to *not* use libgmp.
+        .define("USE_NUM_NONE", "1")
+        .define("USE_FIELD_INV_BUILTIN", "1")
+        .define("USE_SCALAR_INV_BUILTIN", "1")
+        .define("ECMULT_WINDOW_SIZE", "15")
+        .define("ECMULT_GEN_PREC_BITS", "4")
+        // Use the endomorphism optimization now that the patents have expired.
+        .define("USE_ENDOMORPHISM", "1")
+        // Technically libconsensus doesn't require the recovery feature, but `pubkey.cpp` does.
+        .define("ENABLE_MODULE_RECOVERY", "1")
+        // The actual libsecp256k1 C code.
+        .file("depend/zcash/src/secp256k1/src/secp256k1.c");
+
+    if is_big_endian() {
+        build.define("WORDS_BIGENDIAN", "1");
+    }
+
+    if is_64bit_compilation() {
+        build
+            .define("USE_FIELD_5X52", "1")
+            .define("USE_SCALAR_4X64", "1")
+            .define("HAVE___INT128", "1");
+    } else {
+        build
+            .define("USE_FIELD_10X26", "1")
+            .define("USE_SCALAR_8X32", "1");
+    }
 }
 
 /// Checker whether the target architecture is big endian.
