@@ -66,7 +66,7 @@ fn main() -> Result<()> {
 
     // **Secp256k1**
     if !cfg!(feature = "external-secp") {
-        build_secp256k1(&mut base_config);
+        build_secp256k1();
     }
 
     if target.contains("windows") {
@@ -94,13 +94,15 @@ fn main() -> Result<()> {
 }
 
 /// Build the `secp256k1` library.
-fn build_secp256k1(build: &mut cc::Build) {
+fn build_secp256k1() {
+    let mut build = cc::Build::new();
+
+    // Compile C99 code
+    language_std(&mut build, "c99");
+
+    // Define configuration constants
     build
-        .include("depend/zcash/src/secp256k1")
-        .flag_if_supported("-Wno-unused-function") // some ecmult stuff is defined but not used upstream
-        .flag_if_supported("-Wno-missing-field-initializers")
         .define("SECP256K1_BUILD", "1")
-        // zcash core defines libsecp to *not* use libgmp.
         .define("USE_NUM_NONE", "1")
         .define("USE_FIELD_INV_BUILTIN", "1")
         .define("USE_SCALAR_INV_BUILTIN", "1")
@@ -110,8 +112,11 @@ fn build_secp256k1(build: &mut cc::Build) {
         .define("USE_ENDOMORPHISM", "1")
         // Technically libconsensus doesn't require the recovery feature, but `pubkey.cpp` does.
         .define("ENABLE_MODULE_RECOVERY", "1")
-        // The actual libsecp256k1 C code.
-        .file("depend/zcash/src/secp256k1/src/secp256k1.c");
+        // The source files look for headers inside an `include` sub-directory
+        .include("depend/zcash/src/secp256k1")
+        // Some ecmult stuff is defined but not used upstream
+        .flag_if_supported("-Wno-unused-function")
+        .flag_if_supported("-Wno-unused-parameter");
 
     if is_big_endian() {
         build.define("WORDS_BIGENDIAN", "1");
@@ -127,6 +132,10 @@ fn build_secp256k1(build: &mut cc::Build) {
             .define("USE_FIELD_10X26", "1")
             .define("USE_SCALAR_8X32", "1");
     }
+
+    build
+        .file("depend/zcash/src/secp256k1/src/secp256k1.c")
+        .compile("libsecp256k1.a");
 }
 
 /// Checker whether the target architecture is big endian.
