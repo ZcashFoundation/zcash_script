@@ -58,6 +58,8 @@ fn main() -> Result<()> {
         .flag_if_supported("-Wno-catch-value")
         .flag_if_supported("-Wno-reorder")
         .flag_if_supported("-Wno-deprecated-copy")
+        .flag_if_supported("-Wno-unused-parameter")
+        .flag_if_supported("/wd4100")
         .define("HAVE_DECL_STRNLEN", "1")
         .define("__STDC_FORMAT_MACROS", None);
 
@@ -99,9 +101,9 @@ fn main() -> Result<()> {
 
     let tool = base_config.get_compiler();
     if tool.is_like_msvc() {
-        base_config.flag("/std:c++17").flag("/wd4100");
+        base_config.flag("/std:c++17");
     } else if tool.is_like_clang() || tool.is_like_gnu() {
-        base_config.flag("-std=c++17").flag("-Wno-unused-parameter");
+        base_config.flag("-std=c++17");
     }
 
     if target.contains("windows") {
