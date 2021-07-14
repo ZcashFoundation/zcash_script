@@ -46,20 +46,6 @@ fn bindgen_headers() -> Result<()> {
 fn main() -> Result<()> {
     bindgen_headers()?;
 
-    // Check whether we can use 64-bit compilation
-    let use_64bit_compilation = if env::var("CARGO_CFG_TARGET_POINTER_WIDTH").unwrap() == "64" {
-        let check = cc::Build::new()
-            .file("depend/check_uint128_t.c")
-            .cargo_metadata(false)
-            .try_compile("check_uint128_t")
-            .is_ok();
-        if !check {
-            println!("cargo:warning=Compiling in 32-bit mode on a 64-bit architecture due to lack of uint128_t support.");
-        }
-        check
-    } else {
-        false
-    };
     let target = env::var("TARGET").expect("TARGET was not set");
     let mut base_config = cc::Build::new();
 
@@ -99,7 +85,7 @@ fn main() -> Result<()> {
             base_config.define("WORDS_BIGENDIAN", "1");
         }
 
-        if use_64bit_compilation {
+        if is_64bit_compilation() {
             base_config
                 .define("USE_FIELD_5X52", "1")
                 .define("USE_SCALAR_4X64", "1")
@@ -147,4 +133,29 @@ fn is_big_endian() -> bool {
     let endianess = env::var("CARGO_CFG_TARGET_ENDIAN").expect("No endian is set");
 
     endianess == "big"
+}
+
+/// Check whether we can use 64-bit compilation.
+fn is_64bit_compilation() -> bool {
+    let target_pointer_width =
+        env::var("CARGO_CFG_TARGET_POINTER_WIDTH").expect("Target pointer width is not set");
+
+    if target_pointer_width == "64" {
+        let check = cc::Build::new()
+            .file("depend/check_uint128_t.c")
+            .cargo_metadata(false)
+            .try_compile("check_uint128_t")
+            .is_ok();
+
+        if !check {
+            println!(
+                "cargo:warning=Compiling in 32-bit mode on a 64-bit architecture due to lack of \
+                uint128_t support."
+            );
+        }
+
+        check
+    } else {
+        false
+    }
 }
