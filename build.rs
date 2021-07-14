@@ -49,8 +49,9 @@ fn main() -> Result<()> {
     let target = env::var("TARGET").expect("TARGET was not set");
     let mut base_config = cc::Build::new();
 
+    language_std(&mut base_config, "c++17");
+
     base_config
-        .cpp(true)
         .include("depend/zcash/src")
         .include("depend/zcash/src/rust/include/")
         .include("depend/zcash/src/secp256k1/include")
@@ -97,13 +98,6 @@ fn main() -> Result<()> {
                 .define("USE_FIELD_10X26", "1")
                 .define("USE_SCALAR_8X32", "1");
         }
-    }
-
-    let tool = base_config.get_compiler();
-    if tool.is_like_msvc() {
-        base_config.flag("/std:c++17");
-    } else if tool.is_like_clang() || tool.is_like_gnu() {
-        base_config.flag("-std=c++17");
     }
 
     if target.contains("windows") {
@@ -160,4 +154,22 @@ fn is_64bit_compilation() -> bool {
     } else {
         false
     }
+}
+
+/// Configure the language standard used in the build.
+///
+/// Configures the appropriate flag based on the compiler that's used.
+///
+/// This will also enable or disable the `cpp` flag if the standard is for C++. The code determines
+/// this based on whether `std` starts with `c++` or not.
+fn language_std(build: &mut cc::Build, std: &str) {
+    build.cpp(std.starts_with("c++"));
+
+    let flag = if build.get_compiler().is_like_msvc() {
+        "/std:"
+    } else {
+        "-std="
+    };
+
+    build.flag(&[flag, std].concat());
 }
