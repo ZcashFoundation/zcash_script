@@ -61,7 +61,6 @@ fn main() -> Result<()> {
         false
     };
     let target = env::var("TARGET").expect("TARGET was not set");
-    let is_big_endian = env::var("CARGO_CFG_TARGET_ENDIAN").expect("No endian is set") == "big";
     let mut base_config = cc::Build::new();
 
     base_config
@@ -96,7 +95,7 @@ fn main() -> Result<()> {
             // The actual libsecp256k1 C code.
             .file("depend/zcash/src/secp256k1/src/secp256k1.c");
 
-        if is_big_endian {
+        if is_big_endian() {
             base_config.define("WORDS_BIGENDIAN", "1");
         }
 
@@ -141,4 +140,11 @@ fn main() -> Result<()> {
         .compile("libzcash_script.a");
 
     Ok(())
+}
+
+/// Checker whether the target architecture is big endian.
+fn is_big_endian() -> bool {
+    let endianess = env::var("CARGO_CFG_TARGET_ENDIAN").expect("No endian is set");
+
+    endianess == "big"
 }
