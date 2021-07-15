@@ -60,6 +60,7 @@ fn main() -> Result<()> {
         .flag_if_supported("-Wno-reorder")
         .flag_if_supported("-Wno-deprecated-copy")
         .flag_if_supported("-Wno-unused-parameter")
+        // when compiling using Microsoft Visual C++, ignore warnings about unused arguments
         .flag_if_supported("/wd4100")
         .define("HAVE_DECL_STRNLEN", "1")
         .define("__STDC_FORMAT_MACROS", None);
