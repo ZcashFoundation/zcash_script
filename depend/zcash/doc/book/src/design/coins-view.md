@@ -1,3 +1,0 @@
-# "Coins" view
-
-TBD

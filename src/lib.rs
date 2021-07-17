@@ -7,6 +7,9 @@
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 mod blake2b;
+mod orchard_ffi;
+mod streams_ffi;
+mod transaction_ffi;
 
 #[cfg(test)]
 mod tests {

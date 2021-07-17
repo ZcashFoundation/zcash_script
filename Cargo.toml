@@ -40,6 +40,8 @@ include = [
     "/depend/zcash/src/rust/include/",
     "/depend/zcash/src/secp256k1/include",
     "/depend/zcash/src/secp256k1",
+    "/depend/zcash/src/support/cleanse.cpp",
+    "/depend/zcash/src/support/cleanse.h",
 ]
 
 [lib]
@@ -50,8 +52,13 @@ path = "src/lib.rs"
 external-secp = []
 
 [dependencies]
-libc="0.2"
 blake2b_simd = "0.5.10"
+halo2 = "0.0"
+libc = "0.2"
+orchard = "0.0"
+rand_core = "0.6"
+tracing = "0.1"
+zcash_primitives = "0.5"
 
 [build-dependencies]
 cc = { version = ">= 1.0.36", features = ["parallel"] }
@@ -96,3 +103,11 @@ file="CHANGELOG.md"
 search="<!-- next-url -->"
 replace="<!-- next-url -->\n[Unreleased]: https://github.com/ZcashFoundation/{{crate_name}}/compare/{{tag_name}}...HEAD"
 exactly=1
+
+[patch.crates-io]
+ed25519-zebra = { git = "https://github.com/ZcashFoundation/ed25519-zebra.git", rev = "d3512400227a362d08367088ffaa9bd4142a69c7" }
+halo2 = { git = "https://github.com/zcash/halo2.git", rev = "d04b532368d05b505e622f8cac4c0693574fbd93" }
+orchard = { git = "https://github.com/zcash/orchard.git", rev = "f7c64e0437040d831e61711cd9e5695b001cb5cb" }
+zcash_note_encryption = { git = "https://github.com/zcash/librustzcash.git", rev = "d88e40113c8dadea751dfcdd72ee90868f9655ff" }
+zcash_primitives = { git = "https://github.com/zcash/librustzcash.git", rev = "d88e40113c8dadea751dfcdd72ee90868f9655ff" }
+zcash_proofs = { git = "https://github.com/zcash/librustzcash.git", rev = "d88e40113c8dadea751dfcdd72ee90868f9655ff" }
