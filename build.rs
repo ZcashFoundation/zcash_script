@@ -60,6 +60,9 @@ fn main() -> Result<()> {
         .flag_if_supported("-Wno-reorder")
         .flag_if_supported("-Wno-deprecated-copy")
         .flag_if_supported("-Wno-unused-parameter")
+        .flag_if_supported("-Wno-unused-variable")
+        .flag_if_supported("-Wno-ignored-qualifiers")
+        .flag_if_supported("-Wno-sign-compare")
         // when compiling using Microsoft Visual C++, ignore warnings about unused arguments
         .flag_if_supported("/wd4100")
         .define("HAVE_DECL_STRNLEN", "1")
@@ -89,6 +92,7 @@ fn main() -> Result<()> {
         .file("depend/zcash/src/script/interpreter.cpp")
         .file("depend/zcash/src/script/script.cpp")
         .file("depend/zcash/src/script/script_error.cpp")
+        .file("depend/zcash/src/support/cleanse.cpp")
         .compile("libzcash_script.a");
 
     Ok(())
