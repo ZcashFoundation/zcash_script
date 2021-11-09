@@ -13,18 +13,41 @@
 
 Rust bindings to the ECC's `zcash_script` c++ library.
 
-### Updating `depend/zcash`
+### Cloning and checking out `depend/zcash`
 
-To pull in recent changes from the upstream repo run the following:
-
+Clone this repository using:
 ```console
-git subtree pull -P depend/zcash <repo> <branch> --squash
+git clone --recurse-submodules
 ```
 
-For example:
+Or if you've already cloned:
+```console
+git submodule update --init
+```
+
+To pull the latest version, use:
+```console
+git pull --recurse-submodules
+```
+
+### Updating `depend/zcash`
+
+If you need to change the submodule's base branch:
+```console
+git config -f .gitmodules submodule.depend/zcash.branch <branch-name>
+```
+
+To pull in recent changes from the upstream repo:
 
 ```console
-git subtree pull -P depend/zcash https://github.com/str4d/zcash.git zcash-script-precompute --squash
+git submodule update --remote
+```
+
+To use a specific commit:
+
+```console
+cd depend/zcash
+git checkout <commit-hash>
 ```
 
 ### Publishing New Releases
