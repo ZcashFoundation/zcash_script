@@ -14,7 +14,6 @@ include = [
     "/.gitignore",
     "/.gitmodules",
     "Cargo.toml",
-    "Cargo.toml.orig",
     "/LICENSE",
     "/README.md",
     "build.rs",
