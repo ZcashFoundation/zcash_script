@@ -65,7 +65,7 @@ zcash_primitives = "0.5"
 
 [build-dependencies]
 cc = { version = ">= 1.0.36", features = ["parallel"] }
-bindgen = "0.58"
+bindgen = "0.59"
 
 [dev-dependencies]
 rustc-serialize = "0.3"
