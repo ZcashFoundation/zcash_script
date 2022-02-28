@@ -154,9 +154,11 @@ mod tests {
     pub fn transparent_output_address(
         tx_to: &[u8],
         nOut: u32,
-    ) -> Result<super::zcash_script_uint160_t, zcash_script_error_t> {
+    ) -> Result<(super::zcash_script_uint160_t, super::zcash_script_type_t), zcash_script_error_t>
+    {
         let tx_to_ptr = tx_to.as_ptr();
         let tx_to_len = tx_to.len();
+        let mut addrType = 0;
         let mut err = 0;
 
         let address = unsafe {
@@ -164,12 +166,13 @@ mod tests {
                 tx_to_ptr,
                 tx_to_len as u32,
                 nOut,
+                &mut addrType,
                 &mut err,
             )
         };
 
         if err == 0 {
-            Ok(address)
+            Ok((address, addrType))
         } else {
             Err(err)
         }
@@ -178,20 +181,27 @@ mod tests {
     pub fn transparent_output_address_precomputed(
         tx_to: &[u8],
         nOut: u32,
-    ) -> Result<super::zcash_script_uint160_t, zcash_script_error_t> {
+    ) -> Result<(super::zcash_script_uint160_t, super::zcash_script_type_t), zcash_script_error_t>
+    {
         let tx_to_ptr = tx_to.as_ptr();
         let tx_to_len = tx_to.len();
+        let mut addrType = 0;
         let mut err = 0;
 
         let precomputed =
             unsafe { super::zcash_script_new_precomputed_tx(tx_to_ptr, tx_to_len as _, &mut err) };
 
         let address = unsafe {
-            super::zcash_script_transparent_output_address_precomputed(precomputed, nOut, &mut err)
+            super::zcash_script_transparent_output_address_precomputed(
+                precomputed,
+                nOut,
+                &mut addrType,
+                &mut err,
+            )
         };
 
         if err == 0 {
-            Ok(address)
+            Ok((address, addrType))
         } else {
             Err(err)
         }
@@ -204,15 +214,17 @@ mod tests {
         // Expected values manually extracted from the transaction
         // (parsed with zebra-chain, then manually extracted from lock_script)
 
-        let address = transparent_output_address(tx_to, 0).unwrap();
+        let (address, addrType) = transparent_output_address(tx_to, 0).unwrap();
         let expected_address = hex::decode("1b8a9bda4b62cd0d0582b55455d0778c86f8628f").unwrap();
 
         assert_eq!(Vec::<u8>::from(address.value), expected_address);
+        assert_eq!(addrType, super::zcash_script_type_t_zcash_script_TYPE_P2SH);
 
-        let address = transparent_output_address(tx_to, 1).unwrap();
+        let (address, addrType) = transparent_output_address(tx_to, 1).unwrap();
         let expected_address = hex::decode("e4ff5512ffafe9287992a1cd177ca6e408e03003").unwrap();
 
         assert_eq!(Vec::<u8>::from(address.value), expected_address);
+        assert_eq!(addrType, super::zcash_script_type_t_zcash_script_TYPE_P2PKH);
     }
 
     #[test]
@@ -222,15 +234,17 @@ mod tests {
         // Expected values manually extracted from the transaction
         // (parsed with zebra-chain, then manually extracted from lock_script)
 
-        let address = transparent_output_address_precomputed(tx_to, 0).unwrap();
+        let (address, addrType) = transparent_output_address_precomputed(tx_to, 0).unwrap();
         let expected_address = hex::decode("1b8a9bda4b62cd0d0582b55455d0778c86f8628f").unwrap();
 
         assert_eq!(Vec::<u8>::from(address.value), expected_address);
+        assert_eq!(addrType, super::zcash_script_type_t_zcash_script_TYPE_P2SH);
 
-        let address = transparent_output_address_precomputed(tx_to, 1).unwrap();
+        let (address, addrType) = transparent_output_address_precomputed(tx_to, 1).unwrap();
         let expected_address = hex::decode("e4ff5512ffafe9287992a1cd177ca6e408e03003").unwrap();
 
         assert_eq!(Vec::<u8>::from(address.value), expected_address);
+        assert_eq!(addrType, super::zcash_script_type_t_zcash_script_TYPE_P2PKH);
     }
 
     #[test]
