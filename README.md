@@ -13,6 +13,9 @@
 
 Rust bindings to the ECC's `zcash_script` c++ library.
 
+`zcash_script` links to `librustzcash`, which is written in Rust. Therefore,
+when updating `zcash_script`, we need to make sure that
+
 ### Cloning and checking out `depend/zcash`
 
 Clone this repository using:

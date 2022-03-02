@@ -1,3 +1,4 @@
 [submodule "depend/zcash"]
 	path = depend/zcash
 	url = https://github.com/ZcashFoundation/zcashd.git
+	branch = zcash_script_v5_api
