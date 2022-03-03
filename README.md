@@ -11,10 +11,24 @@
 [docs-badge]: https://img.shields.io/badge/docs-latest-blue.svg
 [docs-url]: https://docs.rs/zcash_script
 
-Rust bindings to the ECC's `zcash_script` c++ library.
+Rust bindings to the ECC's `zcash_script` C++ library.
 
-`zcash_script` links to `librustzcash`, which is written in Rust. Therefore,
-when updating `zcash_script`, we need to make sure that
+### Developing
+
+This crate works by manually including the `zcash_script` .h and .cpp files,
+using `bindgen` to generate Rust bindings, and compiling everything together
+into a single library. Due to the way the `zcash_script` is written we unfortunately need
+to include a lot of other stuff e.g. the orchard library.
+
+Note that `zcash_script` (the C++ library/folder inside `zcash`) uses some Rust
+FFI functions from `zcash`; and it also links to `librustzcash` which is written in Rust.
+Therefore, when updating `zcash_script` (this crate), we need to make sure that shared dependencies
+between all of those are the same versions (and are patched to the same revisions, if applicable).
+To do that, check for versions in:
+
+- `zcash/Cargo.toml` in the revision pointed to by this crate (also check for patches)
+- `librustzcash/Cargo.toml` in the revision pointed to by `zcash` (also check for patches)
+- `librustzcash/<crate>/Cargo.toml` in the revision pointed to by `zcash`
 
 ### Cloning and checking out `depend/zcash`
 
