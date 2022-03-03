@@ -1,3 +1,4 @@
 [submodule "depend/zcash"]
 	path = depend/zcash
 	url = https://github.com/ZcashFoundation/zcashd.git
+	branch = get-address-from-output
