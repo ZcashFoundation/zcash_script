@@ -1,4 +1,4 @@
 [submodule "depend/zcash"]
 	path = depend/zcash
-	url = https://github.com/ZcashFoundation/zcashd.git
+	url = https://github.com/zcash/zcash.git
 	branch = nu5-consensus

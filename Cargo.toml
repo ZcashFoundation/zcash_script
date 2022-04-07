@@ -55,7 +55,7 @@ external-secp = []
 blake2b_simd = "1"
 libc = "0.2"
 memuse = "0.2"
-orchard = "=0.1.0-beta.2"
+orchard = "=0.1.0-beta.3"
 rand_core = "0.6"
 tracing = "0.1"
 zcash_encoding = "0.0"
@@ -108,8 +108,7 @@ exactly=1
 
 [patch.crates-io]
 # From zcashd
-zcash_note_encryption = { git = "https://github.com/zcash/librustzcash.git", rev = "9c1ed86c5aa8ae3b6d6dcc1478f2d6ba1264488f" }
-zcash_primitives = { git = "https://github.com/zcash/librustzcash.git", rev = "9c1ed86c5aa8ae3b6d6dcc1478f2d6ba1264488f" }
-zcash_encoding = { git = "https://github.com/zcash/librustzcash.git", rev = "9c1ed86c5aa8ae3b6d6dcc1478f2d6ba1264488f" }
-# From zcash_primitives
-hdwallet = { git = "https://github.com/nuttycom/hdwallet", rev = "576683b9f2865f1118c309017ff36e01f84420c9" }
+zcash_note_encryption = { git = "https://github.com/zcash/librustzcash.git", rev = "43c18d000fcbe45363b2d53585d5102841eff99e" }
+zcash_primitives = { git = "https://github.com/zcash/librustzcash.git", rev = "43c18d000fcbe45363b2d53585d5102841eff99e" }
+zcash_encoding = { git = "https://github.com/zcash/librustzcash.git", rev = "43c18d000fcbe45363b2d53585d5102841eff99e" }
+hdwallet = { git = "https://github.com/nuttycom/hdwallet", rev = "9b4c1bdbe0517e3a7a8f285d6048a37d472ba3bc" }
