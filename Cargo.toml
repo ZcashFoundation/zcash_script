@@ -52,16 +52,15 @@ path = "src/lib.rs"
 external-secp = []
 
 [dependencies]
-blake2b_simd = "0.5.10"
-halo2 = "0.1.0-beta.1"
-incrementalmerkletree = "0.1"
+blake2b_simd = "1"
 libc = "0.2"
 memuse = "0.2"
-orchard = "0.0"
+orchard = "=0.1.0-beta.3"
 rand_core = "0.6"
 tracing = "0.1"
-zcash_note_encryption = "0.0"
-zcash_primitives = "0.5"
+zcash_encoding = "0.0"
+zcash_note_encryption = "0.1"
+zcash_primitives = { version = "0.5", features = ["transparent-inputs"] }
 
 [build-dependencies]
 cc = { version = ">= 1.0.36", features = ["parallel"] }
@@ -108,7 +107,8 @@ replace="<!-- next-url -->\n[Unreleased]: https://github.com/ZcashFoundation/{{c
 exactly=1
 
 [patch.crates-io]
-incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "b7bd6246122a6e9ace8edb51553fbf5228906cbb" }
-orchard = { git = "https://github.com/zcash/orchard.git", rev = "2c8241f25b943aa05203eacf9905db117c69bd29" }
-zcash_note_encryption = { git = "https://github.com/zcash/librustzcash.git", rev = "53d0a51d33a421cb76d3e3124d1e4c1c9036068e" }
-zcash_primitives = { git = "https://github.com/zcash/librustzcash.git", rev = "53d0a51d33a421cb76d3e3124d1e4c1c9036068e" }
+# From zcashd
+zcash_note_encryption = { git = "https://github.com/zcash/librustzcash.git", rev = "43c18d000fcbe45363b2d53585d5102841eff99e" }
+zcash_primitives = { git = "https://github.com/zcash/librustzcash.git", rev = "43c18d000fcbe45363b2d53585d5102841eff99e" }
+zcash_encoding = { git = "https://github.com/zcash/librustzcash.git", rev = "43c18d000fcbe45363b2d53585d5102841eff99e" }
+hdwallet = { git = "https://github.com/nuttycom/hdwallet", rev = "9b4c1bdbe0517e3a7a8f285d6048a37d472ba3bc" }
