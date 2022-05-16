@@ -30,42 +30,31 @@ To do that, check for versions in:
 - `librustzcash/Cargo.toml` in the revision pointed to by `zcash` (also check for patches)
 - `librustzcash/<crate>/Cargo.toml` in the revision pointed to by `zcash`
 
-### Cloning and checking out `depend/zcash`
-
-Clone this repository using:
-```console
-git clone --recurse-submodules
-```
-
-Or if you've already cloned:
-```console
-git submodule update --init
-```
-
-To pull the latest version, use:
-```console
-git pull --recurse-submodules
-```
-
 ### Updating `depend/zcash`
 
-If you need to change the submodule's base branch:
-```console
-git config -f .gitmodules submodule.depend/zcash.branch <branch-name>
-```
+We keep a copy of the zcash source in `depend/zcash` with the help of `git subtree`.
+It has one single difference that must be enforced everytime it's updated: the root
+`Cargo.toml` must be deleted, since otherwise cargo will ignore the entire folder
+when publishing the crate (see https://github.com/rust-lang/cargo/issues/8597).
 
-To pull in recent changes from the upstream repo:
-
-```console
-git submodule update --remote
-```
-
-To use a specific commit:
+If you need to update the zcash source, run:
 
 ```console
-cd depend/zcash
-git checkout <commit-hash>
+git subtree pull -P depend/zcash https://github.com/zcash/zcash.git <ref> --squash
 ```
+
+where `<ref>` is a reference to a branch, tag or commit (it should be a tag when preparing
+a release, but it will be likely a branch or commit when testing).
+
+The command will likely report a conflict due to the deleted `Cargo.toml` file.
+Just run
+
+```
+git rm depend/zcash/Cargo.toml
+```
+
+and then commit the updates.
+
 
 ### Publishing New Releases
 
@@ -75,6 +64,7 @@ Releases for `zcash-script` are made with the help of [cargo release](https://gi
 
 * create a new branch batch the release commits into a PR
 * update `CHANGELOG.md` to document any major changes since the last release
+  https://github.com/rust-lang/cargo/issues/8597)
 * open a PR to merge your branch into `master`
 * locally run `cargo release -- <level>` where `level` can be `patch`, `minor`, or `major` ([source](https://github.com/sunng87/cargo-release/blob/master/docs/reference.md#bump-level))
 

@@ -10,17 +10,12 @@ description = "ffi bindings to zcashd's zcash_script library"
 documentation = "https://docs.rs/zcash_script"
 repository = "https://github.com/ZcashFoundation/zcash_script"
 include = [
-    "/.github/workflows/ci.yml",
-    "/.gitignore",
-    "/.gitmodules",
     "Cargo.toml",
-    "Cargo.toml.orig",
     "/LICENSE",
     "/README.md",
     "build.rs",
-    "depend/check_uint128_t.c",
-    "src/blake2b.rs",
-    "src/lib.rs",
+    "src/*.rs",
+    "/depend/check_uint128_t.c",
     "/depend/zcash/src/script/zcash_script.h",
     "/depend/zcash/src/script/zcash_script.cpp",
     "/depend/zcash/src/utilstrencodings.cpp",
