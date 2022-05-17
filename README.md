@@ -49,11 +49,19 @@ a release, but it will be likely a branch or commit when testing).
 The command will likely report a conflict due to the deleted `Cargo.toml` file.
 Just run
 
-```
+```console
 git rm depend/zcash/Cargo.toml
 ```
 
-and then commit the updates.
+and then commit the updates. Note: after updating zcash, the PR that includes it must *not* be
+squashed-and-merged, due to how subtree works. Otherwise you will get errors
+when trying to update zcash again.
+
+If that ends up happening, you can always `git rm depend/zcash` and start over
+(run the same command as above, but with `add` instead of `pull`);
+our usage of `subtree` is to just have a convenient way of pulling copies of `zcash`.
+(Unfortunately, switching to submodules is not a good solution due to the need of
+deleting the `Cargo.toml`.)
 
 
 ### Publishing New Releases
