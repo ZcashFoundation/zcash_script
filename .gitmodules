@@ -1,4 +1,0 @@
-[submodule "depend/zcash"]
-	path = depend/zcash
-	url = https://github.com/zcash/zcash.git
-	branch = master

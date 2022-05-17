@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- next-header -->
 
+## [Unreleased] - ReleaseDate
+
 ## [0.1.6] - 2022-05-16
 
 ### Changed
@@ -41,7 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated `bindgen` to a non yanked version
 
 <!-- next-url -->
-[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.2...v0.1.3
