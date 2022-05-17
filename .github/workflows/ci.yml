@@ -26,6 +26,28 @@ jobs:
         with:
           command: check
 
+  # Test that "cargo package" works. This make sure it's publishable,
+  # since we had issues where "cargo build" worked but "package" didn't.
+  package:
+    name: Package
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust:
+          - stable
+          - nightly
+    steps:
+      - uses: actions/checkout@v1
+        with:
+          submodules: true
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          command: package
+
   test-versions:
     name: Test Suite
     runs-on: ubuntu-latest
