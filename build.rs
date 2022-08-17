@@ -1,4 +1,6 @@
-use std::{env, fmt, path::PathBuf};
+use std::{env, fmt, fs, io::Read, path::PathBuf};
+
+use syn::__private::ToTokens;
 
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -43,8 +45,78 @@ fn bindgen_headers() -> Result<()> {
     Ok(())
 }
 
+/// Use cxx_gen to generate headers and source files for FFI bindings,
+/// just like zcash does (see depend/zcash/src/Makefile.am).
+/// (Note that zcash uses the cxxbridge-cmd binary, while we use the
+/// cxx_gen library, but the result is the same.)
+///
+/// We could use [`cxx_build`](https://cxx.rs/tutorial.html#compiling-the-c-code-with-cargo)
+/// to do this automatically. But zcash uses the
+/// [manual approach](https://cxx.rs/tutorial.html#c-generated-code) which
+/// creates the headers with non-standard names and paths (e.g. "blake2b.h",
+/// instead of "blake2b.rs.h" which what cxx_build would create). This would
+/// requires us to rename/link files which is awkward.
+///
+/// Note that we must generate the files in the target dir (OUT_DIR) and not in
+/// any source folder, because `cargo package` does not allow that.
+/// (This is in contrast to zcash which generates in `depend/zcash/src/rust/gen/`)
+fn gen_cxxbridge() -> Result<()> {
+    let out_path = env::var("OUT_DIR").map_err(Error::Env)?;
+    let out_path = PathBuf::from(out_path).join("include");
+
+    // These must match `CXXBRIDGE_RS` in depend/zcash/src/Makefile.am
+    let filenames = [
+        "blake2b",
+        "bundlecache",
+        "equihash",
+        "orchard_bundle",
+        "sapling",
+        "wallet_scanner",
+    ];
+
+    // The output folder must exist
+    fs::create_dir_all(out_path.join("rust")).unwrap();
+
+    // Generate the generic header file
+    fs::write(out_path.join("rust/cxx.h"), cxx_gen::HEADER).unwrap();
+
+    // Generate the source and header for each bridge file
+    for filename in filenames {
+        println!(
+            "cargo:rerun-if-changed=depend/zcash/src/rust/src/{}.rs",
+            filename
+        );
+
+        let mut file =
+            fs::File::open(format!("depend/zcash/src/rust/src/{}.rs", filename).as_str()).unwrap();
+        let mut content = String::new();
+        file.read_to_string(&mut content).unwrap();
+
+        let ast = syn::parse_file(&content).unwrap();
+        let token_stream = ast.to_token_stream();
+        let mut opt = cxx_gen::Opt::default();
+        opt.include.push(cxx_gen::Include {
+            path: "rust/cxx.h".to_string(),
+            kind: cxx_gen::IncludeKind::Quoted,
+        });
+        let output = cxx_gen::generate_header_and_cc(token_stream, &opt).unwrap();
+
+        fs::write(out_path.join(format!("rust/{}.h", filename)), output.header).unwrap();
+        fs::write(
+            out_path.join(format!("rust/{}.c", filename)),
+            output.implementation,
+        )
+        .unwrap();
+    }
+    Ok(())
+}
+
 fn main() -> Result<()> {
     bindgen_headers()?;
+    gen_cxxbridge()?;
+
+    let include_path = env::var("OUT_DIR").map_err(Error::Env)?;
+    let include_path = PathBuf::from(include_path).join("include");
 
     let target = env::var("TARGET").expect("TARGET was not set");
     let mut base_config = cc::Build::new();
@@ -55,6 +127,7 @@ fn main() -> Result<()> {
         .include("depend/zcash/src")
         .include("depend/zcash/src/rust/include/")
         .include("depend/zcash/src/secp256k1/include")
+        .include(&include_path)
         .flag_if_supported("-Wno-implicit-fallthrough")
         .flag_if_supported("-Wno-catch-value")
         .flag_if_supported("-Wno-reorder")
@@ -79,7 +152,7 @@ fn main() -> Result<()> {
 
     base_config
         .file("depend/zcash/src/script/zcash_script.cpp")
-        .file("depend/zcash/src/utilstrencodings.cpp")
+        .file("depend/zcash/src/util/strencodings.cpp")
         .file("depend/zcash/src/uint256.cpp")
         .file("depend/zcash/src/pubkey.cpp")
         .file("depend/zcash/src/hash.cpp")
@@ -93,6 +166,7 @@ fn main() -> Result<()> {
         .file("depend/zcash/src/script/script.cpp")
         .file("depend/zcash/src/script/script_error.cpp")
         .file("depend/zcash/src/support/cleanse.cpp")
+        .file(include_path.join("rust/blake2b.c"))
         .compile("libzcash_script.a");
 
     Ok(())

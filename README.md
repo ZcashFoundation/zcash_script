@@ -39,14 +39,17 @@ when publishing the crate (see https://github.com/rust-lang/cargo/issues/8597).
 
 However, `git subtree` requires merge commits in order to make further updates
 work correctly. Since we don't allow those in our repository, we start over
-everytime, basically using it as a glorified `git clone`. This issue is being
+every time, basically using it as a glorified `git clone`. This issue is being
 tracked in https://github.com/ZcashFoundation/zcash_script/issues/35.
 
 If you need to update the zcash source, run:
 
 ```console
 git rm -r depend/zcash
+(commit changes)
 git subtree add -P depend/zcash https://github.com/zcash/zcash.git <ref> --squash
+git rm depend/zcash/Cargo.toml
+(commit changes)
 ```
 
 where `<ref>` is a reference to a branch, tag or commit (it should be a tag when preparing
