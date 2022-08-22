@@ -9,6 +9,11 @@ use rand_core::{OsRng, RngCore};
 mod ffi {
     #[namespace = "libzcash"]
     unsafe extern "C++" {
+        // Workaround for a missing include in cuckoohash.h, see
+        // https://github.com/zcash/zcash/pull/6131
+        // Ideally this should add an <algorithm> (and not "algorithm") but
+        // I don't know to make that happen. It works for now.
+        include!("algorithm");
         include!("zcash/cache.h");
 
         type BundleValidityCache;

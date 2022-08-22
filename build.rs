@@ -167,6 +167,7 @@ fn main() -> Result<()> {
         .file("depend/zcash/src/script/script_error.cpp")
         .file("depend/zcash/src/support/cleanse.cpp")
         .file(include_path.join("rust/blake2b.c"))
+        .file(include_path.join("rust/bundlecache.c"))
         .compile("libzcash_script.a");
 
     Ok(())
