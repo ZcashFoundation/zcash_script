@@ -67,7 +67,7 @@ fn gen_cxxbridge() -> Result<()> {
     // These must match `CXXBRIDGE_RS` in depend/zcash/src/Makefile.am
     let filenames = [
         "blake2b",
-        "bundlecache",
+        // "bundlecache",
         "equihash",
         "orchard_bundle",
         "sapling",
@@ -166,8 +166,9 @@ fn main() -> Result<()> {
         .file("depend/zcash/src/script/script.cpp")
         .file("depend/zcash/src/script/script_error.cpp")
         .file("depend/zcash/src/support/cleanse.cpp")
+        // .file("depend/zcash/src/zcash/cache.cpp")
         .file(include_path.join("rust/blake2b.c"))
-        .file(include_path.join("rust/bundlecache.c"))
+        // .file(include_path.join("rust/bundlecache.c"))
         .compile("libzcash_script.a");
 
     Ok(())
