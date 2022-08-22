@@ -1,5 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2013 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -11,7 +12,7 @@
 #include "main.h"
 #include "noui.h"
 #include "scheduler.h"
-#include "util.h"
+#include "util/system.h"
 #include "httpserver.h"
 #include "httprpc.h"
 

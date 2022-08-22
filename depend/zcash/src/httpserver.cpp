@@ -1,4 +1,5 @@
 // Copyright (c) 2015 The Bitcoin Core developers
+// Copyright (c) 2017-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -6,7 +7,7 @@
 
 #include "chainparamsbase.h"
 #include "compat.h"
-#include "util.h"
+#include "util/system.h"
 #include "netbase.h"
 #include "rpc/protocol.h" // For HTTP status codes
 #include "sync.h"
@@ -68,7 +69,7 @@ class WorkQueue
 {
 private:
     /** Mutex protects entire object */
-    std::mutex cs;
+    Mutex cs;
     std::condition_variable cond;
     std::deque<std::unique_ptr<WorkItem>> queue;
     bool running;
@@ -87,7 +88,7 @@ public:
     /** Enqueue a work item */
     bool Enqueue(WorkItem* item)
     {
-        std::unique_lock<std::mutex> lock(cs);
+        LOCK(cs);
         if (queue.size() >= maxDepth) {
             return false;
         }
@@ -101,7 +102,7 @@ public:
         while (true) {
             std::unique_ptr<WorkItem> i;
             {
-                std::unique_lock<std::mutex> lock(cs);
+                WAIT_LOCK(cs, lock);
                 while (running && queue.empty())
                     cond.wait(lock);
                 if (!running)
@@ -115,16 +116,9 @@ public:
     /** Interrupt and exit loops */
     void Interrupt()
     {
-        std::unique_lock<std::mutex> lock(cs);
+        LOCK(cs);
         running = false;
         cond.notify_all();
-    }
-
-    /** Return current depth of queue */
-    size_t Depth()
-    {
-        std::unique_lock<std::mutex> lock(cs);
-        return queue.size();
     }
 };
 
@@ -288,7 +282,7 @@ static void http_reject_request_cb(struct evhttp_request* req, void*)
 /** Event dispatcher thread */
 static bool ThreadHTTP(struct event_base* base, struct evhttp* http)
 {
-    RenameThread("zcash-http");
+    RenameThread("zc-http-server");
     LogPrint("http", "Entering http event loop\n");
     event_base_dispatch(base);
     // Event loop will be interrupted by InterruptHTTPServer()
@@ -338,7 +332,7 @@ static bool HTTPBindAddresses(struct evhttp* http)
 /** Simple wrapper to set thread name and run work queue */
 static void HTTPWorkQueueRun(WorkQueue<HTTPClosure>* queue)
 {
-    RenameThread("zcash-httpworker");
+    RenameThread("zc-http-worker");
     queue->Run();
 }
 

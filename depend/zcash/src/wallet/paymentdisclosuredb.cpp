@@ -1,11 +1,11 @@
-// Copyright (c) 2017 The Zcash developers
+// Copyright (c) 2017-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 #include "wallet/paymentdisclosuredb.h"
 
 #include "fs.h"
-#include "util.h"
+#include "util/system.h"
 #include "dbwrapper.h"
 
 using namespace std;

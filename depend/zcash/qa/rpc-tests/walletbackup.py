@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2014-2016 The Bitcoin Core developers
+# Copyright (c) 2016-2022 The Zcash developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -52,7 +53,7 @@ class WalletBackupTest(BitcoinTestFramework):
 
     def __init__(self):
         super().__init__()
-        self.setup_clean_chain = True
+        self.cache_behavior = 'clean'
         self.num_nodes = 4
 
     # This mirrors how the network was setup in the bash test
@@ -63,7 +64,12 @@ class WalletBackupTest(BitcoinTestFramework):
         ed2 = "-exportdir=" + self.options.tmpdir + "/node2"
 
         # nodes 1, 2,3 are spenders, let's give them a keypool=100
-        extra_args = [["-keypool=100", ed0], ["-keypool=100", ed1], ["-keypool=100", ed2], []]
+        extra_args = [
+            ["-keypool=100", ed0, "-allowdeprecated=dumpwallet"], 
+            ["-keypool=100", ed1, "-allowdeprecated=dumpwallet"], 
+            ["-keypool=100", ed2, "-allowdeprecated=dumpwallet"], 
+            []
+        ]
         self.nodes = start_nodes(self.num_nodes, self.options.tmpdir, extra_args)
         connect_nodes(self.nodes[0], 3)
         connect_nodes(self.nodes[1], 3)
@@ -227,6 +233,7 @@ class WalletBackupTest(BitcoinTestFramework):
         shutil.rmtree(self.options.tmpdir + "/node2/regtest/chainstate")
 
         self.start_three()
+        sync_blocks(self.nodes)
 
         assert_equal(self.nodes[0].getbalance(), 0)
         assert_equal(self.nodes[1].getbalance(), 0)

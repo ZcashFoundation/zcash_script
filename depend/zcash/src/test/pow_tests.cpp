@@ -1,11 +1,12 @@
 // Copyright (c) 2015 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 #include "main.h"
 #include "pow.h"
-#include "util.h"
-#include "utiltest.h"
+#include "util/system.h"
+#include "util/test.h"
 #include "test/test_bitcoin.h"
 
 #include <boost/test/unit_test.hpp>
@@ -143,9 +144,9 @@ void GetBlockProofEquivalentTimeImpl(const Consensus::Params& params) {
     }
 
     for (int j = 0; j < 1000; j++) {
-        CBlockIndex *p1 = &blocks[GetRand(10000)];
-        CBlockIndex *p2 = &blocks[GetRand(10000)];
-        CBlockIndex *p3 = &blocks[GetRand(10000)];
+        CBlockIndex *p1 = &blocks[InsecureRandRange(10000)];
+        CBlockIndex *p2 = &blocks[InsecureRandRange(10000)];
+        CBlockIndex *p3 = &blocks[InsecureRandRange(10000)];
 
         int64_t tdiff = GetBlockProofEquivalentTime(*p1, *p2, *p3, params);
         BOOST_CHECK_EQUAL(tdiff, p1->GetBlockTime() - p2->GetBlockTime());

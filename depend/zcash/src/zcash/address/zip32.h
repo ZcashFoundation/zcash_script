@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021 The Zcash developers
+// Copyright (c) 2018-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -9,7 +9,7 @@
 #include "key.h"
 #include "support/allocators/secure.h"
 #include "uint256.h"
-#include "utiltime.h"
+#include "util/time.h"
 #include "zcash/address/sapling.hpp"
 #include <librustzcash.h>
 #include <rust/zip339.h>

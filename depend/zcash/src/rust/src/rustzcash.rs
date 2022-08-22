@@ -19,7 +19,7 @@
 // See https://github.com/rust-lang/rfcs/pull/2585 for more background.
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
-use bellman::groth16::{Parameters, PreparedVerifyingKey, Proof};
+use bellman::groth16::{self, prepare_verifying_key, Parameters, PreparedVerifyingKey};
 use blake2s_simd::Params as Blake2sParams;
 use bls12_381::Bls12;
 use group::{cofactor::CofactorGroup, GroupEncoding};
@@ -31,7 +31,7 @@ use std::path::{Path, PathBuf};
 use std::slice;
 use std::sync::Once;
 use subtle::CtOption;
-use tracing::{error, info};
+use tracing::info;
 
 #[cfg(not(target_os = "windows"))]
 use std::ffi::OsStr;
@@ -44,29 +44,24 @@ use std::ffi::OsString;
 use std::os::windows::ffi::OsStringExt;
 
 use zcash_primitives::{
-    block::equihash,
     constants::{CRH_IVK_PERSONALIZATION, PROOF_GENERATION_KEY_GENERATOR, SPENDING_KEY_GENERATOR},
     merkle_tree::MerklePath,
     sapling::{
-        self,
-        keys::FullViewingKey,
-        note_encryption::sapling_ka_agree,
-        redjubjub::{self, Signature},
-        Diversifier, Note, PaymentAddress, ProofGenerationKey, Rseed, ViewingKey,
+        keys::FullViewingKey, note_encryption::sapling_ka_agree, redjubjub, Diversifier, Note,
+        PaymentAddress, ProofGenerationKey, Rseed, ViewingKey,
     },
     sapling::{merkle_hash, spend_sig},
     transaction::components::Amount,
     zip32::{self, sapling_address, sapling_derive_internal_fvk, sapling_find_address},
 };
 use zcash_proofs::{
-    circuit::sapling::TREE_DEPTH as SAPLING_TREE_DEPTH,
-    load_parameters,
-    sapling::{SaplingProvingContext, SaplingVerificationContext},
-    sprout,
+    circuit::sapling::TREE_DEPTH as SAPLING_TREE_DEPTH, load_parameters,
+    sapling::SaplingProvingContext, sprout,
 };
 
 mod blake2b;
 mod ed25519;
+mod equihash;
 mod metrics_ffi;
 mod streams_ffi;
 mod tracing_ffi;
@@ -74,14 +69,19 @@ mod zcashd_orchard;
 
 mod address_ffi;
 mod builder_ffi;
+mod bundlecache;
 mod history_ffi;
 mod incremental_merkle_tree;
 mod incremental_merkle_tree_ffi;
+mod init_ffi;
+mod orchard_bundle;
 mod orchard_ffi;
 mod orchard_keys_ffi;
+mod sapling;
 mod transaction_ffi;
 mod unified_keys_ffi;
 mod wallet;
+mod wallet_scanner;
 mod zip339_ffi;
 
 mod test_harness_ffi;
@@ -90,8 +90,8 @@ mod test_harness_ffi;
 mod tests;
 
 static PROOF_PARAMETERS_LOADED: Once = Once::new();
-static mut SAPLING_SPEND_VK: Option<PreparedVerifyingKey<Bls12>> = None;
-static mut SAPLING_OUTPUT_VK: Option<PreparedVerifyingKey<Bls12>> = None;
+static mut SAPLING_SPEND_VK: Option<groth16::VerifyingKey<Bls12>> = None;
+static mut SAPLING_OUTPUT_VK: Option<groth16::VerifyingKey<Bls12>> = None;
 static mut SPROUT_GROTH16_VK: Option<PreparedVerifyingKey<Bls12>> = None;
 
 static mut SAPLING_SPEND_PARAMS: Option<Parameters<Bls12>> = None;
@@ -121,6 +121,11 @@ fn fixed_scalar_mult(from: &[u8; 32], p_g: &jubjub::SubgroupPoint) -> jubjub::Su
 
 /// Loads the zk-SNARK parameters into memory and saves paths as necessary.
 /// Only called once.
+///
+/// If `load_proving_keys` is `false`, the proving keys will not be loaded, making it
+/// impossible to create proofs. This flag is for the Boost test suite, which never
+/// creates shielded transactions, but exercises code that requires the verifying keys to
+/// be present even if there are no shielded components to verify.
 #[no_mangle]
 pub extern "C" fn librustzcash_init_zksnark_params(
     #[cfg(not(target_os = "windows"))] spend_path: *const u8,
@@ -132,6 +137,7 @@ pub extern "C" fn librustzcash_init_zksnark_params(
     #[cfg(not(target_os = "windows"))] sprout_path: *const u8,
     #[cfg(target_os = "windows")] sprout_path: *const u16,
     sprout_path_len: usize,
+    load_proving_keys: bool,
 ) {
     PROOF_PARAMETERS_LOADED.call_once(|| {
         #[cfg(not(target_os = "windows"))]
@@ -172,24 +178,31 @@ pub extern "C" fn librustzcash_init_zksnark_params(
 
         // Load params
         let params = load_parameters(spend_path, output_path, sprout_path);
+        let sapling_spend_params = params.spend_params;
+        let sapling_output_params = params.output_params;
+
+        // We need to clone these because we aren't necessarily storing the proving
+        // parameters in memory.
+        let sapling_spend_vk = sapling_spend_params.vk.clone();
+        let sapling_output_vk = sapling_output_params.vk.clone();
 
         // Generate Orchard parameters.
         info!(target: "main", "Loading Orchard parameters");
-        let orchard_pk = orchard::circuit::ProvingKey::build();
+        let orchard_pk = load_proving_keys.then(orchard::circuit::ProvingKey::build);
         let orchard_vk = orchard::circuit::VerifyingKey::build();
 
         // Caller is responsible for calling this function once, so
         // these global mutations are safe.
         unsafe {
-            SAPLING_SPEND_PARAMS = Some(params.spend_params);
-            SAPLING_OUTPUT_PARAMS = Some(params.output_params);
+            SAPLING_SPEND_PARAMS = load_proving_keys.then(|| sapling_spend_params);
+            SAPLING_OUTPUT_PARAMS = load_proving_keys.then(|| sapling_output_params);
             SPROUT_GROTH16_PARAMS_PATH = sprout_path.map(|p| p.to_owned());
 
-            SAPLING_SPEND_VK = Some(params.spend_vk);
-            SAPLING_OUTPUT_VK = Some(params.output_vk);
+            SAPLING_SPEND_VK = Some(sapling_spend_vk);
+            SAPLING_OUTPUT_VK = Some(sapling_output_vk);
             SPROUT_GROTH16_VK = params.sprout_vk;
 
-            ORCHARD_PK = Some(orchard_pk);
+            ORCHARD_PK = orchard_pk;
             ORCHARD_VK = Some(orchard_vk);
         }
     });
@@ -527,181 +540,9 @@ pub extern "C" fn librustzcash_sapling_ka_derivepublic(
     true
 }
 
-/// Validates the provided Equihash solution against the given parameters, input
-/// and nonce.
-#[no_mangle]
-pub extern "C" fn librustzcash_eh_isvalid(
-    n: u32,
-    k: u32,
-    input: *const c_uchar,
-    input_len: size_t,
-    nonce: *const c_uchar,
-    nonce_len: size_t,
-    soln: *const c_uchar,
-    soln_len: size_t,
-) -> bool {
-    let expected_soln_len = (1 << k) * ((n / (k + 1)) as usize + 1) / 8;
-    if (k >= n) || (n % 8 != 0) || (soln_len != expected_soln_len) {
-        error!(
-            "eh_isvalid: params wrong, n={}, k={}, soln_len={} expected={}",
-            n, k, soln_len, expected_soln_len,
-        );
-        return false;
-    }
-    let rs_input = unsafe { slice::from_raw_parts(input, input_len) };
-    let rs_nonce = unsafe { slice::from_raw_parts(nonce, nonce_len) };
-    let rs_soln = unsafe { slice::from_raw_parts(soln, soln_len) };
-    if let Err(e) = equihash::is_valid_solution(n, k, rs_input, rs_nonce, rs_soln) {
-        error!("eh_isvalid: is_valid_solution: {}", e);
-        false
-    } else {
-        true
-    }
-}
-
-/// Creates a Sapling verification context. Please free this when you're done.
-#[no_mangle]
-pub extern "C" fn librustzcash_sapling_verification_ctx_init(
-    zip216_enabled: bool,
-) -> *mut SaplingVerificationContext {
-    let ctx = Box::new(SaplingVerificationContext::new(zip216_enabled));
-
-    Box::into_raw(ctx)
-}
-
-/// Frees a Sapling verification context returned from
-/// [`librustzcash_sapling_verification_ctx_init`].
-#[no_mangle]
-pub extern "C" fn librustzcash_sapling_verification_ctx_free(ctx: *mut SaplingVerificationContext) {
-    drop(unsafe { Box::from_raw(ctx) });
-}
-
 const GROTH_PROOF_SIZE: usize = 48 // π_A
     + 96 // π_B
     + 48; // π_C
-
-/// Check the validity of a Sapling Spend description, accumulating the value
-/// commitment into the context.
-#[no_mangle]
-pub extern "C" fn librustzcash_sapling_check_spend(
-    ctx: *mut SaplingVerificationContext,
-    cv: *const [c_uchar; 32],
-    anchor: *const [c_uchar; 32],
-    nullifier: *const [c_uchar; 32],
-    rk: *const [c_uchar; 32],
-    zkproof: *const [c_uchar; GROTH_PROOF_SIZE],
-    spend_auth_sig: *const [c_uchar; 64],
-    sighash_value: *const [c_uchar; 32],
-) -> bool {
-    // Deserialize the value commitment
-    let cv = match de_ct(jubjub::ExtendedPoint::from_bytes(unsafe { &*cv })) {
-        Some(p) => p,
-        None => return false,
-    };
-
-    // Deserialize the anchor, which should be an element
-    // of Fr.
-    let anchor = match de_ct(bls12_381::Scalar::from_bytes(unsafe { &*anchor })) {
-        Some(a) => a,
-        None => return false,
-    };
-
-    // Deserialize rk
-    let rk = match redjubjub::PublicKey::read(&(unsafe { &*rk })[..]) {
-        Ok(p) => p,
-        Err(_) => return false,
-    };
-
-    // Deserialize the signature
-    let spend_auth_sig = match Signature::read(&(unsafe { &*spend_auth_sig })[..]) {
-        Ok(sig) => sig,
-        Err(_) => return false,
-    };
-
-    // Deserialize the proof
-    let zkproof = match Proof::read(&(unsafe { &*zkproof })[..]) {
-        Ok(p) => p,
-        Err(_) => return false,
-    };
-
-    unsafe { &mut *ctx }.check_spend(
-        cv,
-        anchor,
-        unsafe { &*nullifier },
-        rk,
-        unsafe { &*sighash_value },
-        spend_auth_sig,
-        zkproof,
-        unsafe { SAPLING_SPEND_VK.as_ref() }.unwrap(),
-    )
-}
-
-/// Check the validity of a Sapling Output description, accumulating the value
-/// commitment into the context.
-#[no_mangle]
-pub extern "C" fn librustzcash_sapling_check_output(
-    ctx: *mut SaplingVerificationContext,
-    cv: *const [c_uchar; 32],
-    cm: *const [c_uchar; 32],
-    epk: *const [c_uchar; 32],
-    zkproof: *const [c_uchar; GROTH_PROOF_SIZE],
-) -> bool {
-    // Deserialize the value commitment
-    let cv = match de_ct(jubjub::ExtendedPoint::from_bytes(unsafe { &*cv })) {
-        Some(p) => p,
-        None => return false,
-    };
-
-    // Deserialize the commitment, which should be an element
-    // of Fr.
-    let cm = match de_ct(bls12_381::Scalar::from_bytes(unsafe { &*cm })) {
-        Some(a) => a,
-        None => return false,
-    };
-
-    // Deserialize the ephemeral key
-    let epk = match de_ct(jubjub::ExtendedPoint::from_bytes(unsafe { &*epk })) {
-        Some(p) => p,
-        None => return false,
-    };
-
-    // Deserialize the proof
-    let zkproof = match Proof::read(&(unsafe { &*zkproof })[..]) {
-        Ok(p) => p,
-        Err(_) => return false,
-    };
-
-    unsafe { &mut *ctx }.check_output(
-        cv,
-        cm,
-        epk,
-        zkproof,
-        unsafe { SAPLING_OUTPUT_VK.as_ref() }.unwrap(),
-    )
-}
-
-/// Finally checks the validity of the entire Sapling transaction given
-/// valueBalance and the binding signature.
-#[no_mangle]
-pub extern "C" fn librustzcash_sapling_final_check(
-    ctx: *mut SaplingVerificationContext,
-    value_balance: i64,
-    binding_sig: *const [c_uchar; 64],
-    sighash_value: *const [c_uchar; 32],
-) -> bool {
-    let value_balance = match Amount::from_i64(value_balance) {
-        Ok(vb) => vb,
-        Err(()) => return false,
-    };
-
-    // Deserialize the signature
-    let binding_sig = match Signature::read(&(unsafe { &*binding_sig })[..]) {
-        Ok(sig) => sig,
-        Err(_) => return false,
-    };
-
-    unsafe { &*ctx }.final_check(value_balance, unsafe { &*sighash_value }, binding_sig)
-}
 
 /// Sprout JoinSplit proof generation.
 #[no_mangle]
@@ -1011,7 +852,7 @@ pub extern "C" fn librustzcash_sapling_spend_proof(
             anchor,
             merkle_path,
             unsafe { SAPLING_SPEND_PARAMS.as_ref() }.unwrap(),
-            unsafe { SAPLING_SPEND_VK.as_ref() }.unwrap(),
+            &prepare_verifying_key(unsafe { SAPLING_SPEND_VK.as_ref() }.unwrap()),
         )
         .expect("proving should not fail");
 
@@ -1192,7 +1033,7 @@ pub extern "C" fn librustzcash_sapling_diversifier_index(
     j_ret: *mut [c_uchar; 11],
 ) {
     let dk = zip32::DiversifierKey(unsafe { *dk });
-    let diversifier = sapling::Diversifier(unsafe { *d });
+    let diversifier = Diversifier(unsafe { *d });
     let j_ret = unsafe { &mut *j_ret };
 
     let j = dk.diversifier_index(&diversifier);

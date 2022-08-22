@@ -1,5 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2014 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -14,6 +15,7 @@
 #include "uint256.h"
 
 #include <librustzcash.h>
+#include <rust/equihash.h>
 
 unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params& params)
 {
@@ -113,11 +115,11 @@ bool CheckEquihashSolution(const CBlockHeader *pblock, const Consensus::Params& 
     CDataStream ss(SER_NETWORK, PROTOCOL_VERSION);
     ss << I;
 
-    return librustzcash_eh_isvalid(
+    return equihash::is_valid(
         n, k,
-        (unsigned char*)&ss[0], ss.size(),
-        pblock->nNonce.begin(), pblock->nNonce.size(),
-        pblock->nSolution.data(), pblock->nSolution.size());
+        {(const unsigned char*)ss.data(), ss.size()},
+        {pblock->nNonce.begin(), pblock->nNonce.size()},
+        {pblock->nSolution.data(), pblock->nSolution.size()});
 }
 
 bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params& params)

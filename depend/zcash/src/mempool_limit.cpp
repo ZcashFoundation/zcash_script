@@ -1,4 +1,4 @@
-// Copyright (c) 2019 The Zcash developers
+// Copyright (c) 2019-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -9,7 +9,7 @@
 #include "random.h"
 #include "serialize.h"
 #include "timedata.h"
-#include "utiltime.h"
+#include "util/time.h"
 #include "version.h"
 
 const TxWeight ZERO_WEIGHT = TxWeight(0, 0);
@@ -19,7 +19,7 @@ void RecentlyEvictedList::pruneList()
     if (txIdSet.empty()) {
         return;
     }
-    int64_t now = GetTime();
+    int64_t now = clock->GetTime();
     while (txIdsAndTimes.size() > 0 && now - txIdsAndTimes.front().second > timeToKeep) {
         txIdSet.erase(txIdsAndTimes.front().first);
         txIdsAndTimes.pop_front();
@@ -33,7 +33,7 @@ void RecentlyEvictedList::add(const uint256& txId)
         txIdSet.erase(txIdsAndTimes.front().first);
         txIdsAndTimes.pop_front();
     }
-    txIdsAndTimes.push_back(std::make_pair(txId, GetTime()));
+    txIdsAndTimes.push_back(std::make_pair(txId, clock->GetTime()));
     txIdSet.insert(txId);
 }
 

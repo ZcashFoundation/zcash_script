@@ -1,4 +1,4 @@
-// Copyright (c) 2021 The Zcash developers
+// Copyright (c) 2021-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -6,7 +6,7 @@
 #include "zcash/Address.hpp"
 #include "unified.h"
 #include "util/match.h"
-#include "utilstrencodings.h"
+#include "util/strencodings.h"
 
 #include <rust/unified_keys.h>
 

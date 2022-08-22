@@ -1,11 +1,12 @@
 // Copyright (c) 2011-2014 The Bitcoin Core developers
+// Copyright (c) 2018-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 #include "consensus/upgrades.h"
 #include "main.h"
 #include "txmempool.h"
-#include "util.h"
+#include "util/system.h"
 
 #include "test/test_bitcoin.h"
 

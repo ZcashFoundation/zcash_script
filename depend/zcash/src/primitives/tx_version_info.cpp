@@ -1,4 +1,4 @@
-// Copyright (c) 2021 The Zcash developers
+// Copyright (c) 2021-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -11,7 +11,7 @@
 TxVersionInfo CurrentTxVersionInfo(
     const Consensus::Params& consensus,
     int nHeight,
-    bool requireSprout)
+    bool requireV4)
 {
     if (consensus.NetworkUpgradeActive(nHeight, Consensus::UPGRADE_ZFUTURE)) {
         return {
@@ -19,7 +19,7 @@ TxVersionInfo CurrentTxVersionInfo(
             .nVersionGroupId = ZFUTURE_VERSION_GROUP_ID,
             .nVersion =        ZFUTURE_TX_VERSION
         };
-    } else if (consensus.NetworkUpgradeActive(nHeight, Consensus::UPGRADE_NU5) && !requireSprout) {
+    } else if (consensus.NetworkUpgradeActive(nHeight, Consensus::UPGRADE_NU5) && !requireV4) {
         return {
             .fOverwintered =   true,
             .nVersionGroupId = ZIP225_VERSION_GROUP_ID,

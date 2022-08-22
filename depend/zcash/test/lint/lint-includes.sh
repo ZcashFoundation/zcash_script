@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
 # Copyright (c) 2018 The Bitcoin Core developers
+# Copyright (c) 2020-2022 The Zcash developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or https://www.opensource.org/licenses/mit-license.php .
 #
@@ -90,7 +91,6 @@ EXPECTED_BOOST_INCLUDES=(
     boost/thread/locks.hpp
     boost/thread/mutex.hpp
     boost/thread/once.hpp
-    boost/thread/recursive_mutex.hpp
     boost/thread/synchronized_value.hpp
     boost/thread/thread.hpp
     boost/thread/tss.hpp

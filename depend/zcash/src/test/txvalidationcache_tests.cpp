@@ -1,4 +1,5 @@
 // Copyright (c) 2011-2014 The Bitcoin Core developers
+// Copyright (c) 2019-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -11,7 +12,7 @@
 #include "random.h"
 #include "script/standard.h"
 #include "test/test_bitcoin.h"
-#include "utiltime.h"
+#include "util/time.h"
 
 #include <boost/test/unit_test.hpp>
 

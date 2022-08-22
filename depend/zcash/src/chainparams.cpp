@@ -1,16 +1,18 @@
 // Copyright (c) 2010 Satoshi Nakamoto
 // Copyright (c) 2009-2014 The Bitcoin Core developers
-// Copyright (c) 2015-2020 The Zcash Developers
+// Copyright (c) 2015-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
+#include "chainparams.h"
+#include "consensus/merkle.h"
 #include "key_io.h"
 #include "main.h"
 #include "crypto/equihash.h"
 
 #include "tinyformat.h"
-#include "util.h"
-#include "utilstrencodings.h"
+#include "util/system.h"
+#include "util/strencodings.h"
 
 #include <assert.h>
 #include <optional>
@@ -43,7 +45,7 @@ static CBlock CreateGenesisBlock(const char* pszTimestamp, const CScript& genesi
     genesis.nVersion = nVersion;
     genesis.vtx.push_back(txNew);
     genesis.hashPrevBlock.SetNull();
-    genesis.hashMerkleRoot = genesis.BuildMerkleTree();
+    genesis.hashMerkleRoot = BlockMerkleRoot(genesis);
     return genesis;
 }
 
@@ -135,7 +137,8 @@ public:
             uint256S("00000000002038016f976744c369dce7419fca30e7171dfac703af5e5f7ad1d4");
         consensus.vUpgrades[Consensus::UPGRADE_NU5].nProtocolVersion = 170100;
         consensus.vUpgrades[Consensus::UPGRADE_NU5].nActivationHeight = 1687104;
-
+        consensus.vUpgrades[Consensus::UPGRADE_NU5].hashActivationBlock =
+            uint256S("0000000000d723156d9b65ffcf4984da7a19675ed7e2f06d9e5d5188af087bf8");
         consensus.vUpgrades[Consensus::UPGRADE_ZFUTURE].nProtocolVersion = 0x7FFFFFFF;
         consensus.vUpgrades[Consensus::UPGRADE_ZFUTURE].nActivationHeight =
             Consensus::NetworkUpgrade::NO_ACTIVATION_HEIGHT;
@@ -239,7 +242,7 @@ public:
         }
 
         // The best chain should have at least this much work.
-        consensus.nMinimumChainWork = uint256S("00000000000000000000000000000000000000000000000004a90edff47bbdc6");
+        consensus.nMinimumChainWork = uint256S("000000000000000000000000000000000000000000000000098e5c63248dcb28");
 
         /**
          * The message start string should be awesome! ⓩ❤

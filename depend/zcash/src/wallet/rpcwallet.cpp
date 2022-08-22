@@ -1,11 +1,13 @@
 // Copyright (c) 2010 Satoshi Nakamoto
 // Copyright (c) 2009-2014 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 #include "amount.h"
 #include "consensus/upgrades.h"
 #include "consensus/params.h"
+#include "consensus/validation.h"
 #include "core_io.h"
 #include "deprecation.h"
 #include "experimental_features.h"
@@ -19,10 +21,10 @@
 #include "timedata.h"
 #include "tinyformat.h"
 #include "transaction_builder.h"
-#include "util.h"
+#include "util/system.h"
 #include "util/match.h"
-#include "utilmoneystr.h"
-#include "utilstrencodings.h"
+#include "util/moneystr.h"
+#include "util/strencodings.h"
 #include "wallet.h"
 #include "walletdb.h"
 #include "primitives/transaction.h"
@@ -32,7 +34,7 @@
 #include "zcash/Address.hpp"
 #include "zcash/address/zip32.h"
 
-#include "utiltime.h"
+#include "util/time.h"
 #include "asyncrpcoperation.h"
 #include "asyncrpcqueue.h"
 #include "wallet/asyncrpcoperation_mergetoaddress.h"
@@ -150,7 +152,9 @@ void WalletTxToJSON(const CWalletTx& wtx, UniValue& entry)
     for (const std::pair<string, string>& item : wtx.mapValue)
         entry.pushKV(item.first, item.second);
 
-    entry.pushKV("vjoinsplit", TxJoinSplitToJSON(wtx));
+    if (fEnableWalletTxVJoinSplit) {
+        entry.pushKV("vjoinsplit", TxJoinSplitToJSON(wtx));
+    }
 }
 
 UniValue getnewaddress(const UniValue& params, bool fHelp)
@@ -285,8 +289,11 @@ static void SendMoney(const CTxDestination &address, CAmount nValue, bool fSubtr
             strError = strprintf("Error: This transaction requires a transaction fee of at least %s because of its amount, complexity, or use of recently received funds!", FormatMoney(nFeeRequired));
         throw JSONRPCError(RPC_WALLET_ERROR, strError);
     }
-    if (!pwalletMain->CommitTransaction(wtxNew, reservekey))
-        throw JSONRPCError(RPC_WALLET_ERROR, "Error: The transaction was rejected! This might happen if some of the coins in your wallet were already spent, such as if you used a copy of the wallet and coins were spent in the copy but not marked as spent here.");
+    CValidationState state;
+    if (!pwalletMain->CommitTransaction(wtxNew, reservekey, state)) {
+        strError = strprintf("Error: The transaction was rejected! Reason given: %s", state.GetRejectReason());
+        throw JSONRPCError(RPC_WALLET_ERROR, strError);
+    }
 }
 
 UniValue sendtoaddress(const UniValue& params, bool fHelp)
@@ -1188,8 +1195,11 @@ UniValue sendmany(const UniValue& params, bool fHelp)
     bool fCreated = pwalletMain->CreateTransaction(vecSend, wtx, keyChange, nFeeRequired, nChangePosRet, strFailReason);
     if (!fCreated)
         throw JSONRPCError(RPC_WALLET_INSUFFICIENT_FUNDS, strFailReason);
-    if (!pwalletMain->CommitTransaction(wtx, keyChange))
-        throw JSONRPCError(RPC_WALLET_ERROR, "Transaction commit failed");
+    CValidationState state;
+    if (!pwalletMain->CommitTransaction(wtx, keyChange, state)) {
+        strFailReason = strprintf("Transaction commit failed:: %s", state.GetRejectReason());
+        throw JSONRPCError(RPC_WALLET_ERROR, strFailReason);
+    }
 
     return wtx.GetHash().GetHex();
 }
@@ -1700,13 +1710,16 @@ UniValue gettransaction(const UniValue& params, bool fHelp)
     if (fHelp || params.size() < 1 || params.size() > 2)
         throw runtime_error(
             "gettransaction \"txid\" ( includeWatchonly )\n"
-            "\nReturns detailed information about in-wallet transaction <txid>.\n"
+            "\nReturns detailed information about in-wallet transaction <txid>. This does not\n"
+            "include complete information about shielded components of the transaction; to obtain\n"
+            "details about shielded components of the transaction use `z_viewtransaction`.\n"
             "\nArguments:\n"
             "1. \"txid\"    (string, required) The transaction id\n"
             "2. \"includeWatchonly\"    (bool, optional, default=false) Whether to include watchonly addresses in balance calculation and details[]\n"
             "\nResult:\n"
             "{\n"
             "  \"status\" : \"mined|waiting|expiringsoon|expired\",    (string) The transaction status, can be 'mined', 'waiting', 'expiringsoon' or 'expired'\n"
+            "  \"version\" : \"x\",       (string) The transaction version\n"
             "  \"amount\" : x.xxx,        (numeric) The transaction amount in " + CURRENCY_UNIT + "\n"
             "  \"amountZat\" : x          (numeric) The amount in " + MINOR_CURRENCY_UNIT + "\n"
             "  \"confirmations\" : n,     (numeric) The number of confirmations\n"
@@ -1726,7 +1739,7 @@ UniValue gettransaction(const UniValue& params, bool fHelp)
             "    }\n"
             "    ,...\n"
             "  ],\n"
-            "  \"vjoinsplit\" : [\n"
+            "  \"vjoinsplit\" : (DEPRECATED) [\n"
             "    {\n"
             "      \"anchor\" : \"treestateref\",          (string) Merkle root of note commitment tree\n"
             "      \"nullifiers\" : [ string, ... ]      (string) Nullifiers of input notes\n"
@@ -1766,6 +1779,7 @@ UniValue gettransaction(const UniValue& params, bool fHelp)
     CAmount nNet = nCredit - nDebit;
     CAmount nFee = (wtx.IsFromMe(filter) ? wtx.GetValueOut() - nDebit : 0);
 
+    entry.pushKV("version", wtx.nVersion);
     entry.pushKV("amount", ValueFromAmount(nNet - nFee));
     entry.pushKV("amountZat", nNet - nFee);
     if (wtx.IsFromMe(filter))
@@ -2885,6 +2899,16 @@ UniValue zc_benchmark(const UniValue& params, bool fHelp)
                 throw JSONRPCError(RPC_TYPE_ERROR, "Benchmark must be run in regtest mode");
             }
             sample_times.push_back(benchmark_connectblock_slow());
+        } else if (benchmarktype == "connectblocksapling") {
+            if (Params().NetworkIDString() != "regtest") {
+                throw JSONRPCError(RPC_TYPE_ERROR, "Benchmark must be run in regtest mode");
+            }
+            sample_times.push_back(benchmark_connectblock_sapling());
+        } else if (benchmarktype == "connectblockorchard") {
+            if (Params().NetworkIDString() != "regtest") {
+                throw JSONRPCError(RPC_TYPE_ERROR, "Benchmark must be run in regtest mode");
+            }
+            sample_times.push_back(benchmark_connectblock_orchard());
         } else if (benchmarktype == "sendtoaddress") {
             if (Params().NetworkIDString() != "regtest") {
                 throw JSONRPCError(RPC_TYPE_ERROR, "Benchmark must be run in regtest mode");
@@ -3405,7 +3429,7 @@ UniValue z_getaddressforaccount(const UniValue& params, bool fHelp)
             "\nExamples:\n"
             + HelpExampleCli("z_getaddressforaccount", "4")
             + HelpExampleCli("z_getaddressforaccount", "4 '[]' 1")
-            + HelpExampleCli("z_getaddressforaccount", "4 '[\"transparent\",\"sapling\",\"orchard\"]' 1")
+            + HelpExampleCli("z_getaddressforaccount", "4 '[\"p2pkh\",\"sapling\",\"orchard\"]' 1")
             + HelpExampleRpc("z_getaddressforaccount", "4")
         );
 
@@ -5071,6 +5095,7 @@ UniValue z_sendmany(const UniValue& params, bool fHelp)
     }
 
     bool involvesUnifiedAddress = false;
+    bool involvesOrchard = false;
 
     // Check that the from address is valid.
     // Unified address (UA) allowed here (#5185)
@@ -5106,6 +5131,7 @@ UniValue z_sendmany(const UniValue& params, bool fHelp)
                                 "Invalid from address, UA does not correspond to a known account.");
                     }
                     involvesUnifiedAddress = true;
+                    involvesOrchard = ua.GetOrchardReceiver().has_value();
                 },
                 [&](const auto& other) {
                     if (selectorAccount.has_value() && selectorAccount.value() != ZCASH_LEGACY_ACCOUNT) {
@@ -5192,6 +5218,7 @@ UniValue z_sendmany(const UniValue& params, bool fHelp)
         if (std::holds_alternative<libzcash::UnifiedAddress>(decoded.value())) {
             ua = std::get<libzcash::UnifiedAddress>(decoded.value());
             involvesUnifiedAddress = true;
+            involvesOrchard = involvesOrchard || ua.value().GetOrchardReceiver().has_value();
         }
 
         if (std::holds_alternative<libzcash::OrchardRawAddress>(addr.value())) {
@@ -5282,10 +5309,15 @@ UniValue z_sendmany(const UniValue& params, bool fHelp)
 
     std::optional<uint256> orchardAnchor;
     auto nAnchorDepth = std::min((unsigned int) nMinDepth, nAnchorConfirmations);
-    if (!ztxoSelector.SelectsSprout() && nAnchorDepth > 0) {
+    if ((ztxoSelector.SelectsOrchard() || nOrchardOutputs > 0) && nAnchorDepth == 0) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot select Orchard notes or send to Orchard recipients when minconf=0.");
+    }
+    if (!ztxoSelector.SelectsSprout() && (involvesOrchard || nPreferredTxVersion >= ZIP225_MIN_TX_VERSION) && nAnchorDepth > 0) {
         auto orchardAnchorHeight = nextBlockHeight - nAnchorDepth;
         if (chainparams.GetConsensus().NetworkUpgradeActive(orchardAnchorHeight, Consensus::UPGRADE_NU5)) {
-            orchardAnchor = chainActive[orchardAnchorHeight]->hashFinalOrchardRoot;
+            auto anchorBlockIndex = chainActive[orchardAnchorHeight];
+            assert(anchorBlockIndex != nullptr);
+            orchardAnchor = anchorBlockIndex->hashFinalOrchardRoot;
         }
     }
     TransactionBuilder builder(chainparams.GetConsensus(), nextBlockHeight, orchardAnchor, pwalletMain);
@@ -5485,6 +5517,7 @@ UniValue z_shieldcoinbase(const UniValue& params, bool fHelp)
     // Validate the from address
     auto fromaddress = params[0].get_str();
     bool isFromWildcard = fromaddress == "*";
+    bool involvesOrchard{false};
     KeyIO keyIO(Params());
 
     // Set of source addresses to filter utxos by
@@ -5521,7 +5554,13 @@ UniValue z_shieldcoinbase(const UniValue& params, bool fHelp)
                 }
             },
             [&](const libzcash::UnifiedAddress& ua) {
-                // OK
+                if (!ua.GetSaplingReceiver().has_value()) {
+                    throw JSONRPCError(
+                            RPC_VERIFY_REJECTED,
+                            "Only Sapling shielding is currently supported by z_shieldcoinbase. "
+                            "Use z_sendmany with a transaction amount that results in no change for Orchard shielding.");
+                }
+                involvesOrchard = ua.GetOrchardReceiver().has_value();
             }
         }, destaddress.value());
     } else {
@@ -5640,11 +5679,13 @@ UniValue z_shieldcoinbase(const UniValue& params, bool fHelp)
 
     // Builder (used if Sapling addresses are involved)
     std::optional<uint256> orchardAnchor;
-    if (canopyActive) {
+    if (nAnchorConfirmations > 0 && (involvesOrchard || nPreferredTxVersion >= ZIP225_MIN_TX_VERSION)) {
         // Allow Orchard recipients by setting an Orchard anchor.
         auto orchardAnchorHeight = nextBlockHeight - nAnchorConfirmations;
         if (Params().GetConsensus().NetworkUpgradeActive(orchardAnchorHeight, Consensus::UPGRADE_NU5)) {
-            orchardAnchor = chainActive[orchardAnchorHeight]->hashFinalOrchardRoot;
+            auto anchorBlockIndex = chainActive[orchardAnchorHeight];
+            assert(anchorBlockIndex != nullptr);
+            orchardAnchor = anchorBlockIndex->hashFinalOrchardRoot;
         }
     }
     TransactionBuilder builder = TransactionBuilder(
@@ -5653,7 +5694,8 @@ UniValue z_shieldcoinbase(const UniValue& params, bool fHelp)
     // Contextual transaction we will build on
     // (used if no Sapling addresses are involved)
     CMutableTransaction contextualTx = CreateNewContextualCMutableTransaction(
-        Params().GetConsensus(), nextBlockHeight);
+        Params().GetConsensus(), nextBlockHeight,
+        nPreferredTxVersion < ZIP225_MIN_TX_VERSION);
     if (contextualTx.nVersion == 1) {
         contextualTx.nVersion = 2; // Tx format should support vJoinSplit
     }
@@ -6108,7 +6150,7 @@ UniValue z_mergetoaddress(const UniValue& params, bool fHelp)
     CMutableTransaction contextualTx = CreateNewContextualCMutableTransaction(
         Params().GetConsensus(),
         nextBlockHeight,
-        isSproutShielded);
+        isSproutShielded || nPreferredTxVersion < ZIP225_MIN_TX_VERSION);
     if (contextualTx.nVersion == 1 && isSproutShielded) {
         contextualTx.nVersion = 2; // Tx format should support vJoinSplit
     }
@@ -6117,13 +6159,13 @@ UniValue z_mergetoaddress(const UniValue& params, bool fHelp)
     std::optional<TransactionBuilder> builder;
     if (isToSaplingZaddr || saplingNoteInputs.size() > 0) {
         std::optional<uint256> orchardAnchor;
-        if (!isSproutShielded) {
+        if (!isSproutShielded && nPreferredTxVersion >= ZIP225_MIN_TX_VERSION && nAnchorConfirmations > 0) {
             // Allow Orchard recipients by setting an Orchard anchor.
-            // TODO: Add an orchardAnchorHeight field to ZTXOSelector so we can ensure the
-            // same anchor is used for witnesses of any selected Orchard note.
             auto orchardAnchorHeight = nextBlockHeight - nAnchorConfirmations;
             if (Params().GetConsensus().NetworkUpgradeActive(orchardAnchorHeight, Consensus::UPGRADE_NU5)) {
-                orchardAnchor = chainActive[orchardAnchorHeight]->hashFinalOrchardRoot;
+                auto anchorBlockIndex = chainActive[orchardAnchorHeight];
+                assert(anchorBlockIndex != nullptr);
+                orchardAnchor = anchorBlockIndex->hashFinalOrchardRoot;
             }
         }
         builder = TransactionBuilder(Params().GetConsensus(), nextBlockHeight, orchardAnchor, pwalletMain);
@@ -6337,8 +6379,22 @@ static const CRPCCommand commands[] =
     { "disclosure",         "z_validatepaymentdisclosure", &z_validatepaymentdisclosure, true }
 };
 
+void OnWalletRPCPreCommand(const CRPCCommand& cmd)
+{
+    // Disable wallet methods that rely on accurate chain state while
+    // the node is reindexing.
+    if (!cmd.okSafeMode && IsInitialBlockDownload(Params().GetConsensus())) {
+        for (unsigned int vcidx = 0; vcidx < ARRAYLEN(commands); vcidx++) {
+            if (cmd.name == commands[vcidx].name) {
+                throw JSONRPCError(RPC_IN_WARMUP, "This wallet operation is disabled while reindexing.");
+            }
+        }
+    }
+}
+
 void RegisterWalletRPCCommands(CRPCTable &tableRPC)
 {
     for (unsigned int vcidx = 0; vcidx < ARRAYLEN(commands); vcidx++)
         tableRPC.appendCommand(commands[vcidx].name, &commands[vcidx]);
+    RPCServer::OnPreCommand(&OnWalletRPCPreCommand);
 }

@@ -1,11 +1,12 @@
 // Copyright (c) 2015 The Bitcoin Core developers
+// Copyright (c) 2017-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 #include "chainparams.h"
 #include "zmqpublishnotifier.h"
 #include "main.h"
-#include "util.h"
+#include "util/system.h"
 
 static std::multimap<std::string, CZMQAbstractPublishNotifier*> mapPublishNotifiers;
 

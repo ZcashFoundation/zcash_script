@@ -1,5 +1,6 @@
 // Copyright (c) 2010 Satoshi Nakamoto
 // Copyright (c) 2009-2014 The Bitcoin Core developers
+// Copyright (c) 2019-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -7,6 +8,7 @@
 #include "chainparams.h"
 #include "consensus/consensus.h"
 #include "consensus/funding.h"
+#include "consensus/merkle.h"
 #include "consensus/validation.h"
 #include "core_io.h"
 #ifdef ENABLE_MINING
@@ -21,7 +23,7 @@
 #include "pow.h"
 #include "rpc/server.h"
 #include "txmempool.h"
-#include "util.h"
+#include "util/system.h"
 #include "validationinterface.h"
 #ifdef ENABLE_WALLET
 #include "wallet/wallet.h"
@@ -228,8 +230,7 @@ UniValue generate(const UniValue& params, bool fHelp)
         }
 
         // Hash state
-        eh_HashState eh_state;
-        EhInitialiseState(n, k, eh_state);
+        eh_HashState eh_state = EhInitialiseState(n, k);
 
         // I = the block header minus nonce and solution.
         CEquihashInput I{*pblock};
@@ -561,7 +562,7 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
                 return "inconclusive-not-best-prevblk";
 
             CValidationState state;
-            TestBlockValidity(state, Params(), block, pindexPrev, true);
+            TestBlockValidity(state, Params(), block, pindexPrev, false);
             return BIP22ValidationResult(state);
         }
     }
@@ -600,7 +601,7 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
     {
         // Wait to respond until either the best block changes, OR some time passes and there are more transactions
         uint256 hashWatchedChain;
-        boost::system_time checktxtime;
+        std::chrono::steady_clock::time_point checktxtime;
         unsigned int nTransactionsUpdatedLastLP;
 
         if (lpval.isStr())
@@ -622,9 +623,9 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
         // Don't call chainActive->Tip() without holding cs_main
         LEAVE_CRITICAL_SECTION(cs_main);
         {
-            checktxtime = boost::get_system_time() + boost::posix_time::seconds(10);
+            checktxtime = std::chrono::steady_clock::now() + std::chrono::seconds(10);
 
-            boost::unique_lock<boost::mutex> lock(g_best_block_mutex);
+            WAIT_LOCK(g_best_block_mutex, lock);
             while (g_best_block == hashWatchedChain && IsRPCRunning())
             {
                 // Before waiting, generate the coinbase for the block following the next
@@ -639,7 +640,7 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
                         Params(), CAmount{0}, minerAddress, cached_next_cb_height);
                     next_cb_mtx = cached_next_cb_mtx;
                 }
-                bool timedout = !g_best_block_cv.timed_wait(lock, checktxtime);
+                bool timedout = g_best_block_cv.wait_until(lock, checktxtime) == std::cv_status::timeout;
 
                 // Optimization: even if timed out, a new block may have arrived
                 // while waiting for cs_main; if so, don't discard next_cb_mtx.
@@ -651,7 +652,7 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
                     next_cb_mtx = nullopt;
                     break;
                 }
-                checktxtime += boost::posix_time::seconds(10);
+                checktxtime += std::chrono::seconds(10);
             }
             if (g_best_block_height != nHeight + 1) {
                 // Unexpected height (reorg or >1 blocks arrived while waiting) invalidates coinbase tx.
@@ -789,7 +790,7 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
         // block template returned by this RPC is used unmodified. Otherwise,
         // these values must be recomputed.
         UniValue defaults(UniValue::VOBJ);
-        defaults.pushKV("merkleroot", pblock->BuildMerkleTree().GetHex());
+        defaults.pushKV("merkleroot", BlockMerkleRoot(*pblock).GetHex());
         defaults.pushKV("chainhistoryroot", pblocktemplate->hashChainHistoryRoot.GetHex());
         if (consensus.NetworkUpgradeActive(pindexPrev->nHeight+1, Consensus::UPGRADE_NU5)) {
             defaults.pushKV("authdataroot", pblocktemplate->hashAuthDataRoot.GetHex());

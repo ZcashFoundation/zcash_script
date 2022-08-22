@@ -1,13 +1,15 @@
 // Copyright (c) 2015 The Bitcoin Core developers
+// Copyright (c) 2020-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 #include "bench.h"
 
+#include "crypto/sha256.h"
 #include "fs.h"
 #include "key.h"
 #include "main.h"
-#include "util.h"
+#include "util/system.h"
 
 #include "librustzcash.h"
 
@@ -16,6 +18,7 @@ const std::function<std::string(const char*)> G_TRANSLATION_FUN = nullptr;
 int
 main(int argc, char** argv)
 {
+    SHA256AutoDetect();
     ECC_Start();
     auto globalVerifyHandle = new ECCVerifyHandle();
     SetupEnvironment();
@@ -38,7 +41,8 @@ main(int argc, char** argv)
         reinterpret_cast<const codeunit*>(sapling_output_str.c_str()),
         sapling_output_str.length(),
         reinterpret_cast<const codeunit*>(sprout_groth16_str.c_str()),
-        sprout_groth16_str.length()
+        sprout_groth16_str.length(),
+        true
     );
 
     benchmark::BenchRunner::RunAll();

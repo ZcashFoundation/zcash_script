@@ -1,4 +1,5 @@
 // Copyright (c) 2014 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -122,5 +123,4 @@ BOOST_AUTO_TEST_CASE(test_combiner_all)
     Test.disconnect(&ReturnTrue);
     BOOST_CHECK(Test());
 }
-
 BOOST_AUTO_TEST_SUITE_END()

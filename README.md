@@ -33,36 +33,27 @@ To do that, check for versions in:
 ### Updating `depend/zcash`
 
 We keep a copy of the zcash source in `depend/zcash` with the help of `git subtree`.
-It has one single difference that must be enforced everytime it's updated: the root
+It has one single difference that must be enforced every time it's updated: the root
 `Cargo.toml` must be deleted, since otherwise cargo will ignore the entire folder
 when publishing the crate (see https://github.com/rust-lang/cargo/issues/8597).
+
+However, `git subtree` requires merge commits in order to make further updates
+work correctly. Since we don't allow those in our repository, we start over
+every time, basically using it as a glorified `git clone`. This issue is being
+tracked in https://github.com/ZcashFoundation/zcash_script/issues/35.
 
 If you need to update the zcash source, run:
 
 ```console
-git subtree pull -P depend/zcash https://github.com/zcash/zcash.git <ref> --squash
+git rm -r depend/zcash
+(commit changes)
+git subtree add -P depend/zcash https://github.com/zcash/zcash.git <ref> --squash
+git rm depend/zcash/Cargo.toml
+(commit changes)
 ```
 
 where `<ref>` is a reference to a branch, tag or commit (it should be a tag when preparing
 a release, but it will be likely a branch or commit when testing).
-
-The command will likely report a conflict due to the deleted `Cargo.toml` file.
-Just run
-
-```console
-git rm depend/zcash/Cargo.toml
-```
-
-and then commit the updates. Note: after updating zcash, the PR that includes it must *not* be
-squashed-and-merged, due to how subtree works. Otherwise you will get errors
-when trying to update zcash again.
-
-If that ends up happening, you can always `git rm depend/zcash` and start over
-(run the same command as above, but with `add` instead of `pull`);
-our usage of `subtree` is to just have a convenient way of pulling copies of `zcash`.
-(Unfortunately, switching to submodules is not a good solution due to the need of
-deleting the `Cargo.toml`.)
-
 
 ### Publishing New Releases
 

@@ -1,4 +1,5 @@
 // Copyright (c) 2013 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -17,8 +18,8 @@
 #include "rpc/server.h"
 #include "serialize.h"
 #include "streams.h"
-#include "utilstrencodings.h"
-#include "utiltest.h"
+#include "util/strencodings.h"
+#include "util/test.h"
 #include "warnings.h"
 
 #include "test/test_bitcoin.h"
@@ -288,7 +289,8 @@ BOOST_FIXTURE_TEST_SUITE(Alert_tests, ReadAlerts)
 
 BOOST_AUTO_TEST_CASE(AlertApplies)
 {
-    SetMockTime(11);
+    FixedClock::SetGlobal();
+    FixedClock::Instance()->Set(std::chrono::seconds(11));
     const std::vector<unsigned char>& alertKey = Params(CBaseChainParams::MAIN).AlertKey();
 
     for (const CAlert& alert : alerts)
@@ -341,13 +343,14 @@ BOOST_AUTO_TEST_CASE(AlertApplies)
     // SubVer without comment doesn't match SubVer pattern with
     BOOST_CHECK(!alerts[3].AppliesTo(1, "/MagicBean:0.2.1/"));
 
-    SetMockTime(0);
+    SystemClock::SetGlobal();
 }
 
 
 BOOST_AUTO_TEST_CASE(AlertNotify)
 {
-    SetMockTime(11);
+    FixedClock::SetGlobal();
+    FixedClock::Instance()->Set(std::chrono::seconds(11));
     const std::vector<unsigned char>& alertKey = Params(CBaseChainParams::MAIN).AlertKey();
 
     fs::path temp = fs::temp_directory_path() /
@@ -381,13 +384,14 @@ BOOST_AUTO_TEST_CASE(AlertNotify)
 #endif
     fs::remove(temp);
 
-    SetMockTime(0);
+    SystemClock::SetGlobal();
     mapAlerts.clear();
 }
 
 BOOST_AUTO_TEST_CASE(AlertDisablesRPC)
 {
-    SetMockTime(11);
+    FixedClock::SetGlobal();
+    FixedClock::Instance()->Set(std::chrono::seconds(11));
     const std::vector<unsigned char>& alertKey = Params(CBaseChainParams::MAIN).AlertKey();
 
     // Command should work before alerts
@@ -403,7 +407,7 @@ BOOST_AUTO_TEST_CASE(AlertDisablesRPC)
     BOOST_CHECK_EQUAL(alerts[8].strRPCError, "");
     BOOST_CHECK_EQUAL(GetWarnings("rpc").first, "");
 
-    SetMockTime(0);
+    SystemClock::SetGlobal();
     mapAlerts.clear();
 }
 

@@ -1,4 +1,5 @@
 // Copyright (c) 2012-2013 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -9,7 +10,7 @@
 #include "key_io.h"
 #include "main.h"
 #include "netbase.h"
-#include "utilstrencodings.h"
+#include "util/strencodings.h"
 
 #include "test/test_bitcoin.h"
 #include "test/test_util.h"

@@ -1,11 +1,10 @@
-// Copyright (c) 2019 The Zcash developers
+// Copyright (c) 2019-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php.
 
 #include "fs.h"
 #include "main.h"
 #include "test/test_bitcoin.h"
-#include "test/test_random.h"
 
 #include <boost/test/unit_test.hpp>
 
@@ -147,7 +146,7 @@ BOOST_AUTO_TEST_CASE(streams_buffered_file)
 BOOST_AUTO_TEST_CASE(streams_buffered_file_rand)
 {
     // Make this test deterministic.
-    seed_insecure_rand(true);
+    SeedInsecureRand(true);
 
     for (int rep = 0; rep < 500; ++rep) {
         FILE* file = fopen("streams_test_tmp", "w+b");

@@ -1,4 +1,5 @@
 // Copyright (c) 2016 The Bitcoin Core developers
+// Copyright (c) 2020-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -7,7 +8,7 @@
 #include "bench.h"
 #include "bloom.h"
 #include "random.h"
-#include "utiltime.h"
+#include "util/time.h"
 #include "crypto/ripemd160.h"
 #include "crypto/sha1.h"
 #include "crypto/sha256.h"
@@ -38,6 +39,14 @@ static void SHA256(benchmark::State& state)
     std::vector<uint8_t> in(BUFFER_SIZE,0);
     while (state.KeepRunning())
         CSHA256().Write(begin_ptr(in), in.size()).Finalize(hash);
+}
+
+static void SHA256D64_1024(benchmark::State& state)
+{
+    std::vector<uint8_t> in(64 * 1024, 0);
+    while (state.KeepRunning()) {
+        SHA256D64(in.data(), in.data(), 1024);
+    }
 }
 
 static void SHA512(benchmark::State& state)
@@ -75,5 +84,6 @@ BENCHMARK(SHA1);
 BENCHMARK(SHA256);
 BENCHMARK(SHA512);
 
+BENCHMARK(SHA256D64_1024); // 7400
 BENCHMARK(FastRandom_32bit);
 BENCHMARK(FastRandom_1bit);

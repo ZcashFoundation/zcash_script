@@ -3,12 +3,15 @@
 #include "key.h"
 #include "pubkey.h"
 #include "random.h"
-#include "util.h"
-#include "utiltest.h"
+#include "script/sigcache.h"
+#include "util/system.h"
+#include "util/test.h"
 
 #include "librustzcash.h"
 #include <sodium.h>
 #include <tracing.h>
+
+#include <rust/bundlecache.h>
 
 #include <boost/filesystem.hpp>
 
@@ -65,6 +68,8 @@ public:
 int main(int argc, char **argv) {
   assert(sodium_init() != -1);
   ECC_Start();
+    InitSignatureCache(DEFAULT_MAX_SIG_CACHE_SIZE * ((size_t) 1 << 20));
+    bundlecache::init(DEFAULT_MAX_SIG_CACHE_SIZE * ((size_t) 1 << 20));
 
     // Log all errors to a common test file.
     fs::path tmpPath = fs::temp_directory_path();

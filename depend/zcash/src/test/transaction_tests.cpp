@@ -1,4 +1,5 @@
 // Copyright (c) 2011-2014 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -24,7 +25,7 @@
 #include "test/test_util.h"
 #include "primitives/transaction.h"
 #include "transaction_builder.h"
-#include "utiltest.h"
+#include "util/test.h"
 
 #include <array>
 #include <map>
@@ -35,6 +36,7 @@
 #include <boost/test/data/test_case.hpp>
 
 #include <rust/ed25519.h>
+#include <rust/sapling.h>
 #include <rust/orchard.h>
 
 #include <univalue.h>
@@ -308,7 +310,7 @@ void test_simple_sapling_invalidity(uint32_t consensusBranchId, CMutableTransact
         CValidationState state;
 
         newTx.vShieldedSpend.push_back(SpendDescription());
-        newTx.vShieldedSpend[0].nullifier = GetRandHash();
+        newTx.vShieldedSpend[0].nullifier = InsecureRand256();
 
         BOOST_CHECK(!CheckTransactionWithoutProofVerification(newTx, state));
         BOOST_CHECK(state.GetRejectReason() == "bad-txns-no-sink-of-funds");
@@ -319,7 +321,7 @@ void test_simple_sapling_invalidity(uint32_t consensusBranchId, CMutableTransact
         CValidationState state;
 
         newTx.vShieldedSpend.push_back(SpendDescription());
-        newTx.vShieldedSpend[0].nullifier = GetRandHash();
+        newTx.vShieldedSpend[0].nullifier = InsecureRand256();
 
         newTx.vShieldedOutput.push_back(OutputDescription());
 
@@ -329,7 +331,7 @@ void test_simple_sapling_invalidity(uint32_t consensusBranchId, CMutableTransact
         BOOST_CHECK(!CheckTransactionWithoutProofVerification(newTx, state));
         BOOST_CHECK(state.GetRejectReason() == "bad-spend-description-nullifiers-duplicate");
 
-        newTx.vShieldedSpend[1].nullifier = GetRandHash();
+        newTx.vShieldedSpend[1].nullifier = InsecureRand256();
 
         BOOST_CHECK(CheckTransactionWithoutProofVerification(newTx, state));
     }
@@ -355,6 +357,7 @@ void test_simple_sapling_invalidity(uint32_t consensusBranchId, CMutableTransact
 void test_simple_joinsplit_invalidity(uint32_t consensusBranchId, CMutableTransaction tx)
 {
     auto verifier = ProofVerifier::Strict();
+    std::optional<rust::Box<sapling::BatchValidator>> saplingAuth = std::nullopt;
     auto orchardAuth = orchard::AuthValidator::Disabled();
     {
         // Ensure that empty vin/vout remain invalid without
@@ -379,8 +382,8 @@ void test_simple_joinsplit_invalidity(uint32_t consensusBranchId, CMutableTransa
         newTx.vJoinSplit.push_back(JSDescription());
         JSDescription *jsdesc = &newTx.vJoinSplit[0];
 
-        jsdesc->nullifiers[0] = GetRandHash();
-        jsdesc->nullifiers[1] = GetRandHash();
+        jsdesc->nullifiers[0] = InsecureRand256();
+        jsdesc->nullifiers[1] = InsecureRand256();
 
         // Fake coins being spent.
         std::vector<CTxOut> allPrevOutputs;
@@ -389,7 +392,13 @@ void test_simple_joinsplit_invalidity(uint32_t consensusBranchId, CMutableTransa
 
         BOOST_CHECK(CheckTransactionWithoutProofVerification(newTx, state));
         BOOST_CHECK(ContextualCheckTransaction(newTx, state, Params(), 0, true));
-        BOOST_CHECK(!ContextualCheckShieldedInputs(newTx, txdata, state, view, orchardAuth, Params().GetConsensus(), consensusBranchId, false, true));
+        BOOST_CHECK(!ContextualCheckShieldedInputs(
+            newTx, txdata,
+            state, view,
+            saplingAuth, orchardAuth,
+            Params().GetConsensus(),
+            consensusBranchId,
+            false, true));
         BOOST_CHECK(state.GetRejectReason() == "bad-txns-invalid-joinsplit-signature");
 
         // Empty output script.
@@ -405,7 +414,13 @@ void test_simple_joinsplit_invalidity(uint32_t consensusBranchId, CMutableTransa
         state = CValidationState();
         BOOST_CHECK(CheckTransactionWithoutProofVerification(newTx, state));
         BOOST_CHECK(ContextualCheckTransaction(newTx, state, Params(), 0, true));
-        BOOST_CHECK(ContextualCheckShieldedInputs(newTx, txdata, state, view, orchardAuth, Params().GetConsensus(), consensusBranchId, false, true));
+        BOOST_CHECK(ContextualCheckShieldedInputs(
+            newTx, txdata,
+            state, view,
+            saplingAuth, orchardAuth,
+            Params().GetConsensus(),
+            consensusBranchId,
+            false, true));
         BOOST_CHECK_EQUAL(state.GetRejectReason(), "");
     }
     {
@@ -459,19 +474,19 @@ void test_simple_joinsplit_invalidity(uint32_t consensusBranchId, CMutableTransa
         newTx.vJoinSplit.push_back(JSDescription());
         JSDescription *jsdesc = &newTx.vJoinSplit[0];
 
-        jsdesc->nullifiers[0] = GetRandHash();
+        jsdesc->nullifiers[0] = InsecureRand256();
         jsdesc->nullifiers[1] = jsdesc->nullifiers[0];
 
         BOOST_CHECK(!CheckTransaction(newTx, state, verifier));
         BOOST_CHECK(state.GetRejectReason() == "bad-joinsplits-nullifiers-duplicate");
 
-        jsdesc->nullifiers[1] = GetRandHash();
+        jsdesc->nullifiers[1] = InsecureRand256();
 
         newTx.vJoinSplit.push_back(JSDescription());
         jsdesc = &newTx.vJoinSplit[0]; // Fixes #2026. Related PR #2078.
         JSDescription *jsdesc2 = &newTx.vJoinSplit[1];
 
-        jsdesc2->nullifiers[0] = GetRandHash();
+        jsdesc2->nullifiers[0] = InsecureRand256();
         jsdesc2->nullifiers[1] = jsdesc->nullifiers[0];
 
         BOOST_CHECK(!CheckTransaction(newTx, state, verifier));
@@ -484,8 +499,8 @@ void test_simple_joinsplit_invalidity(uint32_t consensusBranchId, CMutableTransa
 
         newTx.vJoinSplit.push_back(JSDescription());
         JSDescription *jsdesc = &newTx.vJoinSplit[0];
-        jsdesc->nullifiers[0] = GetRandHash();
-        jsdesc->nullifiers[1] = GetRandHash();
+        jsdesc->nullifiers[0] = InsecureRand256();
+        jsdesc->nullifiers[1] = InsecureRand256();
 
         newTx.vin.push_back(CTxIn(uint256(), -1));
 

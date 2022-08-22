@@ -1,4 +1,5 @@
 // Copyright (c) 2014 The Bitcoin Core developers
+// Copyright (c) 2019-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -10,8 +11,7 @@
 #include "crypto/sha512.h"
 #include "crypto/hmac_sha256.h"
 #include "crypto/hmac_sha512.h"
-#include "test_random.h"
-#include "utilstrencodings.h"
+#include "util/strencodings.h"
 #include "test/test_bitcoin.h"
 
 #include <vector>
@@ -36,7 +36,7 @@ void TestVector(const Hasher &h, const In &in, const Out &out) {
         Hasher hasher(h);
         size_t pos = 0;
         while (pos < in.size()) {
-            size_t len = insecure_rand() % ((in.size() - pos + 1) / 2 + 1);
+            size_t len = InsecureRandRange((in.size() - pos + 1) / 2 + 1);
             hasher.Write((unsigned char*)&in[pos], len);
             pos += len;
             if (pos > 0 && pos + 2 * out.size() > in.size() && pos < in.size()) {
@@ -501,6 +501,22 @@ BOOST_AUTO_TEST_CASE(countbits_tests)
                 BOOST_CHECK_EQUAL(CountBits(j), i);
             }
         }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(sha256d64)
+{
+    for (int i = 0; i <= 32; ++i) {
+        unsigned char in[64 * 32];
+        unsigned char out1[32 * 32], out2[32 * 32];
+        for (int j = 0; j < 64 * i; ++j) {
+            in[j] = InsecureRandBits(8);
+        }
+        for (int j = 0; j < i; ++j) {
+            CHash256().Write(in + 64 * j, 64).Finalize(out1 + 32 * j);
+        }
+        SHA256D64(out2, in, i);
+        BOOST_CHECK(memcmp(out1, out2, 32 * i) == 0);
     }
 }
 

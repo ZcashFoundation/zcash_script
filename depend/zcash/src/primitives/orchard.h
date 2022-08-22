@@ -1,4 +1,4 @@
-// Copyright (c) 2021 The Zcash Developers
+// Copyright (c) 2021-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -9,6 +9,7 @@
 
 #include <amount.h>
 #include <rust/orchard.h>
+#include <rust/orchard_bundle.h>
 #include <rust/orchard/wallet.h>
 #include "zcash/address/orchard.hpp"
 
@@ -55,6 +56,10 @@ public:
         return *this;
     }
 
+    rust::Box<orchard_bundle::Bundle> GetDetails() const {
+        return orchard_bundle::from_tx_bundle(reinterpret_cast<orchard_bundle::OrchardBundle*>(inner.get()));
+    }
+
     size_t RecursiveDynamicUsage() const {
         return orchard_bundle_recursive_dynamic_usage(inner.get());
     }
@@ -87,22 +92,13 @@ public:
         return orchard_bundle_value_balance(inner.get());
     }
 
-    /// Returns true if this Orchard bundle satisfies the bundle-specific consensus rules,
-    /// or if this does not contain an Orchard bundle.
+    /// Queues this bundle's authorization for validation.
     ///
-    /// This does not validate the bundle's signatures; use `QueueSignatureValidation` for
-    /// those checks.
-    bool CheckBundleSpecificConsensusRules() const {
-        return orchard_bundle_validate(inner.get());
-    }
-
-    /// Queues this bundle's signatures for validation.
-    ///
-    /// `txid` must be for the transaction this bundle is within.
-    void QueueSignatureValidation(
-        orchard::AuthValidator& batch, const uint256& txid) const
+    /// `sighash` must be for the transaction this bundle is within.
+    void QueueAuthValidation(
+        orchard::AuthValidator& batch, const uint256& sighash) const
     {
-        batch.Queue(inner.get(), txid.begin());
+        batch.Queue(inner.get(), sighash.begin());
     }
 
     const size_t GetNumActions() const {

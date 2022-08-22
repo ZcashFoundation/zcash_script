@@ -1,5 +1,5 @@
 // Copyright (c) 2014 The Bitcoin Core developers
-// Copyright (c) 2022 The Zcash developers
+// Copyright (c) 2022-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -7,7 +7,7 @@
 #include "gtest/utils.h"
 #include "script/standard.h"
 #include "uint256.h"
-#include "utilstrencodings.h"
+#include "util/strencodings.h"
 #include "test/test_bitcoin.h"
 #include "consensus/validation.h"
 #include "main.h"
@@ -146,7 +146,7 @@ public:
             return false;
         }
         coins = it->second;
-        if (coins.IsPruned() && insecure_rand() % 2 == 0) {
+        if (coins.IsPruned() && InsecureRandBool() == 0) {
             // Randomly return false in case of an empty entry.
             return false;
         }
@@ -212,7 +212,7 @@ public:
             if (it->second.flags & CCoinsCacheEntry::DIRTY) {
                 // Same optimization used in CCoinsViewDB is to only write dirty entries.
                 map_[it->first] = it->second.coins;
-                if (it->second.coins.IsPruned() && insecure_rand() % 3 == 0) {
+                if (it->second.coins.IsPruned() && InsecureRandRange(3) == 0) {
                     // Randomly delete empty entries on write.
                     map_.erase(it->first);
                 }

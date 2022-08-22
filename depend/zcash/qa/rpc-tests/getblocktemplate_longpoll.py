@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2014-2016 The Bitcoin Core developers
+# Copyright (c) 2017-2022 The Zcash developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -48,11 +49,6 @@ class GetBlockTemplateLPTest(BitcoinTestFramework):
     '''
     Test longpolling with getblocktemplate.
     '''
-
-    def __init__(self):
-        super().__init__()
-        self.num_nodes = 4
-        self.setup_clean_chain = False
 
     def run_test(self):
         print("Warning: this test will take about 70 seconds in the best case. Be patient.")

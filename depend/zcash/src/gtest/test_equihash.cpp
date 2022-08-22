@@ -7,7 +7,7 @@
 
 #include "crypto/equihash.h"
 #include "uint256.h"
-#include "utilstrencodings.h"
+#include "util/strencodings.h"
 
 void TestExpandAndCompress(const std::string &scope, size_t bit_len, size_t byte_pad,
                            std::vector<unsigned char> compact,
@@ -86,8 +86,7 @@ TEST(EquihashTests, IsProbablyDuplicate) {
 
 TEST(EquihashTests, CheckBasicSolverCancelled) {
     Equihash<48,5> Eh48_5;
-    eh_HashState state;
-    Eh48_5.InitialiseState(state);
+    eh_HashState state = Eh48_5.InitialiseState();
     uint256 V = uint256S("0x00");
     state.Update(V.begin(), V.size());
 
@@ -190,8 +189,7 @@ TEST(EquihashTests, CheckBasicSolverCancelled) {
 
 TEST(EquihashTests, CheckOptimisedSolverCancelled) {
     Equihash<48,5> Eh48_5;
-    eh_HashState state;
-    Eh48_5.InitialiseState(state);
+    eh_HashState state = Eh48_5.InitialiseState();
     uint256 V = uint256S("0x00");
     state.Update(V.begin(), V.size());
 

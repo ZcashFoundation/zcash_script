@@ -1,4 +1,4 @@
-// Copyright (c) 2017 The Zcash developers
+// Copyright (c) 2017-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -8,7 +8,7 @@
 #include "clientversion.h"
 #include "init.h"
 #include "ui_interface.h"
-#include "util.h"
+#include "util/system.h"
 #include "chainparams.h"
 
 // Flags that enable deprecated functionality.
@@ -24,6 +24,8 @@ bool fEnableZCRawReceive = true;
 bool fEnableZCRawJoinSplit = true;
 bool fEnableZCRawKeygen = true;
 bool fEnableAddrTypeField = true;
+bool fEnableDumpWallet = true;
+bool fEnableWalletTxVJoinSplit = true;
 #endif
 
 static const std::string CLIENT_VERSION_STR = FormatVersion(CLIENT_VERSION);
@@ -105,6 +107,8 @@ std::optional<std::string> SetAllowedDeprecatedFeaturesFromCLIArgs() {
     fEnableZCRawJoinSplit = allowdeprecated.count("zcrawjoinsplit") > 0;
     fEnableZCRawKeygen = allowdeprecated.count("zcrawkeygen") > 0;
     fEnableAddrTypeField = allowdeprecated.count("addrtype") > 0;
+    fEnableDumpWallet = allowdeprecated.count("dumpwallet") > 0;
+    fEnableWalletTxVJoinSplit = allowdeprecated.count("wallettxvjoinsplit") > 0;
 #endif
 
     return std::nullopt;

@@ -1,14 +1,16 @@
 // Copyright (c) 2011-2014 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 #include "arith_uint256.h"
+#include "consensus/merkle.h"
 #include "consensus/validation.h"
 #include "main.h"
 #include "miner.h"
 #include "pubkey.h"
 #include "uint256.h"
-#include "util.h"
+#include "util/system.h"
 #include "crypto/equihash.h"
 //#include "pow/tromp/equi_miner.h"
 
@@ -188,7 +190,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
         pblock->vtx[0] = CTransaction(txCoinbase);
         if (txFirst.size() < 2)
             txFirst.push_back(new CTransaction(pblock->vtx[0]));
-        pblock->hashMerkleRoot = pblock->BuildMerkleTree();
+        pblock->hashMerkleRoot = BlockMerkleRoot(*pblock);
         pblock->nNonce = uint256S(blockinfo[i].nonce_hex);
         pblock->nSolution = ParseHex(blockinfo[i].solution_hex);
 
@@ -199,8 +201,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
         unsigned int k = Params().GetConsensus().nEquihashK;
 
         // Hash state
-        eh_HashState eh_state;
-        EhInitialiseState(n, k, eh_state);
+        eh_HashState eh_state = EhInitialiseState(n, k);
 
         // I = the block header minus nonce and solution.
         CEquihashInput I{*pblock};
@@ -245,15 +246,15 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
             }
 
             for (auto soln : solns) {
-                if (!librustzcash_eh_isvalid(
+                if (!equihash::is_valid(
                     n, k,
-                    (unsigned char*)&ss[0], ss.size(),
-                    pblock->nNonce.begin(), pblock->nNonce.size(),
-                    soln.data(), soln.size())) continue;
+                    {(const unsigned char*)ss.data(), ss.size()},
+                    {pblock->nNonce.begin(), pblock->nNonce.size()},
+                    {soln.data(), soln.size()})) continue;
                 pblock->nSolution = soln;
 
                 CValidationState state;
-                
+
                 if (ProcessNewBlock(state, NULL, pblock, true, NULL) && state.IsValid()) {
                     goto foundit;
                 }
@@ -407,8 +408,11 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     delete pblocktemplate;
     chainActive.Tip()->nHeight = nHeight;
 
+    // Change to the fixed clock.
+    FixedClock::SetGlobal();
+
     // non-final txs in mempool
-    SetMockTime(chainActive.Tip()->GetMedianTimePast()+1);
+    FixedClock::Instance()->Set(std::chrono::seconds(chainActive.Tip()->GetMedianTimePast()+1));
 
     // height locked
     tx.vin[0].prevout.hash = txFirst[0]->GetHash();
@@ -443,7 +447,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
 
     // However if we advance height and time by one, both will.
     chainActive.Tip()->nHeight++;
-    SetMockTime(chainActive.Tip()->GetMedianTimePast()+2);
+    FixedClock::Instance()->Set(std::chrono::seconds(chainActive.Tip()->GetMedianTimePast()+2));
 
     // FIXME: we should *actually* create a new block so the following test
     //        works; CheckFinalTx() isn't fooled by monkey-patching nHeight.
@@ -454,8 +458,9 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     BOOST_CHECK_EQUAL(pblocktemplate->block.vtx.size(), 2);
     delete pblocktemplate;
 
+    // Restore the original system state
     chainActive.Tip()->nHeight--;
-    SetMockTime(0);
+    SystemClock::SetGlobal();
     mempool.clear();
 
     for (CTransaction *tx : txFirst)

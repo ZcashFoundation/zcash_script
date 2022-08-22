@@ -1,5 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2014 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -154,8 +155,14 @@ public:
         }
     }
 
+    /** Generate random bytes. */
+    std::vector<unsigned char> randbytes(size_t len);
+
     /** Generate a random 32-bit integer. */
     uint32_t rand32() { return randbits(32); }
+
+    /** generate a random uint256. */
+    uint256 rand256();
 
     /** Generate a random boolean. */
     bool randbool() { return randbits(1); }

@@ -1,5 +1,6 @@
 // Copyright (c) 2010 Satoshi Nakamoto
 // Copyright (c) 2009-2014 The Bitcoin Core developers
+// Copyright (c) 2019-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -7,9 +8,9 @@
 
 #include "random.h"
 #include "tinyformat.h"
-#include "util.h"
-#include "utilstrencodings.h"
-#include "utiltime.h"
+#include "util/system.h"
+#include "util/strencodings.h"
+#include "util/time.h"
 #include "version.h"
 
 #include <stdint.h>

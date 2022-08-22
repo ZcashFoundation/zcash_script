@@ -1,15 +1,15 @@
 // Copyright (c) 2011-2014 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
-#include "util.h"
+#include "util/system.h"
 
 #include "clientversion.h"
 #include "primitives/transaction.h"
-#include "test_random.h"
 #include "sync.h"
-#include "utilstrencodings.h"
-#include "utilmoneystr.h"
+#include "util/strencodings.h"
+#include "util/moneystr.h"
 #include "test/test_bitcoin.h"
 
 #include <stdint.h>
@@ -234,7 +234,7 @@ BOOST_AUTO_TEST_CASE(util_IsHex)
 
 BOOST_AUTO_TEST_CASE(util_seed_insecure_rand)
 {
-    seed_insecure_rand(true);
+    SeedInsecureRand(true);
     for (int mod=2;mod<11;mod++)
     {
         int mask = 1;
@@ -248,7 +248,7 @@ BOOST_AUTO_TEST_CASE(util_seed_insecure_rand)
         for (int i = 0; i < 10000; i++) {
             uint32_t rval;
             do{
-                rval=insecure_rand()&mask;
+                rval=InsecureRand32()&mask;
             }while(rval>=(uint32_t)mod);
             count += rval==0;
         }

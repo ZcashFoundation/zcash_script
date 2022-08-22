@@ -15,7 +15,9 @@ BITCOIN_CONFIG_INCLUDES=-I$(builddir)/config
 BITCOIN_INCLUDES=-I$(builddir) -I$(builddir)/obj $(BDB_CPPFLAGS) $(BOOST_CPPFLAGS) $(LEVELDB_CPPFLAGS)
 
 BITCOIN_CONFIG_INCLUDES += -I$(srcdir)/rust/include
+BITCOIN_CONFIG_INCLUDES += -I$(srcdir)/rust/gen/include
 BITCOIN_INCLUDES += -I$(srcdir)/rust/include
+BITCOIN_INCLUDES += -I$(srcdir)/rust/gen/include
 BITCOIN_INCLUDES += -I$(srcdir)/secp256k1/include
 BITCOIN_INCLUDES += -I$(srcdir)/univalue/include
 
@@ -24,6 +26,8 @@ LIBBITCOIN_COMMON=libbitcoin_common.a
 LIBBITCOIN_CLI=libbitcoin_cli.a
 LIBBITCOIN_UTIL=libbitcoin_util.a
 LIBBITCOIN_CRYPTO=crypto/libbitcoin_crypto.a
+LIBBITCOIN_CRYPTO_SSE41=crypto/libbitcoin_crypto_sse41.a
+LIBBITCOIN_CRYPTO_AVX2=crypto/libbitcoin_crypto_avx2.a
 LIBRUSTZCASH=$(top_builddir)/target/$(RUST_TARGET)/release/librustzcash.a
 LIBSECP256K1=secp256k1/libsecp256k1.la
 LIBUNIVALUE=univalue/libunivalue.la
@@ -42,6 +46,41 @@ if ENABLE_WALLET
 LIBBITCOIN_WALLET=libbitcoin_wallet.a
 endif
 
+# TODO: Figure out how to avoid an explicit file list.
+CXXBRIDGE_RS = \
+  rust/src/blake2b.rs \
+  rust/src/bundlecache.rs \
+  rust/src/equihash.rs \
+  rust/src/orchard_bundle.rs \
+  rust/src/sapling.rs \
+  rust/src/wallet_scanner.rs
+CXXBRIDGE_H = \
+  rust/gen/include/rust/blake2b.h \
+  rust/gen/include/rust/bundlecache.h \
+  rust/gen/include/rust/equihash.h \
+  rust/gen/include/rust/orchard_bundle.h \
+  rust/gen/include/rust/sapling.h \
+  rust/gen/include/rust/wallet_scanner.h
+CXXBRIDGE_CPP = \
+  rust/gen/src/blake2b.cpp \
+  rust/gen/src/bundlecache.cpp \
+  rust/gen/src/equihash.cpp \
+  rust/gen/src/orchard_bundle.cpp \
+  rust/gen/src/sapling.cpp \
+  rust/gen/src/wallet_scanner.cpp
+
+# We add a rust/cxx.h include to indicate that we provide this (via the rustcxx depends
+# package), so that cxxbridge doesn't include it within the generated headers and code.
+CXXBRIDGE_OPTS = -i rust/cxx.h
+
+$(CXXBRIDGE_RS): ;
+$(CXXBRIDGE_H) $(CXXBRIDGE_CPP): $(CXXBRIDGE_RS)
+	@$(MKDIR_P) $(@D)
+	$(AM_V_GEN)$(CXXBRIDGE) $(CXXBRIDGE_OPTS) rust/src/$(basename $(@F)).rs -o $@
+
+# We pass through CC etc. flags so they are available to Rust dependencies that internally
+# compile C or C++ code with the `cc` crate.
+#
 # We depend on the secp256k1 crate for some logic on the Rust side of the FFI. This crate
 # is a wrapper around libsecp256k1, which we already vendor in our code; the crate vendors
 # its own copy with non-colliding symbols. To ensure that we only use a single version of
@@ -49,12 +88,23 @@ endif
 # same library as the C++ code.
 # - Note that this does not prevent the secp256k1-sys vendored code from being built; this
 #   requires https://github.com/rust-bitcoin/rust-secp256k1/issues/380 to be addressed.
-RUST_ENV_VARS = RUSTC="$(RUSTC)" TERM=dumb RUSTFLAGS="--cfg=rust_secp_no_symbol_renaming"
+RUST_ENV_VARS = \
+  RUSTC="$(RUSTC)" \
+  RUSTFLAGS="--cfg=rust_secp_no_symbol_renaming" \
+  CC="$(CC)" \
+  CFLAGS="$(CFLAGS)" \
+  CXX="$(CXX)" \
+  CXXFLAGS="$(CXXFLAGS)" \
+  TERM=dumb
 RUST_BUILD_OPTS = --release --target $(RUST_TARGET) --manifest-path $(top_srcdir)/Cargo.toml
 
 rust_verbose = $(rust_verbose_@AM_V@)
 rust_verbose_ = $(rust_verbose_@AM_DEFAULT_V@)
-rust_verbose_1 = --verbose
+rust_verbose_0 = @echo "  RUST     $@";
+
+cargo_verbose = $(cargo_verbose_@AM_V@)
+cargo_verbose_ = $(cargo_verbose_@AM_DEFAULT_V@)
+cargo_verbose_1 = --verbose
 
 if ENABLE_ONLINE_RUST
 # Ensure that .cargo/config does not exist
@@ -74,12 +124,16 @@ $(CARGO_CONFIGURED): $(top_srcdir)/.cargo/config.offline
 	$(AM_V_at)echo "directory = \"$(RUST_VENDORED_SOURCES)\"" >>$(top_srcdir)/.cargo/config
 	$(AM_V_at)touch $@
 endif
+if ENABLE_SHANI
+LIBBITCOIN_CRYPTO_SHANI = crypto/libbitcoin_crypto_shani.a
+LIBBITCOIN_CRYPTO += $(LIBBITCOIN_CRYPTO_SHANI)
+endif
 
 cargo-build-lib: $(CARGO_CONFIGURED)
-	$(RUST_ENV_VARS) $(CARGO) build --lib $(RUST_BUILD_OPTS) $(rust_verbose)
+	$(rust_verbose)$(RUST_ENV_VARS) $(CARGO) build --lib $(RUST_BUILD_OPTS) $(cargo_verbose)
 
 cargo-build-bins: $(CARGO_CONFIGURED)
-	$(RUST_ENV_VARS) $(CARGO) build --bins $(RUST_BUILD_OPTS) $(rust_verbose)
+	$(rust_verbose)$(RUST_ENV_VARS) $(CARGO) build --bins $(RUST_BUILD_OPTS) $(cargo_verbose)
 
 $(WALLET_TOOL_BIN): cargo-build-bins
 	$(AM_V_at)cp $(WALLET_TOOL_BUILD) $@
@@ -96,6 +150,8 @@ $(LIBUNIVALUE): $(wildcard univalue/lib/*) $(wildcard univalue/include/*)
 # But to build the less dependent modules first, we manually select their order here:
 EXTRA_LIBRARIES += \
   $(LIBBITCOIN_CRYPTO) \
+  $(LIBBITCOIN_CRYPTO_SSE41) \
+  $(LIBBITCOIN_CRYPTO_AVX2) \
   $(LIBBITCOIN_UTIL) \
   $(LIBBITCOIN_COMMON) \
   $(LIBBITCOIN_SERVER) \
@@ -132,6 +188,7 @@ LIBZCASH_H = \
   zcash/address/sprout.hpp \
   zcash/address/unified.h \
   zcash/address/zip32.h \
+  zcash/cache.h \
   zcash/History.hpp \
   zcash/JoinSplit.hpp \
   zcash/Note.hpp \
@@ -170,11 +227,13 @@ BITCOIN_CORE_H = \
   compressor.h \
   consensus/consensus.h \
   consensus/funding.h \
+  consensus/merkle.h \
   consensus/params.h \
   consensus/upgrades.h \
   consensus/validation.h \
   core_io.h \
   core_memusage.h \
+  cuckoocache.h \
   deprecation.h \
   experimental_features.h \
   fs.h \
@@ -244,12 +303,12 @@ BITCOIN_CORE_H = \
   uint256.h \
   uint252.h \
   undo.h \
-  util.h \
+  util/system.h \
   util/match.h \
-  utilmoneystr.h \
-  utilstrencodings.h \
-  utiltest.h \
-  utiltime.h \
+  util/moneystr.h \
+  util/strencodings.h \
+  util/test.h \
+  util/time.h \
   validationinterface.h \
   version.h \
   wallet/asyncrpcoperation_common.h \
@@ -383,6 +442,10 @@ crypto_libbitcoin_crypto_a_SOURCES = \
   crypto/sha512.cpp \
   crypto/sha512.h
 
+if USE_ASM
+crypto_libbitcoin_crypto_a_SOURCES += crypto/sha256_sse4.cpp
+endif
+
 if ENABLE_MINING
 EQUIHASH_TROMP_SOURCES = \
   pow/tromp/equi_miner.h \
@@ -394,6 +457,28 @@ crypto_libbitcoin_crypto_a_CPPFLAGS += \
 crypto_libbitcoin_crypto_a_SOURCES += \
   ${EQUIHASH_TROMP_SOURCES}
 endif
+
+crypto_libbitcoin_crypto_sse41_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+crypto_libbitcoin_crypto_sse41_a_CPPFLAGS = $(AM_CPPFLAGS)
+if ENABLE_SSE41
+crypto_libbitcoin_crypto_sse41_a_CXXFLAGS += $(SSE41_CXXFLAGS)
+crypto_libbitcoin_crypto_sse41_a_CPPFLAGS += -DENABLE_SSE41
+endif
+crypto_libbitcoin_crypto_sse41_a_SOURCES = crypto/sha256_sse41.cpp
+
+crypto_libbitcoin_crypto_avx2_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+crypto_libbitcoin_crypto_avx2_a_CPPFLAGS = $(AM_CPPFLAGS)
+if ENABLE_AVX2
+crypto_libbitcoin_crypto_avx2_a_CXXFLAGS += $(AVX2_CXXFLAGS)
+crypto_libbitcoin_crypto_avx2_a_CPPFLAGS += -DENABLE_AVX2
+endif
+crypto_libbitcoin_crypto_avx2_a_SOURCES = crypto/sha256_avx2.cpp
+
+crypto_libbitcoin_crypto_shani_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+crypto_libbitcoin_crypto_shani_a_CPPFLAGS = $(AM_CPPFLAGS)
+crypto_libbitcoin_crypto_shani_a_CXXFLAGS += $(SHANI_CXXFLAGS)
+crypto_libbitcoin_crypto_shani_a_CPPFLAGS += -DENABLE_SHANI
+crypto_libbitcoin_crypto_shani_a_SOURCES = crypto/sha256_shani.cpp
 
 # common: shared between zcashd and non-server tools
 libbitcoin_common_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
@@ -407,6 +492,7 @@ libbitcoin_common_a_SOURCES = \
   coins.cpp \
   compressor.cpp \
   consensus/funding.cpp \
+  consensus/merkle.cpp \
   consensus/params.cpp \
   consensus/upgrades.cpp \
   core_read.cpp \
@@ -429,7 +515,7 @@ libbitcoin_common_a_SOURCES = \
   script/sign.cpp \
   script/standard.cpp \
   transaction_builder.cpp \
-  utiltest.cpp \
+  util/test.cpp \
   warnings.cpp \
   $(BITCOIN_CORE_H) \
   $(LIBZCASH_H)
@@ -453,10 +539,10 @@ libbitcoin_util_a_SOURCES = \
   support/cleanse.cpp \
   sync.cpp \
   uint256.cpp \
-  util.cpp \
-  utilmoneystr.cpp \
-  utilstrencodings.cpp \
-  utiltime.cpp \
+  util/system.cpp \
+  util/moneystr.cpp \
+  util/strencodings.cpp \
+  util/time.cpp \
   $(BITCOIN_CORE_H) \
   $(LIBZCASH_H)
 
@@ -493,6 +579,8 @@ zcashd_LDADD = \
   $(LIBBITCOIN_UTIL) \
   $(LIBBITCOIN_ZMQ) \
   $(LIBBITCOIN_CRYPTO) \
+  $(LIBBITCOIN_CRYPTO_SSE41) \
+  $(LIBBITCOIN_CRYPTO_AVX2) \
   $(LIBZCASH) \
   $(LIBRUSTZCASH) \
   $(LIBLEVELDB) \
@@ -528,6 +616,8 @@ zcash_cli_LDADD = \
   $(LIBZCASH) \
   $(LIBRUSTZCASH) \
   $(LIBBITCOIN_CRYPTO) \
+  $(LIBBITCOIN_CRYPTO_SSE41) \
+  $(LIBBITCOIN_CRYPTO_AVX2) \
   $(LIBSECP256K1) \
   $(LIBZCASH_LIBS)
 #
@@ -551,6 +641,8 @@ zcash_tx_LDADD = \
   $(LIBZCASH) \
   $(LIBRUSTZCASH) \
   $(LIBBITCOIN_CRYPTO) \
+  $(LIBBITCOIN_CRYPTO_SSE41) \
+  $(LIBBITCOIN_CRYPTO_AVX2) \
   $(LIBZCASH_LIBS)
 
 zcash_tx_LDADD += $(BOOST_LIBS)
@@ -558,6 +650,7 @@ zcash_tx_LDADD += $(BOOST_LIBS)
 
 # zcash protocol primitives #
 libzcash_a_SOURCES = \
+  $(CXXBRIDGE_CPP) \
   zcash/IncrementalMerkleTree.cpp \
   zcash/NoteEncryption.cpp \
   zcash/Address.cpp \
@@ -568,6 +661,7 @@ libzcash_a_SOURCES = \
   zcash/address/sprout.cpp \
   zcash/address/unified.cpp \
   zcash/address/zip32.cpp \
+  zcash/cache.cpp \
   zcash/History.cpp \
   zcash/JoinSplit.cpp \
   zcash/Note.cpp \
@@ -595,7 +689,7 @@ libzcash_script_la_SOURCES = \
   script/interpreter.cpp \
   script/script.cpp \
   uint256.cpp \
-  utilstrencodings.cpp
+  util/strencodings.cpp
 
 if GLIBC_BACK_COMPAT
   libzcash_script_la_SOURCES += compat/glibc_compat.cpp
@@ -603,7 +697,7 @@ endif
 
 libzcash_script_la_LDFLAGS = $(AM_LDFLAGS) -no-undefined $(RELDFLAGS)
 libzcash_script_la_LIBADD = $(LIBSECP256K1)
-libzcash_script_la_CPPFLAGS = $(AM_CPPFLAGS) -I$(builddir)/obj -I$(srcdir)/rust/include -I$(srcdir)/secp256k1/include -DBUILD_BITCOIN_INTERNAL
+libzcash_script_la_CPPFLAGS = $(AM_CPPFLAGS) -I$(builddir)/obj -I$(srcdir)/rust/include -I$(srcdir)/rust/gen/include -I$(srcdir)/secp256k1/include -DBUILD_BITCOIN_INTERNAL
 libzcash_script_la_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 
 endif
@@ -614,6 +708,8 @@ CTAES_DIST += crypto/ctaes/ctaes.c
 CTAES_DIST += crypto/ctaes/ctaes.h
 CTAES_DIST += crypto/ctaes/README.md
 CTAES_DIST += crypto/ctaes/test.c
+
+BUILT_SOURCES = $(CXXBRIDGE_H)
 
 CLEANFILES = *.gcda *.gcno */*.gcno wallet/*/*.gcno $(bin_SCRIPTS)
 
@@ -626,6 +722,7 @@ clean-local:
 	-$(MAKE) -C secp256k1 clean
 	-$(MAKE) -C univalue clean
 	rm -f leveldb/*/*.gcno leveldb/helpers/memenv/*.gcno
+	rm -f rust/gen
 	rm -f fuzz.cpp
 	rm -rf fuzzing/*/output
 	-rm -f config.h

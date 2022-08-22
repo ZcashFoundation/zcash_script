@@ -3,9 +3,10 @@
 
 #include "main.h"
 #include "primitives/transaction.h"
+#include "consensus/merkle.h"
 #include "consensus/validation.h"
 #include "transaction_builder.h"
-#include "utiltest.h"
+#include "util/test.h"
 #include "gtest/utils.h"
 #include "wallet/asyncrpcoperation_mergetoaddress.h"
 #include "wallet/asyncrpcoperation_shieldcoinbase.h"
@@ -35,7 +36,7 @@ TEST(WalletRPCTests,ZShieldCoinbaseInternals)
     // We removed the ability to create pre-Sapling Sprout proofs, so we can
     // only create Sapling-onwards transactions.
     int nHeight = consensusParams.vUpgrades[Consensus::UPGRADE_SAPLING].nActivationHeight;
-    CMutableTransaction mtx = CreateNewContextualCMutableTransaction(consensusParams, nHeight + 1);
+    CMutableTransaction mtx = CreateNewContextualCMutableTransaction(consensusParams, nHeight + 1, false);
 
     // Add keys manually
     auto pa = pwalletMain->GenerateNewSproutZKey();
@@ -101,7 +102,7 @@ TEST(WalletRPCTests, RPCZMergeToAddressInternals)
     // We removed the ability to create pre-Sapling Sprout proofs, so we can
     // only create Sapling-onwards transactions.
     int nHeight = consensusParams.vUpgrades[Consensus::UPGRADE_SAPLING].nActivationHeight;
-    CMutableTransaction mtx = CreateNewContextualCMutableTransaction(consensusParams, nHeight + 1);
+    CMutableTransaction mtx = CreateNewContextualCMutableTransaction(consensusParams, nHeight + 1, false);
 
     // Add keys manually
     auto taddr = pwalletMain->GenerateNewKey(true).GetID();
@@ -261,7 +262,7 @@ TEST(WalletRPCTests, RPCZsendmanyTaddrToSapling)
     int nextBlockHeight = chainActive.Height() + 1;
 
     // Add a fake transaction to the wallet
-    CMutableTransaction mtx = CreateNewContextualCMutableTransaction(consensusParams, nextBlockHeight);
+    CMutableTransaction mtx = CreateNewContextualCMutableTransaction(consensusParams, nextBlockHeight, false);
     CScript scriptPubKey = CScript() << OP_DUP << OP_HASH160 << ToByteVector(taddr) << OP_EQUALVERIFY << OP_CHECKSIG;
     mtx.vout.push_back(CTxOut(5 * COIN, scriptPubKey));
     CWalletTx wtx(pwalletMain, mtx);
@@ -271,7 +272,7 @@ TEST(WalletRPCTests, RPCZsendmanyTaddrToSapling)
     EXPECT_EQ(-1, chainActive.Height());
     CBlock block;
     block.vtx.push_back(wtx);
-    block.hashMerkleRoot = block.BuildMerkleTree();
+    block.hashMerkleRoot = BlockMerkleRoot(block);
     auto blockHash = block.GetHash();
     CBlockIndex fakeIndex {block};
     mapBlockIndex.insert(std::make_pair(blockHash, &fakeIndex));
@@ -283,7 +284,7 @@ TEST(WalletRPCTests, RPCZsendmanyTaddrToSapling)
 
     // Context that z_sendmany requires
     auto builder = TransactionBuilder(consensusParams, nextBlockHeight, std::nullopt, pwalletMain);
-    mtx = CreateNewContextualCMutableTransaction(consensusParams, nextBlockHeight);
+    mtx = CreateNewContextualCMutableTransaction(consensusParams, nextBlockHeight, false);
 
     auto selector = pwalletMain->ZTXOSelectorForAddress(taddr, true, false).value();
     std::vector<SendManyRecipient> recipients = { SendManyRecipient(std::nullopt, pa, 1*COIN, "ABCD") };

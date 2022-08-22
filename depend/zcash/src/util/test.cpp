@@ -1,8 +1,8 @@
-// Copyright (c) 2016 The Zcash developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
-#include "utiltest.h"
+#include "util/test.h"
 
 #include "consensus/upgrades.h"
 #include "transaction_builder.h"

@@ -1,6 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2014 The Bitcoin Core developers
-// Copyright (c) 2015-2020 The Zcash developers
+// Copyright (c) 2015-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -14,6 +14,7 @@
 #include "checkqueue.h"
 #include "consensus/consensus.h"
 #include "consensus/funding.h"
+#include "consensus/merkle.h"
 #include "consensus/upgrades.h"
 #include "consensus/validation.h"
 #include "deprecation.h"
@@ -29,14 +30,13 @@
 #include "txmempool.h"
 #include "ui_interface.h"
 #include "undo.h"
-#include "util.h"
-#include "utilmoneystr.h"
+#include "util/system.h"
+#include "util/moneystr.h"
 #include "validationinterface.h"
 #include "wallet/asyncrpcoperation_sendmany.h"
 #include "wallet/asyncrpcoperation_shieldcoinbase.h"
 #include "warnings.h"
 
-#include <algorithm>
 #include <atomic>
 #include <sstream>
 #include <variant>
@@ -60,14 +60,24 @@ using namespace std;
  * Global state
  */
 
-CCriticalSection cs_main;
+/**
+ * Mutex to guard access to validation specific variables, such as reading
+ * or changing the chainstate.
+ *
+ * This may also need to be locked when updating the transaction pool, e.g. on
+ * AcceptToMemoryPool. See CTxMemPool::cs comment for details.
+ *
+ * The transaction pool has a separate lock to allow reading from it and the
+ * chainstate at the same time.
+ */
+RecursiveMutex cs_main;
 
 BlockMap mapBlockIndex;
 CChain chainActive;
 CBlockIndex *pindexBestHeader = NULL;
 static std::atomic<int64_t> nTimeBestReceived(0); // Used only to inform the wallet of when we last received a block
-CWaitableCriticalSection g_best_block_mutex;
-CConditionVariable g_best_block_cv;
+Mutex g_best_block_mutex;
+std::condition_variable g_best_block_cv;
 uint256 g_best_block;
 int g_best_block_height;
 int nScriptCheckThreads = 0;
@@ -79,6 +89,7 @@ bool fSpentIndex = false;       // insightexplorer
 bool fTimestampIndex = false;   // insightexplorer
 bool fHavePruned = false;
 bool fPruneMode = false;
+int32_t nPreferredTxVersion = DEFAULT_PREFERRED_TX_VERSION;
 bool fIsBareMultisigStd = DEFAULT_PERMIT_BAREMULTISIG;
 bool fCheckBlockIndex = false;
 bool fCheckpointsEnabled = DEFAULT_CHECKPOINTS_ENABLED;
@@ -1234,7 +1245,8 @@ bool ContextualCheckShieldedInputs(
         const PrecomputedTransactionData& txdata,
         CValidationState &state,
         const CCoinsViewCache &view,
-        orchard::AuthValidator& orchardAuth,
+        std::optional<rust::Box<sapling::BatchValidator>>& saplingAuth,
+        std::optional<orchard::AuthValidator>& orchardAuth,
         const Consensus::Params& consensus,
         uint32_t consensusBranchId,
         bool nu5Active,
@@ -1306,26 +1318,17 @@ bool ContextualCheckShieldedInputs(
     if (!tx.vShieldedSpend.empty() ||
         !tx.vShieldedOutput.empty())
     {
-        // The nu5Active flag passed in here enables the new consensus rules from ZIP 216
-        // (https://zips.z.cash/zip-0216#specification) on the following fields:
-        //
-        // - spendAuthSig in Sapling Spend descriptions
-        // - bindingSigSapling
-        auto ctx = librustzcash_sapling_verification_ctx_init(nu5Active);
+        auto assembler = sapling::new_bundle_assembler();
 
         for (const SpendDescription &spend : tx.vShieldedSpend) {
-            if (!librustzcash_sapling_check_spend(
-                ctx,
-                spend.cv.begin(),
-                spend.anchor.begin(),
-                spend.nullifier.begin(),
-                spend.rk.begin(),
-                spend.zkproof.begin(),
-                spend.spendAuthSig.begin(),
-                dataToBeSigned.begin()
-            ))
-            {
-                librustzcash_sapling_verification_ctx_free(ctx);
+            if (!assembler->add_spend(
+                spend.cv.GetRawBytes(),
+                spend.anchor.GetRawBytes(),
+                spend.nullifier.GetRawBytes(),
+                spend.rk.GetRawBytes(),
+                spend.zkproof,
+                spend.spendAuthSig
+            )) {
                 return state.DoS(
                     dosLevelPotentiallyRelaxing,
                     error("ContextualCheckShieldedInputs(): Sapling spend description invalid"),
@@ -1334,42 +1337,42 @@ bool ContextualCheckShieldedInputs(
         }
 
         for (const OutputDescription &output : tx.vShieldedOutput) {
-            if (!librustzcash_sapling_check_output(
-                ctx,
-                output.cv.begin(),
-                output.cmu.begin(),
-                output.ephemeralKey.begin(),
-                output.zkproof.begin()
-            ))
-            {
-                librustzcash_sapling_verification_ctx_free(ctx);
+            if (!assembler->add_output(
+                output.cv.GetRawBytes(),
+                output.cmu.GetRawBytes(),
+                output.ephemeralKey.GetRawBytes(),
+                output.encCiphertext,
+                output.outCiphertext,
+                output.zkproof
+            )) {
                 // This should be a non-contextual check, but we check it here
                 // as we need to pass over the outputs anyway in order to then
-                // call librustzcash_sapling_final_check().
+                // call ctx->final_check().
                 return state.DoS(100, error("ContextualCheckShieldedInputs(): Sapling output description invalid"),
                                       REJECT_INVALID, "bad-txns-sapling-output-description-invalid");
             }
         }
 
-        if (!librustzcash_sapling_final_check(
-            ctx,
+        auto bundle = sapling::finish_bundle_assembly(
+            std::move(assembler),
             tx.GetValueBalanceSapling(),
-            tx.bindingSig.begin(),
-            dataToBeSigned.begin()
-        ))
-        {
-            librustzcash_sapling_verification_ctx_free(ctx);
-            return state.DoS(
-                dosLevelPotentiallyRelaxing,
-                error("ContextualCheckShieldedInputs(): Sapling binding signature invalid"),
-                REJECT_INVALID, "bad-txns-sapling-binding-signature-invalid");
-        }
+            tx.bindingSig);
 
-        librustzcash_sapling_verification_ctx_free(ctx);
+        // Queue Sapling bundle to be batch-validated. This also checks some consensus rules.
+        if (saplingAuth.has_value()) {
+            if (!saplingAuth.value()->check_bundle(std::move(bundle), dataToBeSigned.GetRawBytes())) {
+                return state.DoS(
+                    dosLevelPotentiallyRelaxing,
+                    error("ContextualCheckShieldedInputs(): Sapling bundle invalid"),
+                    REJECT_INVALID, "bad-txns-sapling-bundle-invalid");
+            }
+        }
     }
 
-    // Queue Orchard signatures to be batch-validated.
-    tx.GetOrchardBundle().QueueSignatureValidation(orchardAuth, dataToBeSigned);
+    // Queue Orchard bundle to be batch-validated.
+    if (orchardAuth.has_value()) {
+        tx.GetOrchardBundle().QueueAuthValidation(orchardAuth.value(), dataToBeSigned);
+    }
 
     return true;
 }
@@ -1397,16 +1400,7 @@ bool CheckTransaction(const CTransaction& tx, CValidationState &state,
         // Sapling zk-SNARK proofs are checked in librustzcash_sapling_check_{spend,output},
         // called from ContextualCheckTransaction.
 
-        // Check bundle-specific Orchard consensus rules. Since we check encoding
-        // consensus rules at parse time, and signature validation is batched, all we are
-        // checking here is proof validity. Once we implement batched proof verification,
-        // this will move into orchardAuth.
-        auto orchardBundle = tx.GetOrchardBundle();
-        if (!orchardBundle.CheckBundleSpecificConsensusRules()) {
-            return state.DoS(
-                100, error("CheckTransaction(): Orchard bundle proof does not verify"),
-                REJECT_INVALID, "bad-txns-orchard-verification-failed");
-        }
+        // Orchard zk-SNARK proofs are checked by orchard::AuthValidator::Batch.
 
         return true;
     }
@@ -1997,9 +1991,14 @@ bool AcceptToMemoryPool(
                 __func__, hash.ToString(), FormatStateMessage(state));
         }
 
+        // This will be a single-transaction batch, which will be more efficient
+        // than unbatched if the transaction contains at least one Sapling Spend
+        // or at least two Sapling Outputs.
+        std::optional<rust::Box<sapling::BatchValidator>> saplingAuth = sapling::init_batch_validator(true);
+
         // This will be a single-transaction batch, which is still more efficient as every
         // Orchard bundle contains at least two signatures.
-        auto orchardAuth = orchard::AuthValidator::Batch();
+        std::optional<orchard::AuthValidator> orchardAuth = orchard::AuthValidator::Batch(true);
 
         // Check shielded input signatures.
         if (!ContextualCheckShieldedInputs(
@@ -2007,6 +2006,7 @@ bool AcceptToMemoryPool(
             txdata,
             state,
             view,
+            saplingAuth,
             orchardAuth,
             chainparams.GetConsensus(),
             consensusBranchId,
@@ -2016,8 +2016,12 @@ bool AcceptToMemoryPool(
             return false;
         }
 
-        // Check Orchard bundle authorizations.
-        if (!orchardAuth.Validate()) {
+        // Check Sapling and Orchard bundle authorizations.
+        // `saplingAuth` and `orchardAuth` are known here to be non-null.
+        if (!saplingAuth.value()->validate()) {
+            return state.DoS(100, false, REJECT_INVALID, "bad-sapling-bundle-authorization");
+        }
+        if (!orchardAuth.value().Validate()) {
             return state.DoS(100, false, REJECT_INVALID, "bad-orchard-bundle-authorization");
         }
 
@@ -2237,6 +2241,11 @@ bool ReadBlockFromDisk(CBlock& block, const CDiskBlockPos& pos, const Consensus:
 
 bool ReadBlockFromDisk(CBlock& block, const CBlockIndex* pindex, const Consensus::Params& consensusParams)
 {
+    if (pindex->GetBlockPos().IsNull()) {
+        return error("ReadBlockFromDisk(CBlock&, CBlockIndex*): block index entry does not provide a valid disk position for block %s at %s",
+                pindex->ToString(), pindex->GetBlockPos().ToString());
+    }
+
     if (!ReadBlockFromDisk(block, pindex->GetBlockPos(), consensusParams))
         return false;
     if (block.GetHash() != pindex->GetBlockHash())
@@ -2566,7 +2575,7 @@ bool CheckTxShieldedInputs(
         auto txid = tx.GetHash().ToString();
         auto rejectCode = ShieldedReqRejectCode(*unmetShieldedReq);
         auto rejectReason = ShieldedReqRejectReason(*unmetShieldedReq);
-        TracingError(
+        TracingDebug(
             "main", "CheckTxShieldedInputs(): shielded requirements not met",
             "txid", txid.c_str(),
             "reason", rejectReason.c_str());
@@ -3029,7 +3038,7 @@ bool FindUndoPos(CValidationState &state, int nFile, CDiskBlockPos &pos, unsigne
 static CCheckQueue<CScriptCheck> scriptcheckqueue(128);
 
 void ThreadScriptCheck() {
-    RenameThread("zcash-scriptch");
+    RenameThread("zc-scriptcheck");
     scriptcheckqueue.Thread();
 }
 
@@ -3056,23 +3065,47 @@ static bool ShouldCheckTransactions(const CChainParams& chainparams, const CBloc
 
 bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pindex,
                   CCoinsViewCache& view, const CChainParams& chainparams,
-                  bool fJustCheck, bool fCheckAuthDataRoot)
+                  bool fJustCheck, CheckAs blockChecks)
 {
     AssertLockHeld(cs_main);
 
+    bool fCheckAuthDataRoot = true;
     bool fExpensiveChecks = true;
+
+    switch (blockChecks) {
+    case CheckAs::Block:
+        break;
+    case CheckAs::BlockTemplate:
+        // Disable checking proofs and signatures for block templates, to avoid
+        // checking them twice for transactions that were already checked when
+        // added to the mempool.
+        fExpensiveChecks = false;
+    case CheckAs::SlowBenchmark:
+        // Disable checking the authDataRoot for block templates and slow block
+        // benchmarks.
+        fCheckAuthDataRoot = false;
+        break;
+    default:
+        assert(false);
+    }
 
     // If this block is an ancestor of a checkpoint, disable expensive checks
     if (fCheckpointsEnabled && Checkpoints::IsAncestorOfLastCheckpoint(chainparams.Checkpoints(), pindex)) {
         fExpensiveChecks = false;
     }
 
+    // Don't cache results if we're actually connecting blocks or benchmarking
+    // (still consult the cache, though, which will be empty for benchmarks).
+    bool fCacheResults = fJustCheck && (blockChecks != CheckAs::SlowBenchmark);
+
     // proof verification is expensive, disable if possible
     auto verifier = fExpensiveChecks ? ProofVerifier::Strict() : ProofVerifier::Disabled();
 
-    // Disable Orchard batch signature validation if possible.
-    auto orchardAuth = fExpensiveChecks ?
-        orchard::AuthValidator::Batch() : orchard::AuthValidator::Disabled();
+    // Disable Sapling and Orchard batch validation if possible.
+    std::optional<rust::Box<sapling::BatchValidator>> saplingAuth = fExpensiveChecks ?
+        std::optional(sapling::init_batch_validator(fCacheResults)) : std::nullopt;
+    std::optional<orchard::AuthValidator> orchardAuth = fExpensiveChecks ?
+        orchard::AuthValidator::Batch(fCacheResults) : orchard::AuthValidator::Disabled();
 
     // If in initial block download, and this block is an ancestor of a checkpoint,
     // and -ibdskiptxverification is set, disable all transaction checks.
@@ -3300,7 +3333,6 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
             nFees += view.GetValueIn(tx)-tx.GetValueOut();
 
             std::vector<CScriptCheck> vChecks;
-            bool fCacheResults = fJustCheck; /* Don't cache results if we're actually connecting blocks (still consult the cache, though) */
             if (!ContextualCheckInputs(tx, state, view, fExpensiveChecks, flags, fCacheResults, txdata.back(), chainparams.GetConsensus(), consensusBranchId, nScriptCheckThreads ? &vChecks : NULL))
                 return error("ConnectBlock(): CheckInputs on %s failed with %s",
                     tx.GetHash().ToString(), FormatStateMessage(state));
@@ -3313,6 +3345,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
             txdata.back(),
             state,
             view,
+            saplingAuth,
             orchardAuth,
             chainparams.GetConsensus(),
             consensusBranchId,
@@ -3513,8 +3546,15 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                                block.vtx[0].GetValueOut(), blockReward),
                                REJECT_INVALID, "bad-cb-amount");
 
+    // Ensure Sapling authorizations are valid (if we are checking them)
+    if (saplingAuth.has_value() && !saplingAuth.value()->validate()) {
+        return state.DoS(100,
+            error("ConnectBlock(): a Sapling bundle within the block is invalid"),
+            REJECT_INVALID, "bad-sapling-bundle-authorization");
+    }
+
     // Ensure Orchard signatures are valid (if we are checking them)
-    if (!orchardAuth.Validate()) {
+    if (orchardAuth.has_value() && !orchardAuth.value().Validate()) {
         return state.DoS(100,
             error("ConnectBlock(): an Orchard bundle within the block is invalid"),
             REJECT_INVALID, "bad-orchard-bundle-authorization");
@@ -3603,14 +3643,6 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
 
     int64_t nTime3 = GetTimeMicros(); nTimeIndex += nTime3 - nTime2;
     LogPrint("bench", "    - Index writing: %.2fms [%.2fs]\n", 0.001 * (nTime3 - nTime2), nTimeIndex * 0.000001);
-
-    // Watch for changes to the previous coinbase transaction.
-    static uint256 hashPrevBestCoinBase;
-    GetMainSignals().UpdatedTransaction(hashPrevBestCoinBase);
-    hashPrevBestCoinBase = block.vtx[0].GetHash();
-
-    int64_t nTime4 = GetTimeMicros(); nTimeCallbacks += nTime4 - nTime3;
-    LogPrint("bench", "    - Callbacks: %.2fms [%.2fs]\n", 0.001 * (nTime4 - nTime3), nTimeCallbacks * 0.000001);
 
     return true;
 }
@@ -3863,7 +3895,7 @@ void static UpdateTip(CBlockIndex *pindexNew, const CChainParams& chainParams) {
     RenderPoolMetrics("transparent", transparentPool);
 
     {
-        boost::unique_lock<boost::mutex> lock(g_best_block_mutex);
+        WAIT_LOCK(g_best_block_mutex, lock);
         g_best_block = pindexNew->GetBlockHash();
         g_best_block_height = pindexNew->nHeight;
         g_best_block_cv.notify_all();
@@ -4701,6 +4733,9 @@ bool CheckBlock(const CBlock& block,
 {
     // These are checks that are independent of context.
 
+    if (block.fChecked)
+        return true;
+
     // Check that the header is valid (particularly PoW).  This is mostly
     // redundant with the call in AcceptBlockHeader.
     if (!CheckBlockHeader(block, state, chainparams, fCheckPOW))
@@ -4709,7 +4744,7 @@ bool CheckBlock(const CBlock& block,
     // Check the merkle root.
     if (fCheckMerkleRoot) {
         bool mutated;
-        uint256 hashMerkleRoot2 = block.BuildMerkleTree(&mutated);
+        uint256 hashMerkleRoot2 = BlockMerkleRoot(block, &mutated);
         if (block.hashMerkleRoot != hashMerkleRoot2)
             return state.DoS(100, error("CheckBlock(): hashMerkleRoot mismatch"),
                              REJECT_INVALID, "bad-txnmrklroot", true);
@@ -4758,6 +4793,9 @@ bool CheckBlock(const CBlock& block,
     if (nSigOps > MAX_BLOCK_SIGOPS)
         return state.DoS(100, error("CheckBlock(): out-of-bounds SigOpCount"),
                          REJECT_INVALID, "bad-blk-sigops", true);
+
+    if (fCheckPOW && fCheckMerkleRoot)
+        block.fChecked = true;
 
     return true;
 }
@@ -5076,7 +5114,10 @@ bool ProcessNewBlock(CValidationState& state, const CChainParams& chainparams, c
  * This is only invoked by the miner.
  * The block's proof-of-work is assumed invalid and not checked.
  */
-bool TestBlockValidity(CValidationState& state, const CChainParams& chainparams, const CBlock& block, CBlockIndex* pindexPrev, bool fCheckMerkleRoot)
+bool TestBlockValidity(
+    CValidationState& state, const CChainParams& chainparams,
+    const CBlock& block, CBlockIndex* pindexPrev,
+    bool fIsBlockTemplate)
 {
     AssertLockHeld(cs_main);
     assert(pindexPrev == chainActive.Tip());
@@ -5089,6 +5130,9 @@ bool TestBlockValidity(CValidationState& state, const CChainParams& chainparams,
     // JoinSplit proofs are verified in ConnectBlock
     auto verifier = ProofVerifier::Disabled();
 
+    bool fCheckMerkleRoot = !fIsBlockTemplate;
+    auto blockChecks = fIsBlockTemplate ? CheckAs::BlockTemplate : CheckAs::Block;
+
     // NOTE: CheckBlockHeader is called by CheckBlock
     if (!ContextualCheckBlockHeader(block, state, chainparams, pindexPrev))
         return false;
@@ -5097,7 +5141,7 @@ bool TestBlockValidity(CValidationState& state, const CChainParams& chainparams,
         return false;
     if (!ContextualCheckBlock(block, state, chainparams, pindexPrev, true))
         return false;
-    if (!ConnectBlock(block, state, &indexDummy, viewNew, chainparams, true, fCheckMerkleRoot))
+    if (!ConnectBlock(block, state, &indexDummy, viewNew, chainparams, true, blockChecks))
         return false;
     assert(state.IsValid());
 
@@ -5818,8 +5862,11 @@ bool InitBlockIndex(const CChainParams& chainparams)
             CBlockIndex *pindex = AddToBlockIndex(block, chainparams.GetConsensus());
             if (!ReceivedBlockTransactions(block, state, chainparams, pindex, blockPos))
                 return error("LoadBlockIndex(): genesis block not accepted");
-            if (!ActivateBestChain(state, chainparams, &block))
-                return error("LoadBlockIndex(): genesis block cannot be activated");
+            // Before the genesis block, there was an empty tree. We set its root here so
+            // that the block import thread doesn't race other methods that need to query
+            // the Sprout tree (namely CWallet::ScanForWalletTransactions).
+            SproutMerkleTree tree;
+            pindex->hashSproutAnchor = tree.root();
             // Force a chainstate write so that when we VerifyDB in a moment, it doesn't check stale data
             return FlushStateToDisk(chainparams, state, FLUSH_STATE_ALWAYS);
         } catch (const std::runtime_error& e) {
@@ -7856,11 +7903,11 @@ public:
 CMutableTransaction CreateNewContextualCMutableTransaction(
     const Consensus::Params& consensusParams,
     int nHeight,
-    bool requireSprout)
+    bool requireV4)
 {
     CMutableTransaction mtx;
 
-    auto txVersionInfo = CurrentTxVersionInfo(consensusParams, nHeight, requireSprout);
+    auto txVersionInfo = CurrentTxVersionInfo(consensusParams, nHeight, requireV4);
     mtx.fOverwintered   = txVersionInfo.fOverwintered;
     mtx.nVersionGroupId = txVersionInfo.nVersionGroupId;
     mtx.nVersion        = txVersionInfo.nVersion;

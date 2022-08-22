@@ -1,5 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2014 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -12,6 +13,7 @@
 #include "chainparams.h"
 #include "consensus/consensus.h"
 #include "consensus/funding.h"
+#include "consensus/merkle.h"
 #include "consensus/upgrades.h"
 #include "consensus/validation.h"
 #ifdef ENABLE_MINING
@@ -30,8 +32,8 @@
 #include "timedata.h"
 #include "transaction_builder.h"
 #include "ui_interface.h"
-#include "util.h"
-#include "utilmoneystr.h"
+#include "util/system.h"
+#include "util/moneystr.h"
 #include "validationinterface.h"
 
 #include <librustzcash.h>
@@ -343,7 +345,9 @@ public:
 
 CMutableTransaction CreateCoinbaseTransaction(const CChainParams& chainparams, CAmount nFees, const MinerAddress& minerAddress, int nHeight)
 {
-        CMutableTransaction mtx = CreateNewContextualCMutableTransaction(chainparams.GetConsensus(), nHeight);
+        CMutableTransaction mtx = CreateNewContextualCMutableTransaction(
+                chainparams.GetConsensus(), nHeight,
+                !std::holds_alternative<libzcash::OrchardRawAddress>(minerAddress) && nPreferredTxVersion < ZIP225_MIN_TX_VERSION);
         mtx.vin.resize(1);
         mtx.vin[0].prevout.SetNull();
         if (chainparams.GetConsensus().NetworkUpgradeActive(nHeight, Consensus::UPGRADE_NU5)) {
@@ -766,7 +770,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const MinerAddre
         pblocktemplate->vTxSigOps[0] = GetLegacySigOpCount(pblock->vtx[0]);
 
         CValidationState state;
-        if (!TestBlockValidity(state, chainparams, *pblock, pindexPrev, false))
+        if (!TestBlockValidity(state, chainparams, *pblock, pindexPrev, true))
             throw std::runtime_error(std::string("CreateNewBlock(): TestBlockValidity failed: ") + state.GetRejectReason());
     }
 
@@ -864,7 +868,7 @@ void IncrementExtraNonce(
     assert(txCoinbase.vin[0].scriptSig.size() <= 100);
 
     pblock->vtx[0] = txCoinbase;
-    pblock->hashMerkleRoot = pblock->BuildMerkleTree();
+    pblock->hashMerkleRoot = BlockMerkleRoot(*pblock);
     if (consensusParams.NetworkUpgradeActive(nHeight, Consensus::UPGRADE_NU5)) {
         pblocktemplate->hashAuthDataRoot = pblock->BuildAuthDataMerkleTree();
         pblock->hashBlockCommitments = DeriveBlockCommitmentsHash(
@@ -993,8 +997,7 @@ void static BitcoinMiner(const CChainParams& chainparams)
 
             while (true) {
                 // Hash state
-                eh_HashState state;
-                EhInitialiseState(n, k, state);
+                eh_HashState state = EhInitialiseState(n, k);
 
                 // I = the block header minus nonce and solution.
                 CEquihashInput I{*pblock};
@@ -1005,8 +1008,7 @@ void static BitcoinMiner(const CChainParams& chainparams)
                 state.Update((unsigned char*)&ss[0], ss.size());
 
                 // H(I||V||...
-                eh_HashState curr_state;
-                curr_state = state;
+                eh_HashState curr_state = state;
                 curr_state.Update(pblock->nNonce.begin(), pblock->nNonce.size());
 
                 // (x_1, x_2, ...) = A(I, V, n, k)
@@ -1055,7 +1057,7 @@ void static BitcoinMiner(const CChainParams& chainparams)
                 if (solver == "tromp") {
                     // Create solver and initialize it.
                     equi eq(1);
-                    eq.setstate(curr_state.inner.get());
+                    eq.setstate(curr_state.inner);
 
                     // Initialization done, start algo driver.
                     eq.digit0(0);

@@ -1,4 +1,5 @@
 // Copyright (c) 2011-2013 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -12,6 +13,7 @@
 #ifdef ENABLE_MINING
 #include "crypto/equihash.h"
 #endif
+#include "crypto/sha256.h"
 #include "fs.h"
 #include "key.h"
 #include "main.h"
@@ -23,6 +25,7 @@
 #include "ui_interface.h"
 #include "rpc/server.h"
 #include "rpc/register.h"
+#include "script/sigcache.h"
 
 #include <boost/test/unit_test.hpp>
 #include <boost/thread.hpp>
@@ -30,6 +33,8 @@
 #include <tracing.h>
 
 #include "librustzcash.h"
+
+#include <rust/bundlecache.h>
 
 const std::function<std::string(const char*)> G_TRANSLATION_FUN = nullptr;
 
@@ -45,9 +50,12 @@ extern void noui_connect();
 BasicTestingSetup::BasicTestingSetup(const std::string& chainName)
 {
     assert(sodium_init() != -1);
+    SHA256AutoDetect();
     ECC_Start();
     SetupEnvironment();
     SetupNetworking();
+    InitSignatureCache(DEFAULT_MAX_SIG_CACHE_SIZE * ((size_t) 1 << 20));
+    bundlecache::init(DEFAULT_MAX_SIG_CACHE_SIZE * ((size_t) 1 << 20));
 
     // Uncomment this to log all errors to stdout so we see them in test output.
     // We don't enable this by default because several tests intentionally cause
@@ -73,6 +81,28 @@ BasicTestingSetup::~BasicTestingSetup()
 
 TestingSetup::TestingSetup(const std::string& chainName) : BasicTestingSetup(chainName)
 {
+    fs::path sapling_spend = ZC_GetParamsDir() / "sapling-spend.params";
+    fs::path sapling_output = ZC_GetParamsDir() / "sapling-output.params";
+    fs::path sprout_groth16 = ZC_GetParamsDir() / "sprout-groth16.params";
+
+    static_assert(
+        sizeof(fs::path::value_type) == sizeof(codeunit),
+        "librustzcash not configured correctly");
+    auto sapling_spend_str = sapling_spend.native();
+    auto sapling_output_str = sapling_output.native();
+    auto sprout_groth16_str = sprout_groth16.native();
+
+    librustzcash_init_zksnark_params(
+        reinterpret_cast<const codeunit*>(sapling_spend_str.c_str()),
+        sapling_spend_str.length(),
+        reinterpret_cast<const codeunit*>(sapling_output_str.c_str()),
+        sapling_output_str.length(),
+        reinterpret_cast<const codeunit*>(sprout_groth16_str.c_str()),
+        sprout_groth16_str.length(),
+        // Only load the verifying keys, which some tests need.
+        false
+    );
+
     const CChainParams& chainparams = Params();
         // Ideally we'd move all the RPC tests to the functional testing framework
         // instead of unit tests, but for now we need these here.
@@ -82,13 +112,18 @@ TestingSetup::TestingSetup(const std::string& chainName) : BasicTestingSetup(cha
         orig_current_path = fs::current_path();
 
         ClearDatadirCache();
-        pathTemp = fs::temp_directory_path() / strprintf("test_bitcoin_%lu_%i", (unsigned long)GetTime(), (int)(GetRand(100000)));
+        pathTemp = fs::temp_directory_path() / strprintf("test_bitcoin_%lu_%i", (unsigned long)GetTime(), (int)(InsecureRandRange(100000)));
         fs::create_directories(pathTemp);
         mapArgs["-datadir"] = pathTemp.string();
         pblocktree = new CBlockTreeDB(1 << 20, true);
         pcoinsdbview = new CCoinsViewDB(1 << 23, true);
         pcoinsTip = new CCoinsViewCache(pcoinsdbview);
         InitBlockIndex(chainparams);
+        {
+            CValidationState state;
+            bool ok = ActivateBestChain(state, chainparams);
+            BOOST_CHECK(ok);
+        }
         nScriptCheckThreads = 3;
         for (int i=0; i < nScriptCheckThreads-1; i++)
             threadGroup.create_thread(&ThreadScriptCheck);
@@ -151,8 +186,7 @@ TestChain100Setup::CreateAndProcessBlock(const std::vector<CMutableTransaction>&
     IncrementExtraNonce(pblocktemplate, chainActive.Tip(), extraNonce, chainparams.GetConsensus());
 
     // Hash state
-    eh_HashState eh_state;
-    EhInitialiseState(n, k, eh_state);
+    eh_HashState eh_state = EhInitialiseState(n, k);
 
     // I = the block header minus nonce and solution.
     CEquihashInput I{block};

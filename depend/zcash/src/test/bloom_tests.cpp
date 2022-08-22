@@ -1,4 +1,5 @@
 // Copyright (c) 2012-2013 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -12,8 +13,8 @@
 #include "serialize.h"
 #include "streams.h"
 #include "uint256.h"
-#include "util.h"
-#include "utilstrencodings.h"
+#include "util/system.h"
+#include "util/strencodings.h"
 #include "test/test_bitcoin.h"
 
 #include <vector>
@@ -459,7 +460,7 @@ BOOST_AUTO_TEST_CASE(merkle_block_4_test_update_none)
 
 static std::vector<unsigned char> RandomData()
 {
-    uint256 r = GetRandHash();
+    uint256 r = InsecureRand256();
     return std::vector<unsigned char>(r.begin(), r.end());
 }
 

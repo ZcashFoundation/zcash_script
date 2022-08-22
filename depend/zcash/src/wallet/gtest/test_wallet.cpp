@@ -3,6 +3,7 @@
 
 #include "base58.h"
 #include "chainparams.h"
+#include "consensus/merkle.h"
 #include "fs.h"
 #include "key_io.h"
 #include "main.h"
@@ -10,7 +11,7 @@
 #include "random.h"
 #include "transaction_builder.h"
 #include "gtest/utils.h"
-#include "utiltest.h"
+#include "util/test.h"
 #include "wallet/wallet.h"
 #include "zcash/JoinSplit.hpp"
 #include "zcash/Note.hpp"
@@ -233,7 +234,7 @@ TEST(WalletTests, FindUnspentSproutNotes) {
     EXPECT_EQ(-1, chainActive.Height());
     CBlock block;
     block.vtx.push_back(wtx);
-    block.hashMerkleRoot = block.BuildMerkleTree();
+    block.hashMerkleRoot = BlockMerkleRoot(block);
     auto blockHash = block.GetHash();
     CBlockIndex fakeIndex {block};
     mapBlockIndex.insert(std::make_pair(blockHash, &fakeIndex));
@@ -273,7 +274,7 @@ TEST(WalletTests, FindUnspentSproutNotes) {
     EXPECT_EQ(0, chainActive.Height());
     CBlock block2;
     block2.vtx.push_back(wtx2);
-    block2.hashMerkleRoot = block2.BuildMerkleTree();
+    block2.hashMerkleRoot = BlockMerkleRoot(block2);
     block2.hashPrevBlock = blockHash;
     auto blockHash2 = block2.GetHash();
     CBlockIndex fakeIndex2 {block2};
@@ -336,7 +337,7 @@ TEST(WalletTests, FindUnspentSproutNotes) {
     EXPECT_EQ(1, chainActive.Height());
     CBlock block3;
     block3.vtx.push_back(wtx3);
-    block3.hashMerkleRoot = block3.BuildMerkleTree();
+    block3.hashMerkleRoot = BlockMerkleRoot(block3);
     block3.hashPrevBlock = blockHash2;
     auto blockHash3 = block3.GetHash();
     CBlockIndex fakeIndex3 {block3};
@@ -573,13 +574,13 @@ TEST(WalletTests, FindMySaplingNotes) {
     // No Sapling notes can be found in tx which does not belong to the wallet
     CWalletTx wtx {&wallet, tx};
     ASSERT_FALSE(wallet.HaveSaplingSpendingKey(extfvk));
-    auto noteMap = wallet.FindMySaplingNotes(wtx, 1).first;
+    auto noteMap = wallet.FindMySaplingNotes(consensusParams, wtx, 1).first;
     EXPECT_EQ(0, noteMap.size());
 
     // Add spending key to wallet, so Sapling notes can be found
     ASSERT_TRUE(wallet.AddSaplingZKey(sk));
     ASSERT_TRUE(wallet.HaveSaplingSpendingKey(extfvk));
-    noteMap = wallet.FindMySaplingNotes(wtx, 1).first;
+    noteMap = wallet.FindMySaplingNotes(consensusParams, wtx, 1).first;
     EXPECT_EQ(2, noteMap.size());
 
     // Revert to default
@@ -723,7 +724,7 @@ TEST(WalletTests, GetConflictedSaplingNotes) {
         EXPECT_EQ(-1, chainActive.Height());
         CBlock block;
         block.vtx.push_back(wtx);
-        block.hashMerkleRoot = block.BuildMerkleTree();
+        block.hashMerkleRoot = BlockMerkleRoot(block);
         auto blockHash = block.GetHash();
         CBlockIndex fakeIndex {block};
         mapBlockIndex.insert(std::make_pair(blockHash, &fakeIndex));
@@ -732,14 +733,14 @@ TEST(WalletTests, GetConflictedSaplingNotes) {
         EXPECT_EQ(0, chainActive.Height());
 
         // Simulate SyncTransaction which calls AddToWalletIfInvolvingMe
-        auto saplingNoteData = wallet.FindMySaplingNotes(wtx,  1).first;
+        auto saplingNoteData = wallet.FindMySaplingNotes(consensusParams, wtx,  1).first;
         ASSERT_TRUE(saplingNoteData.size() > 0);
         wtx.SetSaplingNoteData(saplingNoteData);
         wtx.SetMerkleBranch(block);
         wallet.LoadWalletTx(wtx);
 
         // Simulate receiving new block and ChainTip signal
-        wallet.IncrementNoteWitnesses(Params().GetConsensus(),&fakeIndex, &block, frontiers, true);
+        wallet.IncrementNoteWitnesses(consensusParams, &fakeIndex, &block, frontiers, true);
         wallet.UpdateSaplingNullifierNoteMapForBlock(&block);
 
         // Retrieve the updated wtx from wallet
@@ -852,7 +853,7 @@ TEST(WalletTests, GetConflictedOrchardNotes) {
     EXPECT_EQ(-1, chainActive.Height());
     CBlock block;
     block.vtx.push_back(wtx);
-    block.hashMerkleRoot = block.BuildMerkleTree();
+    block.hashMerkleRoot = BlockMerkleRoot(block);
     auto blockHash = block.GetHash();
     CBlockIndex fakeIndex {block};
     fakeIndex.hashFinalOrchardRoot = orchardTree.root();
@@ -870,7 +871,7 @@ TEST(WalletTests, GetConflictedOrchardNotes) {
     wallet.LoadWalletTx(wtx);
 
     // Simulate receiving new block and ChainTip signal
-    wallet.IncrementNoteWitnesses(Params().GetConsensus(),&fakeIndex, &block, frontiers, true);
+    wallet.IncrementNoteWitnesses(consensusParams, &fakeIndex, &block, frontiers, true);
 
     // Fetch the Orchard note so we can spend it.
     std::vector<SproutNoteEntry> sproutEntries;
@@ -969,7 +970,7 @@ TEST(WalletTests, SproutNullifierIsSpent) {
     EXPECT_EQ(-1, chainActive.Height());
     CBlock block;
     block.vtx.push_back(wtx2);
-    block.hashMerkleRoot = block.BuildMerkleTree();
+    block.hashMerkleRoot = BlockMerkleRoot(block);
     auto blockHash = block.GetHash();
     CBlockIndex fakeIndex {block};
     mapBlockIndex.insert(std::make_pair(blockHash, &fakeIndex));
@@ -1023,7 +1024,7 @@ TEST(WalletTests, SaplingNullifierIsSpent) {
     EXPECT_EQ(-1, chainActive.Height());
     CBlock block;
     block.vtx.push_back(wtx);
-    block.hashMerkleRoot = block.BuildMerkleTree();
+    block.hashMerkleRoot = BlockMerkleRoot(block);
     auto blockHash = block.GetHash();
     CBlockIndex fakeIndex {block};
     mapBlockIndex.insert(std::make_pair(blockHash, &fakeIndex));
@@ -1112,7 +1113,7 @@ TEST(WalletTests, NavigateFromSaplingNullifierToNote) {
     EXPECT_EQ(-1, chainActive.Height());
     CBlock block;
     block.vtx.push_back(wtx);
-    block.hashMerkleRoot = block.BuildMerkleTree();
+    block.hashMerkleRoot = BlockMerkleRoot(block);
     auto blockHash = block.GetHash();
     CBlockIndex fakeIndex {block};
     mapBlockIndex.insert(std::make_pair(blockHash, &fakeIndex));
@@ -1122,7 +1123,7 @@ TEST(WalletTests, NavigateFromSaplingNullifierToNote) {
 
     // Simulate SyncTransaction which calls AddToWalletIfInvolvingMe
     wtx.SetMerkleBranch(block);
-    auto saplingNoteData = wallet.FindMySaplingNotes(wtx, chainActive.Height()).first;
+    auto saplingNoteData = wallet.FindMySaplingNotes(consensusParams, wtx, chainActive.Height()).first;
     ASSERT_TRUE(saplingNoteData.size() > 0);
     wtx.SetSaplingNoteData(saplingNoteData);
     wallet.LoadWalletTx(wtx);
@@ -1139,7 +1140,7 @@ TEST(WalletTests, NavigateFromSaplingNullifierToNote) {
     }
 
     // Simulate receiving new block and ChainTip signal
-    wallet.IncrementNoteWitnesses(Params().GetConsensus(), &fakeIndex, &block, frontiers, true);
+    wallet.IncrementNoteWitnesses(consensusParams, &fakeIndex, &block, frontiers, true);
     wallet.UpdateSaplingNullifierNoteMapForBlock(&block);
 
     // Retrieve the updated wtx from wallet
@@ -1241,7 +1242,7 @@ TEST(WalletTests, SpentSaplingNoteIsFromMe) {
         EXPECT_EQ(-1, chainActive.Height());
         CBlock block;
         block.vtx.push_back(wtx);
-        block.hashMerkleRoot = block.BuildMerkleTree();
+        block.hashMerkleRoot = BlockMerkleRoot(block);
         auto blockHash = block.GetHash();
         CBlockIndex fakeIndex {block};
         mapBlockIndex.insert(std::make_pair(blockHash, &fakeIndex));
@@ -1249,7 +1250,7 @@ TEST(WalletTests, SpentSaplingNoteIsFromMe) {
         EXPECT_TRUE(chainActive.Contains(&fakeIndex));
         EXPECT_EQ(0, chainActive.Height());
 
-        auto saplingNoteData = wallet.FindMySaplingNotes(wtx, 1).first;
+        auto saplingNoteData = wallet.FindMySaplingNotes(consensusParams, wtx, 1).first;
         ASSERT_TRUE(saplingNoteData.size() > 0);
         wtx.SetSaplingNoteData(saplingNoteData);
         wtx.SetMerkleBranch(block);
@@ -1258,7 +1259,7 @@ TEST(WalletTests, SpentSaplingNoteIsFromMe) {
         // Simulate receiving new block and ChainTip signal.
         // This triggers calculation of nullifiers for notes belonging to this wallet
         // in the output descriptions of wtx.
-        wallet.IncrementNoteWitnesses(Params().GetConsensus(), &fakeIndex, &block, frontiers, true);
+        wallet.IncrementNoteWitnesses(consensusParams, &fakeIndex, &block, frontiers, true);
         wallet.UpdateSaplingNullifierNoteMapForBlock(&block);
 
         // Retrieve the updated wtx from wallet
@@ -1316,7 +1317,7 @@ TEST(WalletTests, SpentSaplingNoteIsFromMe) {
         EXPECT_EQ(0, chainActive.Height());
         CBlock block2;
         block2.vtx.push_back(wtx2);
-        block2.hashMerkleRoot = block2.BuildMerkleTree();
+        block2.hashMerkleRoot = BlockMerkleRoot(block2);
         block2.hashPrevBlock = blockHash;
         auto blockHash2 = block2.GetHash();
         CBlockIndex fakeIndex2 {block2};
@@ -1326,7 +1327,7 @@ TEST(WalletTests, SpentSaplingNoteIsFromMe) {
         EXPECT_TRUE(chainActive.Contains(&fakeIndex2));
         EXPECT_EQ(1, chainActive.Height());
 
-        auto saplingNoteData2 = wallet.FindMySaplingNotes(wtx2, 2).first;
+        auto saplingNoteData2 = wallet.FindMySaplingNotes(consensusParams, wtx2, 2).first;
         ASSERT_TRUE(saplingNoteData2.size() > 0);
         wtx2.SetSaplingNoteData(saplingNoteData2);
         wtx2.SetMerkleBranch(block2);
@@ -2100,7 +2101,7 @@ TEST(WalletTests, UpdatedSaplingNoteData) {
     EXPECT_EQ(-1, chainActive.Height());
     CBlock block;
     block.vtx.push_back(wtx);
-    block.hashMerkleRoot = block.BuildMerkleTree();
+    block.hashMerkleRoot = BlockMerkleRoot(block);
     auto blockHash = block.GetHash();
     CBlockIndex fakeIndex {block};
     mapBlockIndex.insert(std::make_pair(blockHash, &fakeIndex));
@@ -2109,14 +2110,14 @@ TEST(WalletTests, UpdatedSaplingNoteData) {
     EXPECT_EQ(0, chainActive.Height());
 
     // Simulate SyncTransaction which calls AddToWalletIfInvolvingMe
-    auto saplingNoteData = wallet.FindMySaplingNotes(wtx, chainActive.Height()).first;
+    auto saplingNoteData = wallet.FindMySaplingNotes(consensusParams, wtx, chainActive.Height()).first;
     ASSERT_TRUE(saplingNoteData.size() == 1); // wallet only has key for change output
     wtx.SetSaplingNoteData(saplingNoteData);
     wtx.SetMerkleBranch(block);
     wallet.LoadWalletTx(wtx);
 
     // Simulate receiving new block and ChainTip signal
-    wallet.IncrementNoteWitnesses(Params().GetConsensus(), &fakeIndex, &block, frontiers, true);
+    wallet.IncrementNoteWitnesses(consensusParams, &fakeIndex, &block, frontiers, true);
     wallet.UpdateSaplingNullifierNoteMapForBlock(&block);
 
     // Retrieve the updated wtx from wallet
@@ -2127,7 +2128,7 @@ TEST(WalletTests, UpdatedSaplingNoteData) {
     ASSERT_TRUE(wallet.AddSaplingZKey(sk2));
     ASSERT_TRUE(wallet.HaveSaplingSpendingKey(extfvk2));
     CWalletTx wtx2 = wtx;
-    auto saplingNoteData2 = wallet.FindMySaplingNotes(wtx2, chainActive.Height()).first;
+    auto saplingNoteData2 = wallet.FindMySaplingNotes(consensusParams, wtx2, chainActive.Height()).first;
     ASSERT_TRUE(saplingNoteData2.size() == 2);
     wtx2.SetSaplingNoteData(saplingNoteData2);
 
@@ -2249,7 +2250,7 @@ TEST(WalletTests, MarkAffectedSaplingTransactionsDirty) {
     SproutMerkleTree sproutTree;
     CBlock block;
     block.vtx.push_back(wtx);
-    block.hashMerkleRoot = block.BuildMerkleTree();
+    block.hashMerkleRoot = BlockMerkleRoot(block);
     auto blockHash = block.GetHash();
     CBlockIndex fakeIndex {block};
     mapBlockIndex.insert(std::make_pair(blockHash, &fakeIndex));
@@ -2258,14 +2259,14 @@ TEST(WalletTests, MarkAffectedSaplingTransactionsDirty) {
     EXPECT_EQ(0, chainActive.Height());
 
     // Simulate SyncTransaction which calls AddToWalletIfInvolvingMe
-    auto saplingNoteData = wallet.FindMySaplingNotes(wtx, chainActive.Height()).first;
+    auto saplingNoteData = wallet.FindMySaplingNotes(consensusParams, wtx, chainActive.Height()).first;
     ASSERT_TRUE(saplingNoteData.size() > 0);
     wtx.SetSaplingNoteData(saplingNoteData);
     wtx.SetMerkleBranch(block);
     wallet.LoadWalletTx(wtx);
 
     // Simulate receiving new block and ChainTip signal
-    wallet.IncrementNoteWitnesses(Params().GetConsensus(), &fakeIndex, &block, frontiers, true);
+    wallet.IncrementNoteWitnesses(consensusParams, &fakeIndex, &block, frontiers, true);
     wallet.UpdateSaplingNullifierNoteMapForBlock(&block);
 
     // Retrieve the updated wtx from wallet

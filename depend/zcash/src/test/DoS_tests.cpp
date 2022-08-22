@@ -1,4 +1,5 @@
 // Copyright (c) 2011-2014 The Bitcoin Core developers
+// Copyright (c) 2018-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -15,7 +16,7 @@
 #include "pow.h"
 #include "script/sign.h"
 #include "serialize.h"
-#include "util.h"
+#include "util/system.h"
 
 #include "test/test_bitcoin.h"
 
@@ -92,10 +93,12 @@ BOOST_AUTO_TEST_CASE(DoS_banscore)
 
 BOOST_AUTO_TEST_CASE(DoS_bantime)
 {
+    FixedClock::SetGlobal();
+
     const Consensus::Params& params = Params().GetConsensus();
     CNode::ClearBanned();
-    int64_t nStartTime = GetTime();
-    SetMockTime(nStartTime); // Overrides future calls to GetTime()
+    std::chrono::seconds nStartTime(GetTime());
+    FixedClock::Instance()->Set(nStartTime); // Overrides future calls to GetTime()
 
     CAddress addr(ip(0xa0b0c001));
     CNode dummyNode(INVALID_SOCKET, addr, "", true);
@@ -105,17 +108,19 @@ BOOST_AUTO_TEST_CASE(DoS_bantime)
     SendMessages(params, &dummyNode);
     BOOST_CHECK(CNode::IsBanned(addr));
 
-    SetMockTime(nStartTime+60*60);
+    FixedClock::Instance()->Set(nStartTime + std::chrono::seconds(60*60));
     BOOST_CHECK(CNode::IsBanned(addr));
 
-    SetMockTime(nStartTime+60*60*24+1);
+    FixedClock::Instance()->Set(nStartTime + std::chrono::seconds(60*60*24+1));
     BOOST_CHECK(!CNode::IsBanned(addr));
+
+    SystemClock::SetGlobal();
 }
 
 CTransaction RandomOrphan()
 {
     std::map<uint256, COrphanTx>::iterator it;
-    it = mapOrphanTransactions.lower_bound(GetRandHash());
+    it = mapOrphanTransactions.lower_bound(InsecureRand256());
     if (it == mapOrphanTransactions.end())
         it = mapOrphanTransactions.begin();
     return it->second.tx;
@@ -136,7 +141,7 @@ BOOST_DATA_TEST_CASE(DoS_mapOrphans, boost::unit_test::data::xrange(static_cast<
         CMutableTransaction tx;
         tx.vin.resize(1);
         tx.vin[0].prevout.n = 0;
-        tx.vin[0].prevout.hash = GetRandHash();
+        tx.vin[0].prevout.hash = InsecureRand256();
         tx.vin[0].scriptSig << OP_1;
         tx.vout.resize(1);
         tx.vout[0].nValue = 1*CENT;

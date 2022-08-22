@@ -1,4 +1,4 @@
-// Copyright (c) 2016-2020 The Zcash developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Original code from: https://gist.github.com/laanwj/0e689cfa37b52bcbbb44
 
 /*
@@ -43,8 +43,8 @@ the bad alert.
 #include "alert.h"
 #include "init.h"
 
-#include "util.h"
-#include "utiltime.h"
+#include "util/system.h"
+#include "util/time.h"
 #include "key.h"
 #include "clientversion.h"
 #include "chainparams.h"

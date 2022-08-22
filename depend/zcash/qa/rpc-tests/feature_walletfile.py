@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2017 The Bitcoin Core developers
+# Copyright (c) 2020-2022 The Zcash developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or https://www.opensource.org/licenses/mit-license.php .
 """Test wallet file location."""
@@ -13,7 +14,7 @@ from test_framework.test_framework import BitcoinTestFramework
 class WalletFileTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
-        self.setup_clean_chain = True
+        self.cache_behavior = 'clean'
 
     def run_test(self):
         # test default wallet location

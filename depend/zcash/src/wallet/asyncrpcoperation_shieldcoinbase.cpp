@@ -1,4 +1,4 @@
-// Copyright (c) 2017 The Zcash developers
+// Copyright (c) 2017-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -20,12 +20,12 @@
 #include "rpc/server.h"
 #include "transaction_builder.h"
 #include "timedata.h"
-#include "util.h"
-#include "utilmoneystr.h"
+#include "util/system.h"
+#include "util/moneystr.h"
 #include "wallet.h"
 #include "walletdb.h"
 #include "script/interpreter.h"
-#include "utiltime.h"
+#include "util/time.h"
 #include "util/match.h"
 #include "zcash/IncrementalMerkleTree.hpp"
 #include "miner.h"

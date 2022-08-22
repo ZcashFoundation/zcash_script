@@ -1,4 +1,4 @@
-// Copyright (c) 2016 The Zcash developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -9,10 +9,10 @@
 #include "main.h"
 #include "timedata.h"
 #include "ui_interface.h"
-#include "util.h"
-#include "utiltime.h"
-#include "utilmoneystr.h"
-#include "utilstrencodings.h"
+#include "util/system.h"
+#include "util/time.h"
+#include "util/moneystr.h"
+#include "util/strencodings.h"
 
 #include <boost/range/irange.hpp>
 #include <boost/thread.hpp>
@@ -601,9 +601,6 @@ bool enableVTMode()
 
 void ThreadShowMetricsScreen()
 {
-    // Make this thread recognisable as the metrics screen thread
-    RenameThread("zcash-metrics-screen");
-
     // Determine whether we should render a persistent UI or rolling metrics
     bool isTTY = isatty(STDOUT_FILENO);
     bool isScreen = GetBoolArg("-metricsui", isTTY);

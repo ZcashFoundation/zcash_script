@@ -1,4 +1,5 @@
 // Copyright (c) 2009-2014 The Bitcoin Core developers
+// Copyright (c) 2017-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -11,9 +12,9 @@
 #include "serialize.h"
 #include "streams.h"
 #include <univalue.h>
-#include "util.h"
-#include "utilmoneystr.h"
-#include "utilstrencodings.h"
+#include "util/system.h"
+#include "util/moneystr.h"
+#include "util/strencodings.h"
 
 #include <boost/assign/list_of.hpp>
 

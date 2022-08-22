@@ -1,4 +1,5 @@
 // Copyright (c) 2009-2014 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -14,9 +15,9 @@
 #include "script/script.h"
 #include "script/sign.h"
 #include <univalue.h>
-#include "util.h"
-#include "utilmoneystr.h"
-#include "utilstrencodings.h"
+#include "util/system.h"
+#include "util/moneystr.h"
+#include "util/strencodings.h"
 
 #include <stdio.h>
 
@@ -331,22 +332,6 @@ static bool findSighashFlags(int& flags, const std::string& flagStr)
     }
 
     return false;
-}
-
-uint256 ParseHashUO(std::map<std::string,UniValue>& o, std::string strKey)
-{
-    if (!o.count(strKey))
-        return uint256();
-    return ParseHashUV(o[strKey], strKey);
-}
-
-std::vector<unsigned char> ParseHexUO(std::map<std::string,UniValue>& o, std::string strKey)
-{
-    if (!o.count(strKey)) {
-        std::vector<unsigned char> emptyVec;
-        return emptyVec;
-    }
-    return ParseHexUV(o[strKey], strKey);
 }
 
 static CAmount AmountFromValue(const UniValue& value)

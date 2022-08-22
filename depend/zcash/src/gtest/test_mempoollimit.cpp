@@ -1,4 +1,4 @@
-// Copyright (c) 2019 The Zcash developers
+// Copyright (c) 2019-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -8,8 +8,8 @@
 #include "arith_uint256.h"
 #include "mempool_limit.h"
 #include "gtest/utils.h"
-#include "utiltime.h"
-#include "utiltest.h"
+#include "util/time.h"
+#include "util/test.h"
 #include "transaction_builder.h"
 
 
@@ -19,8 +19,8 @@ const uint256 TX_ID3 = ArithToUint256(3);
 
 TEST(MempoolLimitTests, RecentlyEvictedListAddWrapsAfterMaxSize)
 {
-    RecentlyEvictedList recentlyEvicted(2, 100);
-    SetMockTime(1);
+    FixedClock clock(std::chrono::seconds(1));
+    RecentlyEvictedList recentlyEvicted(&clock, 2, 100);
     recentlyEvicted.add(TX_ID1);
     recentlyEvicted.add(TX_ID2);
     recentlyEvicted.add(TX_ID3);
@@ -32,23 +32,23 @@ TEST(MempoolLimitTests, RecentlyEvictedListAddWrapsAfterMaxSize)
 
 TEST(MempoolLimitTests, RecentlyEvictedListDoesNotContainAfterExpiry)
 {
-    SetMockTime(1);
+    FixedClock clock(std::chrono::seconds(1));
     // maxSize=3, timeToKeep=1
-    RecentlyEvictedList recentlyEvicted(3, 1);
+    RecentlyEvictedList recentlyEvicted(&clock, 3, 1);
     recentlyEvicted.add(TX_ID1);
-    SetMockTime(2);
+    clock.Set(std::chrono::seconds(2));
     recentlyEvicted.add(TX_ID2);
     recentlyEvicted.add(TX_ID3);
     // After 1 second the txId will still be there
     EXPECT_TRUE(recentlyEvicted.contains(TX_ID1));
     EXPECT_TRUE(recentlyEvicted.contains(TX_ID2));
     EXPECT_TRUE(recentlyEvicted.contains(TX_ID3));
-    SetMockTime(3);
+    clock.Set(std::chrono::seconds(3));
     // After 2 seconds it is gone
     EXPECT_FALSE(recentlyEvicted.contains(TX_ID1));
     EXPECT_TRUE(recentlyEvicted.contains(TX_ID2));
     EXPECT_TRUE(recentlyEvicted.contains(TX_ID3));
-    SetMockTime(4);
+    clock.Set(std::chrono::seconds(4));
     EXPECT_FALSE(recentlyEvicted.contains(TX_ID1));
     EXPECT_FALSE(recentlyEvicted.contains(TX_ID2));
     EXPECT_FALSE(recentlyEvicted.contains(TX_ID3));
@@ -56,25 +56,25 @@ TEST(MempoolLimitTests, RecentlyEvictedListDoesNotContainAfterExpiry)
 
 TEST(MempoolLimitTests, RecentlyEvictedDropOneAtATime)
 {
-    SetMockTime(1);
-    RecentlyEvictedList recentlyEvicted(3, 2);
+    FixedClock clock(std::chrono::seconds(1));
+    RecentlyEvictedList recentlyEvicted(&clock, 3, 2);
     recentlyEvicted.add(TX_ID1);
-    SetMockTime(2);
+    clock.Set(std::chrono::seconds(2));
     recentlyEvicted.add(TX_ID2);
-    SetMockTime(3);
+    clock.Set(std::chrono::seconds(3));
     recentlyEvicted.add(TX_ID3);
     EXPECT_TRUE(recentlyEvicted.contains(TX_ID1));
     EXPECT_TRUE(recentlyEvicted.contains(TX_ID2));
     EXPECT_TRUE(recentlyEvicted.contains(TX_ID3));
-    SetMockTime(4);
+    clock.Set(std::chrono::seconds(4));
     EXPECT_FALSE(recentlyEvicted.contains(TX_ID1));
     EXPECT_TRUE(recentlyEvicted.contains(TX_ID2));
     EXPECT_TRUE(recentlyEvicted.contains(TX_ID3));
-    SetMockTime(5);
+    clock.Set(std::chrono::seconds(5));
     EXPECT_FALSE(recentlyEvicted.contains(TX_ID1));
     EXPECT_FALSE(recentlyEvicted.contains(TX_ID2));
     EXPECT_TRUE(recentlyEvicted.contains(TX_ID3));
-    SetMockTime(6);
+    clock.Set(std::chrono::seconds(6));
     EXPECT_FALSE(recentlyEvicted.contains(TX_ID1));
     EXPECT_FALSE(recentlyEvicted.contains(TX_ID2));
     EXPECT_FALSE(recentlyEvicted.contains(TX_ID3));

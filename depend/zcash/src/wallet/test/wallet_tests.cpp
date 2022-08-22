@@ -1,4 +1,5 @@
 // Copyright (c) 2012-2014 The Bitcoin Core developers
+// Copyright (c) 2019-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -90,7 +91,7 @@ BOOST_AUTO_TEST_CASE(coin_selection_tests)
         // we can't make 3 cents of mature coins
         BOOST_CHECK(!CWallet::SelectCoinsMinConf( 3 * CENT, 1, 6, vCoins, setCoinsRet, nValueRet));
 
-        // we can make 3 cents of new  coins
+        // we can make 3 cents of new coins
         BOOST_CHECK( CWallet::SelectCoinsMinConf( 3 * CENT, 1, 1, vCoins, setCoinsRet, nValueRet));
         BOOST_CHECK_EQUAL(nValueRet, 3 * CENT);
 

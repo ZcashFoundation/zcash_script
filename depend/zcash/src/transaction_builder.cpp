@@ -1,4 +1,4 @@
-// Copyright (c) 2018 The Zcash developers
+// Copyright (c) 2018-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -9,7 +9,7 @@
 #include "pubkey.h"
 #include "rpc/protocol.h"
 #include "script/sign.h"
-#include "utilmoneystr.h"
+#include "util/moneystr.h"
 #include "zcash/Note.hpp"
 
 #include <librustzcash.h>
@@ -262,7 +262,9 @@ TransactionBuilder::TransactionBuilder(
     cs_coinsView(cs_coinsView),
     orchardAnchor(orchardAnchor)
 {
-    mtx = CreateNewContextualCMutableTransaction(consensusParams, nHeight);
+    mtx = CreateNewContextualCMutableTransaction(
+            consensusParams, nHeight,
+            !orchardAnchor.has_value() && nPreferredTxVersion < ZIP225_MIN_TX_VERSION);
 
     // Ignore the Orchard anchor if we can't use it yet.
     if (orchardAnchor.has_value() && mtx.nVersion >= ZIP225_MIN_TX_VERSION) {

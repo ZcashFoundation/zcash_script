@@ -1,11 +1,13 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2014 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 #ifndef BITCOIN_UINT256_H
 #define BITCOIN_UINT256_H
 
+#include <array>
 #include <assert.h>
 #include <cstring>
 #include <stdexcept>
@@ -88,6 +90,14 @@ public:
                ((uint64_t)ptr[7]) << 56;
     }
 
+    std::array<uint8_t, WIDTH> GetRawBytes() const
+    {
+        std::array<uint8_t, WIDTH> buf = {};
+        std::memcpy(buf.data(), this->begin(), WIDTH);
+
+        return buf;
+    }
+
     template<typename Stream>
     void Serialize(Stream& s) const
     {
@@ -120,6 +130,13 @@ class uint256 : public base_blob<256> {
 public:
     uint256() {}
     explicit uint256(const std::vector<unsigned char>& vch) : base_blob<256>(vch) {}
+
+    static uint256 FromRawBytes(std::array<uint8_t, 32> bytes)
+    {
+        uint256 buf;
+        std::memcpy(buf.begin(), bytes.data(), 32);
+        return buf;
+    }
 
     /** A cheap hash function that just returns 64 bits from the result, it can be
      * used when the contents are considered uniformly random. It is not appropriate

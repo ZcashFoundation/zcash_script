@@ -1,9 +1,10 @@
 // Copyright (c) 2012-2017 The Bitcoin Core developers
+// Copyright (c) 2021-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "util.h"
-#include "utiltime.h"
+#include "util/system.h"
+#include "util/time.h"
 
 #include "test/test_bitcoin.h"
 #include "checkqueue.h"
@@ -16,6 +17,7 @@
 #include <condition_variable>
 
 #include <unordered_set>
+#include <utility>
 #include <memory>
 #include "random.h"
 
@@ -159,7 +161,7 @@ void Correct_Queue_range(std::vector<size_t> range)
         FakeCheckCheckCompletion::n_calls = 0;
         CCheckQueueControl<FakeCheckCheckCompletion> control(small_queue.get());
         while (total) {
-            vChecks.resize(std::min(total, (size_t) GetRand(10)));
+            vChecks.resize(std::min(total, (size_t) InsecureRandRange(10)));
             total -= vChecks.size();
             control.Add(vChecks);
         }
@@ -203,7 +205,7 @@ BOOST_AUTO_TEST_CASE(test_CheckQueue_Correct_Random)
 {
     std::vector<size_t> range;
     range.reserve(100000/1000);
-    for (size_t i = 2; i < 100000; i += std::max((size_t)1, (size_t)GetRand(std::min((size_t)1000, ((size_t)100000) - i))))
+    for (size_t i = 2; i < 100000; i += std::max((size_t)1, (size_t)InsecureRandRange(std::min((size_t)1000, ((size_t)100000) - i))))
         range.push_back(i);
     Correct_Queue_range(range);
 }
@@ -223,7 +225,7 @@ BOOST_AUTO_TEST_CASE(test_CheckQueue_Catches_Failure)
         CCheckQueueControl<FailingCheck> control(fail_queue.get());
         size_t remaining = i;
         while (remaining) {
-            size_t r = GetRand(10);
+            size_t r = InsecureRandRange(10);
 
             std::vector<FailingCheck> vChecks;
             vChecks.reserve(r);
@@ -285,7 +287,7 @@ BOOST_AUTO_TEST_CASE(test_CheckQueue_UniqueCheck)
     {
         CCheckQueueControl<UniqueCheck> control(queue.get());
         while (total) {
-            size_t r = GetRand(10);
+            size_t r = InsecureRandRange(10);
             std::vector<UniqueCheck> vChecks;
             for (size_t k = 0; k < r && total; k++)
                 vChecks.emplace_back(--total);
@@ -319,7 +321,7 @@ BOOST_AUTO_TEST_CASE(test_CheckQueue_Memory)
         {
             CCheckQueueControl<MemoryCheck> control(queue.get());
             while (total) {
-                size_t r = GetRand(10);
+                size_t r = InsecureRandRange(10);
                 std::vector<MemoryCheck> vChecks;
                 for (size_t k = 0; k < r && total; k++) {
                     total--;

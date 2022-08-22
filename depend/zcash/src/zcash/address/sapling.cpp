@@ -1,4 +1,4 @@
-// Copyright (c) 2016-2020 The Zcash developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -10,10 +10,11 @@
 #include "zcash/prf.h"
 
 #include <librustzcash.h>
+#include <rust/constants.h>
 
 namespace libzcash {
 
-const unsigned char ZCASH_SAPLING_FVFP_PERSONALIZATION[BLAKE2bPersonalBytes] =
+const unsigned char ZCASH_SAPLING_FVFP_PERSONALIZATION[blake2b::PERSONALBYTES] =
     {'Z', 'c', 'a', 's', 'h', 'S', 'a', 'p', 'l', 'i', 'n', 'g', 'F', 'V', 'F', 'P'};
 
 //! Sapling

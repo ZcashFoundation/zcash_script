@@ -1,11 +1,12 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2016 The Bitcoin Core developers
+// Copyright (c) 2020-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 #include "sync.h"
 #include "clientversion.h"
-#include "util.h"
+#include "util/system.h"
 #include "warnings.h"
 #include "alert.h"
 #include "uint256.h"

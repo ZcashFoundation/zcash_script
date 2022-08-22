@@ -35,20 +35,8 @@ extern "C" {
         const codeunit* output_path,
         size_t output_path_len,
         const codeunit* sprout_path,
-        size_t sprout_path_len
-    );
-
-    /// Validates the provided Equihash solution against
-    /// the given parameters, input and nonce.
-    bool librustzcash_eh_isvalid(
-        uint32_t n,
-        uint32_t k,
-        const unsigned char* input,
-        size_t input_len,
-        const unsigned char* nonce,
-        size_t nonce_len,
-        const unsigned char* soln,
-        size_t soln_len
+        size_t sprout_path_len,
+        bool load_proving_keys
     );
 
     /// Writes the "uncommitted" note value for empty leaves
@@ -134,48 +122,6 @@ extern "C" {
     /// Frees a Sapling proving context returned from
     /// `librustzcash_sapling_proving_ctx_init`.
     void librustzcash_sapling_proving_ctx_free(void *);
-
-    /// Creates a Sapling verification context. Please free this
-    /// when you're done.
-    void * librustzcash_sapling_verification_ctx_init(
-        bool zip216Enabled
-    );
-
-    /// Check the validity of a Sapling Spend description,
-    /// accumulating the value commitment into the context.
-    bool librustzcash_sapling_check_spend(
-        void *ctx,
-        const unsigned char *cv,
-        const unsigned char *anchor,
-        const unsigned char *nullifier,
-        const unsigned char *rk,
-        const unsigned char *zkproof,
-        const unsigned char *spendAuthSig,
-        const unsigned char *sighashValue
-    );
-
-    /// Check the validity of a Sapling Output description,
-    /// accumulating the value commitment into the context.
-    bool librustzcash_sapling_check_output(
-        void *ctx,
-        const unsigned char *cv,
-        const unsigned char *cm,
-        const unsigned char *ephemeralKey,
-        const unsigned char *zkproof
-    );
-
-    /// Finally checks the validity of the entire Sapling
-    /// transaction given valueBalance and the binding signature.
-    bool librustzcash_sapling_final_check(
-        void *ctx,
-        int64_t valueBalance,
-        const unsigned char *bindingSig,
-        const unsigned char *sighashValue
-    );
-
-    /// Frees a Sapling verification context returned from
-    /// `librustzcash_sapling_verification_ctx_init`.
-    void librustzcash_sapling_verification_ctx_free(void *);
 
     /// Compute a Sapling nullifier.
     ///

@@ -1,4 +1,5 @@
 // Copyright (c) 2012-2013 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -8,9 +9,9 @@
 #include "key_io.h"
 #include "script/script.h"
 #include "uint256.h"
-#include "util.h"
-#include "utilstrencodings.h"
-#include "utiltest.h"
+#include "util/system.h"
+#include "util/strencodings.h"
+#include "util/test.h"
 #include "test/test_bitcoin.h"
 
 #include "zcash/Address.hpp"
@@ -34,35 +35,6 @@ static const std::string addr1C = "t1ffus9J1vhxvFqLoExGBRPjE7BcJxiSCTC";
 static const std::string addr2C = "t1VJL2dPUyXK7avDRGqhqQA5bw2eEMdhyg6";
 
 static const std::string strAddressBad = "t1aMkLwU1LcMZYN7TgXUJAwzA1r44dbLkSp";
-
-
-#ifdef KEY_TESTS_DUMPINFO
-void dumpKeyInfo(uint256 privkey)
-{
-    CKey key;
-    key.resize(32);
-    memcpy(&secret[0], &privkey, 32);
-    vector<unsigned char> sec;
-    sec.resize(32);
-    memcpy(&sec[0], &secret[0], 32);
-    printf("  * secret (hex): %s\n", HexStr(sec).c_str());
-
-    KeyIO keyIO(Params());
-    for (int nCompressed=0; nCompressed<2; nCompressed++)
-    {
-        bool fCompressed = nCompressed == 1;
-        printf("  * %s:\n", fCompressed ? "compressed" : "uncompressed");
-        CBitcoinSecret bsecret;
-        bsecret.SetSecret(secret, fCompressed);
-        printf("    * secret (base58): %s\n", bsecret.ToString().c_str());
-        CKey key;
-        key.SetSecret(secret, fCompressed);
-        vector<unsigned char> vchPubKey = key.GetPubKey();
-        printf("    * pubkey (hex): %s\n", HexStr(vchPubKey).c_str());
-        printf("    * address (base58): %s\n", keyIO.EncodeDestination(vchPubKey).c_str());
-    }
-}
-#endif
 
 
 BOOST_FIXTURE_TEST_SUITE(key_tests, BasicTestingSetup)

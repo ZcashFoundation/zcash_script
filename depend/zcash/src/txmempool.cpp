@@ -1,5 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2014 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -12,8 +13,8 @@
 #include "policy/fees.h"
 #include "streams.h"
 #include "timedata.h"
-#include "util.h"
-#include "utilmoneystr.h"
+#include "util/system.h"
+#include "util/moneystr.h"
 #include "validationinterface.h"
 #include "version.h"
 
@@ -937,7 +938,7 @@ void CTxMemPool::SetMempoolCostLimit(int64_t totalCostLimit, int64_t evictionMem
     LogPrint("mempool", "Setting mempool cost limit: (limit=%d, time=%d)\n", totalCostLimit, evictionMemorySeconds);
     delete recentlyEvicted;
     delete weightedTxTree;
-    recentlyEvicted = new RecentlyEvictedList(evictionMemorySeconds);
+    recentlyEvicted = new RecentlyEvictedList(GetNodeClock(), evictionMemorySeconds);
     weightedTxTree = new WeightedTxTree(totalCostLimit);
 }
 

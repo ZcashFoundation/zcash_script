@@ -1,5 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2014 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -1121,24 +1122,21 @@ void ThreadSocketHandler()
             for (CNode* pnode : vNodesDisconnectedCopy)
             {
                 // wait until threads are done using it
-                if (pnode->GetRefCount() <= 0)
-                {
+                if (pnode->GetRefCount() <= 0) {
                     bool fDelete = false;
                     {
-                        TRY_LOCK(pnode->cs_vSend, lockSend);
-                        if (lockSend)
-                        {
+                        TRY_LOCK(pnode->cs_inventory, lockInv);
+                        if (lockInv) {
                             TRY_LOCK(pnode->cs_vRecvMsg, lockRecv);
-                            if (lockRecv)
-                            {
-                                TRY_LOCK(pnode->cs_inventory, lockInv);
-                                if (lockInv)
+                            if (lockRecv) {
+                                TRY_LOCK(pnode->cs_vSend, lockSend);
+                                if (lockSend) {
                                     fDelete = true;
+                                }
                             }
                         }
                     }
-                    if (fDelete)
-                    {
+                    if (fDelete) {
                         vNodesDisconnected.remove(pnode);
                         delete pnode;
                     }
@@ -1200,8 +1198,8 @@ void ThreadSocketHandler()
 
                 bool select_send;
                 {
-                    TRY_LOCK(pnode->cs_vSend, lockSend);
-                    select_send = lockSend && !pnode->vSendMsg.empty();
+                    LOCK(pnode->cs_vSend);
+                    select_send = !pnode->vSendMsg.empty();
                 }
 
                 bool select_recv;
@@ -1342,9 +1340,8 @@ void ThreadSocketHandler()
             //
             if (sendSet)
             {
-                TRY_LOCK(pnode->cs_vSend, lockSend);
-                if (lockSend)
-                    SocketSendData(pnode);
+                LOCK(pnode->cs_vSend);
+                SocketSendData(pnode);
             }
 
             //
@@ -1721,9 +1718,8 @@ void ThreadMessageHandler()
 
             // Send messages
             {
-                TRY_LOCK(pnode->cs_vSend, lockSend);
-                if (lockSend)
-                    g_signals.SendMessages(chainparams.GetConsensus(), pnode);
+                LOCK(pnode->cs_sendProcessing);
+                g_signals.SendMessages(chainparams.GetConsensus(), pnode);
             }
             boost::this_thread::interruption_point();
         }

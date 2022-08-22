@@ -1,4 +1,5 @@
 // Copyright (c) 2009-2014 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -12,9 +13,9 @@
 #include "script/script.h"
 #include "script/standard.h"
 #include "sync.h"
-#include "util.h"
+#include "util/system.h"
 #include "util/match.h"
-#include "utiltime.h"
+#include "util/time.h"
 #include "wallet.h"
 
 #include <fstream>
@@ -547,6 +548,13 @@ UniValue dumpwallet(const UniValue& params, bool fHelp)
 {
     if (!EnsureWalletIsAvailable(fHelp))
         return NullUniValue;
+
+    if (!fEnableDumpWallet)
+        throw runtime_error(
+            "dumpwallet is DEPRECATED and will be removed in a future release\n"
+            "\nUse z_exportwallet instead, or restart with `-allowdeprecated=dumpwallet`\n"
+            "if you require backward compatibility.\n"
+            "See https://zcash.github.io/zcash/user/deprecation.html for more information.");
 
     if (fHelp || params.size() != 1)
         throw runtime_error(

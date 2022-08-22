@@ -1,5 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2014 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -37,14 +38,15 @@
 #include "txdb.h"
 #include "torcontrol.h"
 #include "ui_interface.h"
-#include "util.h"
-#include "utilmoneystr.h"
+#include "util/system.h"
+#include "util/moneystr.h"
 #include "validationinterface.h"
 #ifdef ENABLE_WALLET
 #include "wallet/wallet.h"
 #include "wallet/walletdb.h"
 #endif
 #include "warnings.h"
+#include <chrono>
 #include <stdint.h>
 #include <stdio.h>
 
@@ -65,6 +67,8 @@
 #include "zmq/zmqnotificationinterface.h"
 #endif
 
+#include <rust/bundlecache.h>
+#include <rust/init.h>
 #include <rust/metrics.h>
 
 #include "librustzcash.h"
@@ -363,8 +367,8 @@ std::string HelpMessage(HelpMessageMode mode)
             "Warning: Reverting this setting requires re-downloading the entire blockchain. "
             "(default: 0 = disable pruning blocks, >%u = target size in MiB to use for block files)"), MIN_DISK_SPACE_FOR_BLOCK_FILES / 1024 / 1024));
 #ifdef ENABLE_WALLET
-    strUsage += HelpMessageOpt("-reindex-chainstate", _("Rebuild chain state from the currently indexed blocks (implies -rescan unless pruning or unless -rescan=0 is explicitly specified)"));
-    strUsage += HelpMessageOpt("-reindex", _("Rebuild chain state and block index from the blk*.dat files on disk (implies -rescan unless pruning or unless -rescan=0 is explicitly specified)"));
+    strUsage += HelpMessageOpt("-reindex-chainstate", _("Rebuild chain state from the currently indexed blocks (implies -rescan)"));
+    strUsage += HelpMessageOpt("-reindex", _("Rebuild chain state and block index from the blk*.dat files on disk (implies -rescan)"));
 #else
     strUsage += HelpMessageOpt("-reindex-chainstate", _("Rebuild chain state from the currently indexed blocks"));
     strUsage += HelpMessageOpt("-reindex", _("Rebuild chain state and block index from the blk*.dat files on disk"));
@@ -463,7 +467,7 @@ std::string HelpMessage(HelpMessageMode mode)
     {
         strUsage += HelpMessageOpt("-limitfreerelay=<n>", strprintf("Continuously rate-limit free transactions to <n>*1000 bytes per minute (default: %u)", DEFAULT_LIMITFREERELAY));
         strUsage += HelpMessageOpt("-relaypriority", strprintf("Require high priority for relaying free or low-fee transactions (default: %u)", DEFAULT_RELAYPRIORITY));
-        strUsage += HelpMessageOpt("-maxsigcachesize=<n>", strprintf("Limit size of signature cache to <n> MiB (default: %u)", DEFAULT_MAX_SIG_CACHE_SIZE));
+        strUsage += HelpMessageOpt("-maxsigcachesize=<n>", strprintf("Limit total size of signature and bundle caches to <n> MiB (default: %u)", DEFAULT_MAX_SIG_CACHE_SIZE));
         strUsage += HelpMessageOpt("-maxtipage=<n>", strprintf("Maximum tip age in seconds to consider node in initial block download (default: %u)", DEFAULT_MAX_TIP_AGE));
     }
     strUsage += HelpMessageOpt("-minrelaytxfee=<amt>", strprintf(_("Fees (in %s/kB) smaller than this are considered zero fee for relaying, mining and transaction creation (default: %s)"),
@@ -531,6 +535,11 @@ std::string HelpMessage(HelpMessageMode mode)
         strUsage += HelpMessageOpt("-metricsrefreshtime", strprintf(_("Number of seconds between metrics refreshes (default: %u if running in a console, %u otherwise)"), 1, 600));
     }
 
+    strUsage += HelpMessageGroup(_("Compatibility options:"));
+    strUsage += HelpMessageOpt(
+            "-preferredtxversion",
+            strprintf(_("Preferentially create transactions having the specified version when possible (default: %d)"), DEFAULT_PREFERRED_TX_VERSION));
+
     return strUsage;
 }
 
@@ -551,6 +560,21 @@ static void TxExpiryNotifyCallback(const uint256& txid)
 
     boost::replace_all(strCmd, "%s", txid.GetHex());
     boost::thread t(runCommand, strCmd); // thread runs free
+}
+
+static bool fHaveGenesis = false;
+static Mutex g_genesis_wait_mutex;
+static std::condition_variable g_genesis_wait_cv;
+
+static void BlockNotifyGenesisWait(bool, const CBlockIndex *pBlockIndex)
+{
+    if (pBlockIndex != NULL) {
+        {
+            LOCK(g_genesis_wait_mutex);
+            fHaveGenesis = true;
+        }
+        g_genesis_wait_cv.notify_all();
+    }
 }
 
 struct CImportingNow
@@ -624,7 +648,7 @@ void ThreadStartWalletNotifier()
     if (pwalletMain)
     {
         std::optional<uint256> walletBestBlockHash;
-        {
+        if (!fReindex) {
             LOCK(pwalletMain->cs_wallet);
             walletBestBlockHash = pwalletMain->GetPersistedBestBlock();
         }
@@ -690,8 +714,8 @@ void ThreadStartWalletNotifier()
                     // We know we have the genesis block.
                     assert(pindexFork != nullptr);
 
-                    if (pindexLastTip->nHeight < pindexFork->nHeight ||
-                        pindexLastTip->nHeight - pindexFork->nHeight < 100)
+                    if ((pindexLastTip->nHeight < pindexFork->nHeight || pindexLastTip->nHeight - pindexFork->nHeight < 100) &&
+                        !pindexLastTip->GetBlockPos().IsNull())
                     {
                         break;
                     }
@@ -811,6 +835,10 @@ bool InitSanityCheck(void)
     if (!glibc_sanity_test() || !glibcxx_sanity_test())
         return false;
 
+    if (!ChronoSanityCheck()) {
+        return InitError("Clock epoch mismatch. Aborting.");
+    }
+
     return true;
 }
 
@@ -859,7 +887,8 @@ static void ZC_LoadParams(
         reinterpret_cast<const codeunit*>(sapling_output_str.c_str()),
         sapling_output_str.length(),
         reinterpret_cast<const codeunit*>(sprout_groth16_str.c_str()),
-        sprout_groth16_str.length()
+        sprout_groth16_str.length(),
+        true
     );
 
     gettimeofday(&tv_end, 0);
@@ -929,9 +958,6 @@ void InitParameterInteraction()
             LogPrintf("%s: parameter interaction: -externalip set -> setting -discover=0\n", __func__);
     }
 
-#ifdef ENABLE_WALLET
-    // -rescan only affects the wallet.
-
     if (GetBoolArg("-salvagewallet", false)) {
         // Rewrite just private keys: rescan to find transactions
         if (SoftSetBoolArg("-rescan", true))
@@ -942,17 +968,6 @@ void InitParameterInteraction()
         if (SoftSetBoolArg("-rescan", true))
             LogPrintf("%s: parameter interaction: -zapwallettxes=<mode> -> setting -rescan=1\n", __func__);
     }
-
-    if (GetBoolArg("-reindex", false) && !GetArg("-prune", 0)) {
-        if (SoftSetBoolArg("-rescan", true))
-            LogPrintf("%s: parameter interaction: -reindex=1 and not pruning -> setting -rescan=1\n", __func__);
-    }
-
-    if (GetBoolArg("-reindex-chainstate", false) && !GetArg("-prune", 0)) {
-        if (SoftSetBoolArg("-rescan", true))
-            LogPrintf("%s: parameter interaction: -reindex-chainstate=1 and not pruning -> setting -rescan=1\n", __func__);
-    }
-#endif
 
     // disable walletbroadcast and whitelistrelay in blocksonly mode
     if (GetBoolArg("-blocksonly", DEFAULT_BLOCKSONLY)) {
@@ -1069,6 +1084,9 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
 #endif
 
     std::set_new_handler(new_handler_terminate);
+
+    // Set up global Rayon threadpool.
+    zcashd_init_rayon_threadpool();
 
     // ********************************************************* Step 2: parameter interactions
     const CChainParams& chainparams = Params();
@@ -1215,14 +1233,34 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
         return false;
 #endif // ENABLE_WALLET
 
+    nPreferredTxVersion = GetArg("-preferredtxversion", DEFAULT_PREFERRED_TX_VERSION);
+    if (SUPPORTED_TX_VERSIONS.count(nPreferredTxVersion) == 0) {
+        return InitError(strprintf(
+                _("Invalid value for -preferredtxversion=<version>: %d"),
+                nPreferredTxVersion));
+    }
+
     fIsBareMultisigStd = GetBoolArg("-permitbaremultisig", DEFAULT_PERMIT_BAREMULTISIG);
     fAcceptDatacarrier = GetBoolArg("-datacarrier", DEFAULT_ACCEPT_DATACARRIER);
     nMaxDatacarrierBytes = GetArg("-datacarriersize", nMaxDatacarrierBytes);
 
     fAlerts = GetBoolArg("-alerts", DEFAULT_ALERTS);
 
-    // Option to startup with mocktime set (used for regression testing):
-    SetMockTime(GetArg("-mocktime", 0)); // SetMockTime(0) is a no-op
+    // Option to startup with mocktime set (used for regression testing);
+    // a mocktime of 0 (the default) selects the system clock.
+    int64_t nMockTime = GetArg("-mocktime", 0);
+    int64_t nOffsetTime = GetArg("-clockoffset", 0);
+    if (nMockTime != 0 && nOffsetTime != 0) {
+        return InitError(_("-mocktime and -clockoffset cannot be used together"));
+    } else if (nMockTime != 0) {
+        FixedClock::SetGlobal();
+        FixedClock::Instance()->Set(std::chrono::seconds(nMockTime));
+    } else if (nOffsetTime != 0) {
+        // Option to start a node with the system clock offset by a constant
+        // value throughout the life of the node (used for regression testing):
+        OffsetClock::SetGlobal();
+        OffsetClock::Instance()->Set(std::chrono::seconds(nOffsetTime));
+    }
 
     if (GetBoolArg("-peerbloomfilters", DEFAULT_PEERBLOOMFILTERS))
         nLocalServices |= NODE_BLOOM;
@@ -1352,6 +1390,8 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     }
 
     // Initialize elliptic curve code
+    std::string sha256_algo = SHA256AutoDetect();
+    LogPrintf("Using the '%s' SHA256 implementation\n", sha256_algo);
     ECC_Start();
     globalVerifyHandle.reset(new ECCVerifyHandle());
 
@@ -1390,6 +1430,19 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     LogPrintf("Using config file %s\n", GetConfigFile(GetArg("-conf", BITCOIN_CONF_FILENAME)).string());
     LogPrintf("Using at most %i connections (%i file descriptors available)\n", nMaxConnections, nFD);
     std::ostringstream strErrors;
+
+    // Initialize the validity caches. We currently have three:
+    // - Transparent signature validity.
+    // - Sapling bundle validity.
+    // - Orchard bundle validity.
+    // Assign half of the cap to transparent signatures, and split the rest
+    // between Sapling and Orchard bundles.
+    size_t nMaxCacheSize = GetArg("-maxsigcachesize", DEFAULT_MAX_SIG_CACHE_SIZE) * ((size_t) 1 << 20);
+    if (nMaxCacheSize <= 0) {
+        return InitError(strprintf(_("-maxsigcachesize must be at least 1")));
+    }
+    InitSignatureCache(nMaxCacheSize / 2);
+    bundlecache::init(nMaxCacheSize / 4);
 
     LogPrintf("Using %u threads for script verification\n", nScriptCheckThreads);
     if (nScriptCheckThreads) {
@@ -1437,7 +1490,9 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
             !fPrintToConsole && !GetBoolArg("-daemon", false)) {
         // Start the persistent metrics interface
         ConnectMetricsScreen();
-        threadGroup.create_thread(&ThreadShowMetricsScreen);
+        threadGroup.create_thread(
+            boost::bind(&TraceThread<void (*)()>, "metrics-ui", &ThreadShowMetricsScreen)
+        );
     }
 
     // Initialize Zcash circuit parameters
@@ -1704,7 +1759,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
                     break;
                 }
 
-                if (!fReindex) {
+                if (!fReindex && chainActive.Tip() != NULL) {
                     uiInterface.InitMessage(_("Rewinding blocks if needed..."));
                     if (!RewindBlockIndex(chainparams, clearWitnessCaches)) {
                         strLoadError = _("Unable to rewind the database to a pre-upgrade state. You will need to redownload the blockchain");
@@ -1787,7 +1842,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
         pwalletMain = NULL;
         LogPrintf("Wallet disabled!\n");
     } else {
-        CWallet::InitLoadWallet(chainparams, clearWitnessCaches);
+        CWallet::InitLoadWallet(chainparams, clearWitnessCaches || fReindex);
         if (!pwalletMain)
             return false;
     }
@@ -1861,6 +1916,17 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
 
     // ********************************************************* Step 10: import blocks
 
+    if (!CheckDiskSpace())
+        return false;
+
+    // Either install a handler to notify us when genesis activates, or set fHaveGenesis directly.
+    // No locking, as this happens before any background thread is started.
+    if (chainActive.Tip() == NULL) {
+        uiInterface.NotifyBlockTip.connect(BlockNotifyGenesisWait);
+    } else {
+        fHaveGenesis = true;
+    }
+
     if (mapArgs.count("-blocknotify"))
         uiInterface.NotifyBlockTip.connect(BlockNotifyCallback);
 
@@ -1873,28 +1939,29 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
         for (const std::string& strFile : mapMultiArgs["-loadblock"])
             vImportFiles.push_back(strFile);
     }
+
     threadGroup.create_thread(boost::bind(&ThreadImport, vImportFiles, chainparams));
 
     // Wait for genesis block to be processed
-    bool fHaveGenesis = false;
-    while (!fHaveGenesis && !fRequestShutdown) {
-        {
-            LOCK(cs_main);
-            fHaveGenesis = (chainActive.Tip() != NULL);
+    {
+        WAIT_LOCK(g_genesis_wait_mutex, lock);
+        // We previously could hang here if StartShutdown() is called prior to
+        // ThreadImport getting started, so instead we just wait on a timer to
+        // check ShutdownRequested() regularly.
+        while (!fHaveGenesis && !ShutdownRequested()) {
+            g_genesis_wait_cv.wait_for(lock, std::chrono::milliseconds(500));
         }
-
-        if (!fHaveGenesis) {
-            MilliSleep(10);
-        }
+        uiInterface.NotifyBlockTip.disconnect(BlockNotifyGenesisWait);
     }
     if (!fHaveGenesis) {
         return false;
     }
 
-    // ********************************************************* Step 11: start node
-
-    if (!CheckDiskSpace())
+    if (ShutdownRequested()) {
         return false;
+    }
+
+    // ********************************************************* Step 11: start node
 
     if (!strErrors.str().empty())
         return InitError(strErrors.str());

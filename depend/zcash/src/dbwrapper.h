@@ -1,4 +1,5 @@
 // Copyright (c) 2012-2014 The Bitcoin Core developers
+// Copyright (c) 2019-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -9,7 +10,7 @@
 #include "fs.h"
 #include "serialize.h"
 #include "streams.h"
-#include "util.h"
+#include "util/system.h"
 #include "version.h"
 
 #include <leveldb/db.h>
@@ -118,10 +119,6 @@ public:
             return false;
         }
         return true;
-    }
-
-    unsigned int GetKeySize() {
-        return piter->key().size();
     }
 
     template<typename V> bool GetValue(V& value) {

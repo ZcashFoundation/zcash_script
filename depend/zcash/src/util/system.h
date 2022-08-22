@@ -1,5 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2014 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -7,8 +8,8 @@
  * Server/client environment: argument handling, config file parsing,
  * thread wrappers
  */
-#ifndef BITCOIN_UTIL_H
-#define BITCOIN_UTIL_H
+#ifndef BITCOIN_UTIL_SYSTEM_H
+#define BITCOIN_UTIL_SYSTEM_H
 
 #if defined(HAVE_CONFIG_H)
 #include "config/bitcoin-config.h"
@@ -18,7 +19,7 @@
 #include "fs.h"
 #include "logging.h"
 #include "tinyformat.h"
-#include "utiltime.h"
+#include "util/time.h"
 
 #include <atomic>
 #include <exception>
@@ -27,6 +28,7 @@
 #include <string>
 #include <vector>
 
+#include <boost/thread/condition_variable.hpp> // for boost::thread_interrupted
 #include <boost/thread/exceptions.hpp>
 
 extern std::map<std::string, std::string> mapArgs;
@@ -191,7 +193,7 @@ void RenameThread(const char* name);
  */
 template <typename Callable> void TraceThread(const char* name,  Callable func)
 {
-    std::string s = strprintf("zcash-%s", name);
+    std::string s = strprintf("zc-%s", name);
     RenameThread(s.c_str());
     try
     {
@@ -214,4 +216,4 @@ template <typename Callable> void TraceThread(const char* name,  Callable func)
     }
 }
 
-#endif // BITCOIN_UTIL_H
+#endif // BITCOIN_UTIL_SYSTEM_H

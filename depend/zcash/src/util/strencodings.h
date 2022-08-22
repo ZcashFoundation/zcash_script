@@ -1,13 +1,14 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2014 The Bitcoin Core developers
+// Copyright (c) 2017-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 /**
  * Utilities for converting data from/to strings.
  */
-#ifndef BITCOIN_UTILSTRENCODINGS_H
-#define BITCOIN_UTILSTRENCODINGS_H
+#ifndef BITCOIN_UTIL_STRENCODINGS_H
+#define BITCOIN_UTIL_STRENCODINGS_H
 
 #include <stdint.h>
 #include <string>
@@ -173,4 +174,4 @@ std::optional<std::vector<uint8_t>> ParseArbitraryInt(const std::string& s);
  */
 std::string ArbitraryIntStr(std::vector<uint8_t> i);
 
-#endif // BITCOIN_UTILSTRENCODINGS_H
+#endif // BITCOIN_UTIL_STRENCODINGS_H

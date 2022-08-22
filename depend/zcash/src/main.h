@@ -1,5 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2014 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -42,6 +43,7 @@
 #include <utility>
 #include <vector>
 
+#include <rust/sapling.h>
 #include <rust/orchard.h>
 
 #include <boost/unordered_map.hpp>
@@ -168,8 +170,8 @@ extern const std::string strMessageMagic;
 //! (and cannot) hold cs_main. So the g_best_block_height and g_best_block variables
 //! (protected by g_best_block_mutex) provide the needed height and block
 //! hash respectively to getblocktemplate without it requiring cs_main.
-extern CWaitableCriticalSection g_best_block_mutex;
-extern CConditionVariable g_best_block_cv;
+extern Mutex g_best_block_mutex;
+extern std::condition_variable g_best_block_cv;
 extern int g_best_block_height;
 extern uint256 g_best_block;
 
@@ -226,6 +228,11 @@ static const unsigned int MIN_BLOCKS_TO_KEEP = 288;
 
 static const signed int DEFAULT_CHECKBLOCKS = MIN_BLOCKS_TO_KEEP;
 static const unsigned int DEFAULT_CHECKLEVEL = 3;
+
+/** Prefer to create v4 transactions. */
+static const int32_t DEFAULT_PREFERRED_TX_VERSION = SAPLING_TX_VERSION;
+static const std::set<int32_t> SUPPORTED_TX_VERSIONS = { SAPLING_TX_VERSION, ZIP225_TX_VERSION };
+extern int32_t nPreferredTxVersion;
 
 // Require that user allocate at least 550MB for block & undo files (blk???.dat and rev???.dat)
 // At 1MB per block, 288 blocks = 288MB.
@@ -396,7 +403,8 @@ bool ContextualCheckShieldedInputs(
         const PrecomputedTransactionData& txdata,
         CValidationState &state,
         const CCoinsViewCache &view,
-        orchard::AuthValidator& orchardAuth,
+        std::optional<rust::Box<sapling::BatchValidator>>& saplingAuth,
+        std::optional<orchard::AuthValidator>& orchardAuth,
         const Consensus::Params& consensus,
         uint32_t consensusBranchId,
         bool nu5Active,
@@ -553,18 +561,35 @@ bool ContextualCheckBlock(const CBlock& block, CValidationState& state,
                           CBlockIndex *pindexPrev,
                           bool fCheckTransactions);
 
+/**
+ * How a given block should be checked.
+ *
+ * - `CheckAs::Block` applies all relevant block checks.
+ * - `CheckAs::BlockTemplate` is the same as `CheckAs::Block` except that proofs
+ *   and signatures are not validated, and the authDataRoot is not checked (as
+ *   the coinbase transaction is not fully complete).
+ * - `CheckAs::SlowBenchmark` is the same as `CheckAs::Block` except that the
+ *   authDataRoot is not checked (as the required history tree state is not
+ *   currently faked).
+ */
+enum class CheckAs {
+    Block,
+    BlockTemplate,
+    SlowBenchmark,
+};
+
 /** Apply the effects of this block (with given index) on the UTXO set represented by coins.
  *  Validity checks that depend on the UTXO set are also done; ConnectBlock()
  *  can fail if those validity checks fail (among other reasons). */
 bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pindex, CCoinsViewCache& coins,
                   const CChainParams& chainparams,
-                  bool fJustCheck = false, bool fCheckAuthDataRoot = true);
+                  bool fJustCheck = false, CheckAs blockChecks = CheckAs::Block);
 
 /**
  * Check a block is completely valid from start to finish (only works on top
  * of our current best block, with cs_main held)
  */
-bool TestBlockValidity(CValidationState& state, const CChainParams& chainparams, const CBlock& block, CBlockIndex* pindexPrev, bool fCheckMerkleRoot);
+bool TestBlockValidity(CValidationState& state, const CChainParams& chainparams, const CBlock& block, CBlockIndex* pindexPrev, bool fIsBlockTemplate);
 
 
 /**
@@ -631,7 +656,7 @@ uint64_t CalculateCurrentUsage();
 CMutableTransaction CreateNewContextualCMutableTransaction(
     const Consensus::Params& consensusParams,
     int nHeight,
-    bool requireSprout = false);
+    bool requireV4);
 
 std::pair<std::map<CBlockIndex*, std::list<CTransaction>>, uint64_t> DrainRecentlyConflicted();
 void SetChainNotifiedSequence(const CChainParams& chainparams, uint64_t recentlyConflictedSequence);

@@ -1,4 +1,4 @@
-// Copyright (c) 2017 The Zcash developers
+// Copyright (c) 2017-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -21,10 +21,10 @@
 #include "script/interpreter.h"
 #include "timedata.h"
 #include "transaction_builder.h"
-#include "util.h"
+#include "util/system.h"
 #include "util/match.h"
-#include "utilmoneystr.h"
-#include "utiltime.h"
+#include "util/moneystr.h"
+#include "util/time.h"
 #include "wallet.h"
 #include "walletdb.h"
 #include "wallet/paymentdisclosuredb.h"

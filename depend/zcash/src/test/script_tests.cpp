@@ -1,4 +1,5 @@
 // Copyright (c) 2011-2014 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -13,7 +14,7 @@
 #include "script/script.h"
 #include "script/script_error.h"
 #include "script/sign.h"
-#include "util.h"
+#include "util/system.h"
 #include "test/test_bitcoin.h"
 #include "test/test_util.h"
 
@@ -303,11 +304,6 @@ public:
     std::string GetComment()
     {
         return comment;
-    }
-
-    const CScript& GetScriptPubKey()
-    {
-        return creditTx.vout[0].scriptPubKey;
     }
 };
 }

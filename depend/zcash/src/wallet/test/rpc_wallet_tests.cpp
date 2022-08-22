@@ -1,10 +1,12 @@
 // Copyright (c) 2013-2014 The Bitcoin Core developers
+// Copyright (c) 2020-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 #include "rpc/server.h"
 #include "rpc/client.h"
 
+#include "consensus/merkle.h"
 #include "fs.h"
 #include "key_io.h"
 #include "main.h"
@@ -20,7 +22,7 @@
 #include "wallet/asyncrpcoperation_shieldcoinbase.h"
 
 #include "init.h"
-#include "utiltest.h"
+#include "util/test.h"
 
 #include "test/test_bitcoin.h"
 #include "test/test_util.h"
@@ -1529,7 +1531,7 @@ BOOST_AUTO_TEST_CASE(rpc_z_shieldcoinbase_parameters)
     // Mutable tx containing contextual information we need to build tx
     UniValue retValue = CallRPC("getblockcount");
     int nHeight = retValue.get_int();
-    CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), nHeight + 1);
+    CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), nHeight + 1, false);
     if (mtx.nVersion == 1) {
         mtx.nVersion = 2;
     }
@@ -1632,7 +1634,7 @@ BOOST_AUTO_TEST_CASE(rpc_z_mergetoaddress_parameters)
     // Mutable tx containing contextual information we need to build tx
     UniValue retValue = CallRPC("getblockcount");
     int nHeight = retValue.get_int();
-    CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), nHeight + 1);
+    CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), nHeight + 1, false);
 
     // Test constructor of AsyncRPCOperation_mergetoaddress
     KeyIO keyIO(Params());
@@ -1681,7 +1683,7 @@ void TestWTxStatus(const Consensus::Params consensusParams, const int delta) {
 
     auto AddTrx = [&consensusParams]() {
         auto taddr = pwalletMain->GenerateNewKey(true).GetID();
-        CMutableTransaction mtx = CreateNewContextualCMutableTransaction(consensusParams, 1);
+        CMutableTransaction mtx = CreateNewContextualCMutableTransaction(consensusParams, 1, false);
         CScript scriptPubKey = CScript() << OP_DUP << OP_HASH160 << ToByteVector(taddr) << OP_EQUALVERIFY << OP_CHECKSIG;
         mtx.vout.push_back(CTxOut(5 * COIN, scriptPubKey));
         CWalletTx wtx(pwalletMain, mtx);
@@ -1695,7 +1697,7 @@ void TestWTxStatus(const Consensus::Params consensusParams, const int delta) {
         BOOST_CHECK_EQUAL(height, chainActive.Height());
         CBlock block;
         if (has_trx) block.vtx.push_back(wtx);
-        block.hashMerkleRoot = block.BuildMerkleTree();
+        block.hashMerkleRoot = BlockMerkleRoot(block);
         auto blockHash = block.GetHash();
         CBlockIndex fakeIndex {block};
         fakeIndex.nHeight = height+1;

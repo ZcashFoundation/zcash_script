@@ -55,6 +55,11 @@ default as of release 5.3.0.
     using this metadata be updated to use the `pool` or `address_type`
     attributes, which have replaced the `type` attribute, as appropriate.
 
+### Deprecated in 5.1.0
+
+  - `wallettxvjoinsplit` - The `vjoinsplit` attribute returned by the
+    `gettransaction` RPC method is deprecated.
+
 Stage 2
 -------
 
@@ -69,3 +74,10 @@ The following features are disabled by default, and will be removed in release 5
   - `zcrawreceive` - The `zcrawreceive` RPC method is disabled.
   - `zcrawjoinsplit` - The `zcrawjoinsplit` RPC method is disabled.
   - `zcrawkeygen` - The `zcrawkeygen` RPC method is disabled.
+
+### Disabled in 5.0.1
+
+The following features are disabled by default, and will be removed in release 5.3.0.
+
+  - `dumpwallet` - The `dumpwallet` RPC method is disabled.
+

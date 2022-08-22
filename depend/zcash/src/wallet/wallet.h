@@ -1,5 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2014 The Bitcoin Core developers
+// Copyright (c) 2016-2022 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -17,8 +18,8 @@
 #include "tinyformat.h"
 #include "transaction_builder.h"
 #include "ui_interface.h"
-#include "util.h"
-#include "utilstrencodings.h"
+#include "util/system.h"
+#include "util/strencodings.h"
 #include "validationinterface.h"
 #include "script/ismine.h"
 #include "wallet/crypter.h"
@@ -40,6 +41,8 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <rust/wallet_scanner.h>
 
 #include <boost/shared_ptr.hpp>
 
@@ -261,21 +264,31 @@ public:
     std::list<SproutWitness> witnesses;
 
     /**
-     * Block height corresponding to the most current witness.
+     * The height of the most recently-witnessed block for this note.
      *
-     * When we first create a SproutNoteData in CWallet::FindMySproutNotes, this is set to
-     * -1 as a placeholder. The next time CWallet::ChainTip is called, we can
-     * determine what height the witness cache for this note is valid for (even
-     * if no witnesses were cached), and so can set the correct value in
-     * CWallet::IncrementNoteWitnesses and CWallet::DecrementNoteWitnesses.
+     * Set to -1 if the note is unmined, or if the note was spent long enough
+     * ago that we will never unspend it.
      */
     int witnessHeight;
 
-    SproutNoteData() : address(), nullifier(), witnessHeight {-1} { }
+    /**
+     * (memory only) Block height at which this note was observed to be spent.
+     *
+     * This is used to prune the list of witnesses once we are guaranteed to
+     * never be unspending the note. If the node is restarted in the window
+     * between detecting the spend and pruning the witnesses (or before the
+     * pruning is serialized to disk), then the spentness will likely not be
+     * re-detected until a rescan is performed (meaning that this note's
+     * witnesses will continue to be updated, which is only a performance
+     * rather than a correctness issue).
+     */
+    std::optional<int> spentHeight;
+
+    SproutNoteData() : address(), nullifier(), witnessHeight {-1}, spentHeight() { }
     SproutNoteData(libzcash::SproutPaymentAddress a) :
-            address {a}, nullifier(), witnessHeight {-1} { }
+            address {a}, nullifier(), witnessHeight {-1}, spentHeight() { }
     SproutNoteData(libzcash::SproutPaymentAddress a, uint256 n) :
-            address {a}, nullifier {n}, witnessHeight {-1} { }
+            address {a}, nullifier {n}, witnessHeight {-1}, spentHeight() { }
 
     ADD_SERIALIZE_METHODS;
 
@@ -308,14 +321,33 @@ public:
      * We initialize the height to -1 for the same reason as we do in SproutNoteData.
      * See the comment in that class for a full description.
      */
-    SaplingNoteData() : witnessHeight {-1}, nullifier() { }
+    SaplingNoteData() : witnessHeight {-1}, nullifier(), spentHeight() { }
     SaplingNoteData(libzcash::SaplingIncomingViewingKey ivk) : ivk {ivk}, witnessHeight {-1}, nullifier() { }
     SaplingNoteData(libzcash::SaplingIncomingViewingKey ivk, uint256 n) : ivk {ivk}, witnessHeight {-1}, nullifier(n) { }
 
     std::list<SaplingWitness> witnesses;
+    /**
+     * The height of the most recently-witnessed block for this note.
+     *
+     * Set to -1 if the note is unmined, or if the note was spent long enough
+     * ago that we will never unspend it.
+     */
     int witnessHeight;
     libzcash::SaplingIncomingViewingKey ivk;
     std::optional<uint256> nullifier;
+
+    /**
+     * (memory only) Block height at which this note was observed to be spent.
+     *
+     * This is used to prune the list of witnesses once we are guaranteed to
+     * never be unspending the note. If the node is restarted in the window
+     * between detecting the spend and pruning the witnesses (or before the
+     * pruning is serialized to disk), then the spentness will likely not be
+     * re-detected until a rescan is performed (meaning that this note's
+     * witnesses will continue to be updated, which is only a performance
+     * rather than a correctness issue).
+     */
+    std::optional<int> spentHeight;
 
     ADD_SERIALIZE_METHODS;
 
@@ -371,12 +403,7 @@ private:
 
 public:
     uint256 hashBlock;
-    std::vector<uint256> vMerkleBranch;
     int nIndex;
-
-    // memory only
-    mutable bool fMerkleVerified;
-
 
     CMerkleTx()
     {
@@ -392,13 +419,13 @@ public:
     {
         hashBlock = uint256();
         nIndex = -1;
-        fMerkleVerified = false;
     }
 
     ADD_SERIALIZE_METHODS;
 
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
+        std::vector<uint256> vMerkleBranch; // For compatibility with older versions.
         READWRITE(*(CTransaction*)this);
         READWRITE(hashBlock);
         READWRITE(vMerkleBranch);
@@ -419,7 +446,7 @@ public:
     bool IsInMainChain() const { const CBlockIndex *pindexRet; return GetDepthInMainChainINTERNAL(pindexRet) > 0; }
     int GetBlocksToMaturity() const;
     /** Pass this transaction to the mempool. Fails if absolute fee exceeds maxTxFee. */
-    bool AcceptToMemoryPool(bool fLimitFree=true, bool fRejectAbsurdFee=true);
+    bool AcceptToMemoryPool(CValidationState& state, bool fLimitFree=true, bool fRejectAbsurdFee=true);
 };
 
 enum class WalletUAGenerationError {
@@ -1013,6 +1040,59 @@ public:
     }
 };
 
+typedef struct WalletDecryptedNotes {
+    mapSproutNoteData_t sproutNoteData;
+    /**
+     * The decrypted Sapling notes, and any newly-discovered addresses that
+     * should be added to the keystore.
+     *
+     * NOTE: Adding every recipient address to this map will cause the
+     * transaction to not be added to the wallet, as the address write will
+     * attempt to overwrite an existing entry and fail.
+     */
+    std::pair<mapSaplingNoteData_t, SaplingIncomingViewingKeyMap> saplingNoteDataAndAddressesToAdd;
+} WalletDecryptedNotes;
+
+class WalletBatchScanner : public BatchScanner {
+private:
+    CWallet* pwallet;
+    rust::Box<wallet::BatchScanner> inner;
+    std::map<uint256, WalletDecryptedNotes> decryptedNotes;
+
+    static rust::Box<wallet::BatchScanner> CreateBatchScanner(CWallet* pwallet);
+
+    WalletBatchScanner(CWallet* pwalletIn) : pwallet(pwalletIn), inner(CreateBatchScanner(pwalletIn)) {}
+
+    friend class CWallet;
+
+public:
+    void AddTransactionToBatch(const CTransaction &tx, const int nHeight);
+
+    bool AddToWalletIfInvolvingMe(
+        const Consensus::Params& consensus,
+        const CTransaction& tx,
+        const CBlock* pblock,
+        const int nHeight,
+        bool fUpdate);
+
+    //
+    // BatchScanner APIs
+    //
+
+    void AddTransaction(
+        const CTransaction &tx,
+        const std::vector<unsigned char> &txBytes,
+        const uint256 &blockTag,
+        const int nHeight);
+
+    void Flush();
+
+    void SyncTransaction(
+        const CTransaction &tx,
+        const CBlock *pblock,
+        const int nHeight);
+};
+
 /**
  * A CWallet is an extension of a keystore, which also maintains a set of transactions and balances,
  * and provides the ability to create new transactions.
@@ -1021,6 +1101,7 @@ class CWallet : public CCryptoKeyStore, public CValidationInterface
 {
 private:
     friend class CWalletTx;
+    friend class WalletBatchScanner;
 
     /**
      * Select a set of coins such that nValueRet >= nTargetValue and at least
@@ -1190,6 +1271,17 @@ protected:
      */
     OrchardWallet orchardWallet;
 
+    /**
+     * The batch scanner for this wallet's CValidationInterface listener.
+     *
+     * This is stored in the wallet so that the wallet can manage its memory and
+     * the CValidationInterface provider uses pointers so the vtables work.
+     * We rely on the CValidationInterface provider only using its pointer to
+     * the batch scanner synchronously, and we use a separate batch scanner
+     * inside ScanForWalletTransactions so they don't collide.
+     */
+    WalletBatchScanner* validationInterfaceBatchScanner;
+
 public:
     /*
      * Main wallet lock.
@@ -1232,6 +1324,8 @@ public:
     {
         delete pwalletdbEncryption;
         pwalletdbEncryption = NULL;
+        delete validationInterfaceBatchScanner;
+        validationInterfaceBatchScanner = nullptr;
     }
 
     void SetNull(const CChainParams& params)
@@ -1250,6 +1344,7 @@ public:
         fBroadcastTransactions = false;
         nWitnessCacheSize = 0;
         networkIdString = params.NetworkIDString();
+        validationInterfaceBatchScanner = new WalletBatchScanner(this);
     }
 
     /**
@@ -1666,6 +1761,8 @@ public:
 
     DBErrors ReorderTransactions();
 
+    WalletDecryptedNotes TryDecryptShieldedOutputs(const CTransaction& tx);
+
     void MarkDirty();
     bool UpdateNullifierNoteMap();
     void UpdateNullifierNoteMapWithTx(const CWalletTx& wtx);
@@ -1673,12 +1770,13 @@ public:
     void UpdateSaplingNullifierNoteMapForBlock(const CBlock* pblock);
     void LoadWalletTx(const CWalletTx& wtxIn);
     bool AddToWallet(const CWalletTx& wtxIn, CWalletDB* pwalletdb);
-    void SyncTransaction(const CTransaction& tx, const CBlock* pblock, const int nHeight);
+    BatchScanner* GetBatchScanner();
     bool AddToWalletIfInvolvingMe(
             const Consensus::Params& consensus,
             const CTransaction& tx,
             const CBlock* pblock,
             const int nHeight,
+            WalletDecryptedNotes decryptedNotes,
             bool fUpdate
             );
     void EraseFromWallet(const uint256 &hash);
@@ -1741,7 +1839,7 @@ public:
         return true;
     }
 
-    bool CommitTransaction(CWalletTx& wtxNew, std::optional<std::reference_wrapper<CReserveKey>> reservekey);
+    bool CommitTransaction(CWalletTx& wtxNew, std::optional<std::reference_wrapper<CReserveKey>> reservekey, CValidationState& state);
 
     static CFeeRate minTxFee;
     /**
@@ -1781,7 +1879,10 @@ public:
         const uint256& hSig,
         uint8_t n) const;
     mapSproutNoteData_t FindMySproutNotes(const CTransaction& tx) const;
-    std::pair<mapSaplingNoteData_t, SaplingIncomingViewingKeyMap> FindMySaplingNotes(const CTransaction& tx, int height) const;
+    std::pair<mapSaplingNoteData_t, SaplingIncomingViewingKeyMap> FindMySaplingNotes(
+        const Consensus::Params& consensus,
+        const CTransaction& tx,
+        int height) const;
     bool IsSproutNullifierFromMe(const uint256& nullifier) const;
     bool IsSaplingNullifierFromMe(const uint256& nullifier) const;
 
