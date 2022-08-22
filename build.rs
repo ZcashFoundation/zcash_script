@@ -1,5 +1,6 @@
 use std::{env, fmt, fs, io::Read, path::PathBuf};
 
+use embed_manifest::{embed_manifest, manifest::AssemblyIdentity, new_manifest};
 use syn::__private::ToTokens;
 
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -170,6 +171,17 @@ fn main() -> Result<()> {
         .file(include_path.join("rust/blake2b.c"))
         // .file(include_path.join("rust/bundlecache.c"))
         .compile("libzcash_script.a");
+
+    if std::env::var_os("CARGO_CFG_WINDOWS").is_some() {
+        embed_manifest(
+            new_manifest("zcash_script").dependency(AssemblyIdentity::new(
+                "Microsoft.Windows.Common-Controls",
+                [6, 0, 0, 0],
+                0x6595b64144ccf1df,
+            )),
+        )
+        .expect("unable to embed manifest file");
+    }
 
     Ok(())
 }
