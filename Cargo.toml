@@ -63,7 +63,7 @@ zcash_primitives = { version = "0.8.1", features = ["transparent-inputs"] }
 [build-dependencies]
 cc = { version = ">= 1.0.36", features = ["parallel"] }
 cxx-gen = "0.7.73"
-bindgen = "0.59"
+bindgen = "0.60.1"
 syn = { version = "1.0.99", features = ["full", "printing"] }
 
 [dev-dependencies]
