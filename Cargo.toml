@@ -53,12 +53,12 @@ blake2b_simd = "1"
 cxx = { version = "=1.0.72", features = ["c++17"] }
 libc = "0.2"
 memuse = "0.2"
-orchard = "0.2"
-rand_core = "0.6"
-tracing = "0.1"
-zcash_encoding = "0.1"
-zcash_note_encryption = "0.1"
-zcash_primitives = { version = "0.7", features = ["transparent-inputs"] }
+orchard = "0.3"
+rand_core = "0.6.4"
+tracing = "0.1.37"
+zcash_encoding = "0.2"
+zcash_note_encryption = "0.2"
+zcash_primitives = { version = "0.8.1", features = ["transparent-inputs"] }
 
 [build-dependencies]
 cc = { version = ">= 1.0.36", features = ["parallel"] }
