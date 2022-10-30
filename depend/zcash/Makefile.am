@@ -13,7 +13,7 @@ SUBDIRS = src
 if ENABLE_MAN
 SUBDIRS += doc/man
 endif
-.PHONY: deploy FORCE
+.PHONY: deploy FORCE rpc-tests
 
 GZIP_ENV="-9n"
 
@@ -155,7 +155,7 @@ endif
 dist_bin_SCRIPTS = zcutil/fetch-params.sh
 dist_noinst_SCRIPTS = autogen.sh zcutil/build-debian-package.sh zcutil/build.sh
 
-RUST_DIST = $(top_srcdir)/.cargo $(top_srcdir)/Cargo.toml $(top_srcdir)/Cargo.lock rust-toolchain
+RUST_DIST = $(top_srcdir)/.cargo $(top_srcdir)/Cargo.toml $(top_srcdir)/Cargo.lock $(top_srcdir)/rust-toolchain.toml
 
 EXTRA_DIST = $(top_srcdir)/share/genbuild.sh qa/pull-tester/rpc-tests.py qa/rpc-tests qa/zcash $(DIST_DOCS) $(BIN_CHECKS) $(RUST_DIST)
 
@@ -174,3 +174,6 @@ clean-local:
 distclean-local:
 	rm -f zcutil/bin/db_*
 	rmdir zcutil/bin 2>/dev/null || true
+
+rpc-tests: $(BITCOIND_BIN)
+	qa/pull-tester/rpc-tests.py $(RPC_TEST)

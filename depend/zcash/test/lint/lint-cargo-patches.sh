@@ -13,7 +13,7 @@ CARGO_TOML="$REPOBASE/Cargo.toml"
 CONFIG_FILE="$REPOBASE/.cargo/config.offline"
 
 CARGO_TOML_PATCH_PREFIX="[patch.crates-io]"
-let CARGO_TOML_PATCH_START=$(grep -Fn "$CARGO_TOML_PATCH_PREFIX" $CARGO_TOML | cut -d: -f1)+1
+(( CARGO_TOML_PATCH_START=$(grep -Fn "$CARGO_TOML_PATCH_PREFIX" $CARGO_TOML | cut -d: -f1)+1 ))
 if [ "$CARGO_TOML_PATCH_START" -eq 1 ]; then
     # We have no patched dependencies to lint.
     exit
@@ -29,7 +29,9 @@ EXIT_CODE=0
 # Check that every patch has a matching replacement.
 for PATCH in $(tail -n+$CARGO_TOML_PATCH_START $CARGO_TOML | sed 's/.*git = "\([^"]*\)", rev = "\([^"]*\)".*/\1#\2/' | sort | uniq)
 do
+    # shellcheck disable=SC2001
     PATCH_GIT=$(echo $PATCH | sed 's/#.*//')
+    # shellcheck disable=SC2001
     PATCH_REV=$(echo $PATCH | sed 's/.*#//')
 
     # Canonicalize the git URL (matching how Cargo treats them, so we don't over-lint).

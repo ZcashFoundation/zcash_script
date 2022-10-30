@@ -20,15 +20,11 @@ using `bindgen` to generate Rust bindings, and compiling everything together
 into a single library. Due to the way the `zcash_script` is written we unfortunately need
 to include a lot of other stuff e.g. the orchard library.
 
-Note that `zcash_script` (the C++ library/folder inside `zcash`) uses some Rust
-FFI functions from `zcash`; and it also links to `librustzcash` which is written in Rust.
-Therefore, when updating `zcash_script` (this crate), we need to make sure that shared dependencies
-between all of those are the same versions (and are patched to the same revisions, if applicable).
-To do that, check for versions in:
+### Updating this crate
 
-- `zcash/Cargo.toml` in the revision pointed to by this crate (also check for patches)
-- `librustzcash/Cargo.toml` in the revision pointed to by `zcash` (also check for patches)
-- `librustzcash/<crate>/Cargo.toml` in the revision pointed to by `zcash`
+1. Update `depend/zcash` with the latest tagged version of `zcashd`
+2. Update `Cargo.toml` versions to match the versions used by the latest tagged version of `zcashd`, and its dependencies
+3. Publish a new release
 
 ### Updating `depend/zcash`
 
@@ -54,6 +50,22 @@ git rm depend/zcash/Cargo.toml
 
 where `<ref>` is a reference to a branch, tag or commit (it should be a tag when preparing
 a release, but it will be likely a branch or commit when testing).
+
+### Updating `Cargo.toml`
+
+Note that `zcash_script` (the C++ library/folder inside `zcash`) uses some Rust
+FFI functions from `zcash`; and it also links to `librustzcash` which is written in Rust.
+Therefore, when updating `zcash_script` (this crate), we need to make sure that shared dependencies
+between all of those are the same versions (and are patched to the same revisions, if applicable).
+To do that, check for versions in:
+
+- `zcash/Cargo.toml` in the revision pointed to by this crate (also check for patches)
+- `librustzcash/Cargo.toml` in the revision pointed to by `zcash` (also check for patches)
+- `librustzcash/<crate>/Cargo.toml` in the revision pointed to by `zcash`
+- `orchard/Cargo.toml` in the revision pointed to by `zcash` (also check for patches)
+
+To double-check, you can use `cargo tree` or `cargo deny check bans` on Zebra,
+once the `zcash_script`, `librustzcash`, and `orchard` versions have all been updated.
 
 ### Publishing New Releases
 

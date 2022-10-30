@@ -33,6 +33,9 @@ LIBSECP256K1=secp256k1/libsecp256k1.la
 LIBUNIVALUE=univalue/libunivalue.la
 LIBZCASH=libzcash.a
 
+INSPECT_TOOL_BIN=zcash-inspect$(EXEEXT)
+INSPECT_TOOL_BUILD=$(top_builddir)/target/$(RUST_TARGET)/release/zcash-inspect$(EXEEXT)
+
 WALLET_TOOL_BIN=zcashd-wallet-tool$(EXEEXT)
 WALLET_TOOL_BUILD=$(top_builddir)/target/$(RUST_TARGET)/release/zcashd-wallet-tool$(EXEEXT)
 
@@ -90,7 +93,7 @@ $(CXXBRIDGE_H) $(CXXBRIDGE_CPP): $(CXXBRIDGE_RS)
 #   requires https://github.com/rust-bitcoin/rust-secp256k1/issues/380 to be addressed.
 RUST_ENV_VARS = \
   RUSTC="$(RUSTC)" \
-  RUSTFLAGS="--cfg=rust_secp_no_symbol_renaming" \
+  RUSTFLAGS="--cfg=rust_secp_no_symbol_renaming -L native=$(abs_top_srcdir)/src/secp256k1/.libs" \
   CC="$(CC)" \
   CFLAGS="$(CFLAGS)" \
   CXX="$(CXX)" \
@@ -129,11 +132,15 @@ LIBBITCOIN_CRYPTO_SHANI = crypto/libbitcoin_crypto_shani.a
 LIBBITCOIN_CRYPTO += $(LIBBITCOIN_CRYPTO_SHANI)
 endif
 
-cargo-build-lib: $(CARGO_CONFIGURED)
-	$(rust_verbose)$(RUST_ENV_VARS) $(CARGO) build --lib $(RUST_BUILD_OPTS) $(cargo_verbose)
+cargo-build: $(CARGO_CONFIGURED) $(LIBSECP256K1)
+	$(rust_verbose)$(RUST_ENV_VARS) $(CARGO) build $(RUST_BUILD_OPTS) $(cargo_verbose)
 
-cargo-build-bins: $(CARGO_CONFIGURED)
-	$(rust_verbose)$(RUST_ENV_VARS) $(CARGO) build --bins $(RUST_BUILD_OPTS) $(cargo_verbose)
+cargo-build-lib: cargo-build
+
+cargo-build-bins: cargo-build
+
+$(INSPECT_TOOL_BIN): cargo-build-bins
+	$(AM_V_at)cp $(INSPECT_TOOL_BUILD) $@
 
 $(WALLET_TOOL_BIN): cargo-build-bins
 	$(AM_V_at)cp $(WALLET_TOOL_BUILD) $@
@@ -150,8 +157,6 @@ $(LIBUNIVALUE): $(wildcard univalue/lib/*) $(wildcard univalue/include/*)
 # But to build the less dependent modules first, we manually select their order here:
 EXTRA_LIBRARIES += \
   $(LIBBITCOIN_CRYPTO) \
-  $(LIBBITCOIN_CRYPTO_SSE41) \
-  $(LIBBITCOIN_CRYPTO_AVX2) \
   $(LIBBITCOIN_UTIL) \
   $(LIBBITCOIN_COMMON) \
   $(LIBBITCOIN_SERVER) \
@@ -174,7 +179,7 @@ endif
 
 if BUILD_BITCOIN_UTILS
   bin_PROGRAMS += zcash-cli zcash-tx
-  bin_SCRIPTS += $(WALLET_TOOL_BIN)
+  bin_SCRIPTS += $(INSPECT_TOOL_BIN) $(WALLET_TOOL_BIN)
 endif
 
 LIBZCASH_H = \
@@ -463,6 +468,7 @@ crypto_libbitcoin_crypto_sse41_a_CPPFLAGS = $(AM_CPPFLAGS)
 if ENABLE_SSE41
 crypto_libbitcoin_crypto_sse41_a_CXXFLAGS += $(SSE41_CXXFLAGS)
 crypto_libbitcoin_crypto_sse41_a_CPPFLAGS += -DENABLE_SSE41
+LIBBITCOIN_CRYPTO += $(LIBBITCOIN_CRYPTO_SSE41)
 endif
 crypto_libbitcoin_crypto_sse41_a_SOURCES = crypto/sha256_sse41.cpp
 
@@ -471,6 +477,7 @@ crypto_libbitcoin_crypto_avx2_a_CPPFLAGS = $(AM_CPPFLAGS)
 if ENABLE_AVX2
 crypto_libbitcoin_crypto_avx2_a_CXXFLAGS += $(AVX2_CXXFLAGS)
 crypto_libbitcoin_crypto_avx2_a_CPPFLAGS += -DENABLE_AVX2
+LIBBITCOIN_CRYPTO += $(LIBBITCOIN_CRYPTO_AVX2)
 endif
 crypto_libbitcoin_crypto_avx2_a_SOURCES = crypto/sha256_avx2.cpp
 
@@ -579,10 +586,8 @@ zcashd_LDADD = \
   $(LIBBITCOIN_UTIL) \
   $(LIBBITCOIN_ZMQ) \
   $(LIBBITCOIN_CRYPTO) \
-  $(LIBBITCOIN_CRYPTO_SSE41) \
-  $(LIBBITCOIN_CRYPTO_AVX2) \
-  $(LIBZCASH) \
   $(LIBRUSTZCASH) \
+  $(LIBZCASH) \
   $(LIBLEVELDB) \
   $(LIBLEVELDB_SSE42) \
   $(LIBMEMENV) \
@@ -594,7 +599,6 @@ zcashd_LDADD += \
   $(EVENT_PTHREADS_LIBS) \
   $(EVENT_LIBS) \
   $(ZMQ_LIBS) \
-  $(LIBBITCOIN_CRYPTO) \
   $(LIBZCASH_LIBS)
 
 # bitcoin-cli binary #
@@ -613,11 +617,9 @@ zcash_cli_LDADD = \
   $(LIBBITCOIN_UTIL) \
   $(BOOST_LIBS) \
   $(EVENT_LIBS) \
-  $(LIBZCASH) \
   $(LIBRUSTZCASH) \
+  $(LIBZCASH) \
   $(LIBBITCOIN_CRYPTO) \
-  $(LIBBITCOIN_CRYPTO_SSE41) \
-  $(LIBBITCOIN_CRYPTO_AVX2) \
   $(LIBSECP256K1) \
   $(LIBZCASH_LIBS)
 #
@@ -638,11 +640,9 @@ zcash_tx_LDADD = \
   $(LIBBITCOIN_COMMON) \
   $(LIBBITCOIN_UTIL) \
   $(LIBSECP256K1) \
-  $(LIBZCASH) \
   $(LIBRUSTZCASH) \
+  $(LIBZCASH) \
   $(LIBBITCOIN_CRYPTO) \
-  $(LIBBITCOIN_CRYPTO_SSE41) \
-  $(LIBBITCOIN_CRYPTO_AVX2) \
   $(LIBZCASH_LIBS)
 
 zcash_tx_LDADD += $(BOOST_LIBS)
@@ -754,6 +754,7 @@ endif
 	$(AM_V_GEN) $(PROTOC) --cpp_out=$(@D) --proto_path=$(abspath $(<D) $<)
 
 if EMBEDDED_LEVELDB
+include Makefile.crc32c.include
 include Makefile.leveldb.include
 endif
 

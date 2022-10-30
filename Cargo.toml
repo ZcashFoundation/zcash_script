@@ -48,25 +48,34 @@ path = "src/lib.rs"
 external-secp = []
 
 [dependencies]
-# Must match depend/zcash/Cargo.toml
+# All these dependencies must match the versions in:
+# https://github.com/zcash/zcash/blob/<git subtree version>/Cargo.toml
 blake2b_simd = "1"
-cxx = { version = "=1.0.72", features = ["c++17"] }
+cxx = { version = "=1.0.79", features = ["c++17"] }
 libc = "0.2"
 memuse = "0.2"
-orchard = "0.2"
+orchard = "0.3"
 rand_core = "0.6"
 tracing = "0.1"
-zcash_encoding = "0.1"
-zcash_note_encryption = "0.1"
-zcash_primitives = { version = "0.7", features = ["transparent-inputs"] }
+zcash_encoding = "0.2"
+zcash_note_encryption = "0.2"
+zcash_primitives = { version = "0.8.1", features = ["transparent-inputs"] }
 
 [build-dependencies]
+# The `bindgen` dependency should match the version used by zebra-state's `rocksdb` dependency in:
+# https://github.com/ZcashFoundation/zebra/blob/main/zebra-state/Cargo.toml
+bindgen = "0.60.1"
+
+# These dependencies are shared with a lot of other Zebra dependencies,
+# so they should be left at the minimum required versions.
+# (They will automatically get upgraded as other libraries or Zebra upgrades.)
 cc = { version = ">= 1.0.36", features = ["parallel"] }
 cxx-gen = "0.7.73"
-bindgen = "0.59"
 syn = { version = "1.0.99", features = ["full", "printing"] }
 
 [dev-dependencies]
+# These dependencies are shared with a lot of other Zebra dependencies.
+# (See above.)
 rustc-serialize = "0.3"
 hex = "0.4.2"
 lazy_static = "1.4.0"

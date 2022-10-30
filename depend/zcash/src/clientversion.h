@@ -16,7 +16,7 @@
 
 //! These need to be macros, as clientversion.cpp's and bitcoin*-res.rc's voodoo requires it
 #define CLIENT_VERSION_MAJOR 5
-#define CLIENT_VERSION_MINOR 2
+#define CLIENT_VERSION_MINOR 3
 #define CLIENT_VERSION_REVISION 0
 #define CLIENT_VERSION_BUILD 50
 
@@ -60,7 +60,6 @@ static const int CLIENT_VERSION =
 
 extern const std::string CLIENT_NAME;
 extern const std::string CLIENT_BUILD;
-extern const std::string CLIENT_DATE;
 
 
 std::string FormatVersion(int nVersion);

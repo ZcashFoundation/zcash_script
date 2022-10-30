@@ -57,6 +57,7 @@ BASE_SCRIPTS= [
     'wallet_listreceived.py',
     'mempool_tx_expiry.py',
     'finalsaplingroot.py',
+    'finalorchardroot.py',
     'wallet_orchard.py',
     'wallet_overwintertx.py',
     'wallet_persistence.py',
@@ -143,6 +144,7 @@ BASE_SCRIPTS= [
     'wallet_z_sendmany.py',
     'wallet_zero_value.py',
     'threeofthreerestore.py',
+    'show_help.py',
 ]
 
 ZMQ_SCRIPTS = [
