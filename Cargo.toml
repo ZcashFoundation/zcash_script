@@ -64,7 +64,7 @@ zcash_primitives = { version = "0.8.1", features = ["transparent-inputs"] }
 [build-dependencies]
 # The `bindgen` dependency should match the version used by zebra-state's `rocksdb` dependency in:
 # https://github.com/ZcashFoundation/zebra/blob/main/zebra-state/Cargo.toml
-bindgen = "0.60.1"
+bindgen = "0.63.0"
 
 # These dependencies are shared with a lot of other Zebra dependencies,
 # so they should be left at the minimum required versions.
