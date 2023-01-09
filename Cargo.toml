@@ -51,7 +51,7 @@ external-secp = []
 # All these dependencies must match the versions in:
 # https://github.com/zcash/zcash/blob/<git subtree version>/Cargo.toml
 blake2b_simd = "1"
-cxx = { version = "=1.0.79", features = ["c++17"] }
+cxx = { version = "=1.0.86", features = ["c++17"] }
 libc = "0.2"
 memuse = "0.2"
 orchard = "0.3"
