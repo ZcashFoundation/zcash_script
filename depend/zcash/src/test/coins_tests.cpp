@@ -1,5 +1,5 @@
 // Copyright (c) 2014 The Bitcoin Core developers
-// Copyright (c) 2016-2022 The Zcash developers
+// Copyright (c) 2016-2023 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -387,7 +387,7 @@ BOOST_AUTO_TEST_CASE(chained_joinsplits)
         CMutableTransaction mtx;
         mtx.vJoinSplit.push_back(js2);
 
-        BOOST_CHECK(cache.HaveShieldedRequirements(mtx) == std::optional<UnsatisfiedShieldedReq>(UnsatisfiedShieldedReq::SproutUnknownAnchor));
+        BOOST_CHECK(cache.CheckShieldedRequirements(mtx) == tl::unexpected(UnsatisfiedShieldedReq::SproutUnknownAnchor));
     }
 
     {
@@ -397,7 +397,7 @@ BOOST_AUTO_TEST_CASE(chained_joinsplits)
         mtx.vJoinSplit.push_back(js2);
         mtx.vJoinSplit.push_back(js1);
 
-        BOOST_CHECK(cache.HaveShieldedRequirements(mtx) == std::optional<UnsatisfiedShieldedReq>(UnsatisfiedShieldedReq::SproutUnknownAnchor));
+        BOOST_CHECK(cache.CheckShieldedRequirements(mtx) == tl::unexpected(UnsatisfiedShieldedReq::SproutUnknownAnchor));
     }
 
     {
@@ -405,7 +405,7 @@ BOOST_AUTO_TEST_CASE(chained_joinsplits)
         mtx.vJoinSplit.push_back(js1);
         mtx.vJoinSplit.push_back(js2);
 
-        BOOST_CHECK(cache.HaveShieldedRequirements(mtx) == std::nullopt);
+        BOOST_CHECK(cache.CheckShieldedRequirements(mtx).has_value());
     }
 
     {
@@ -414,7 +414,7 @@ BOOST_AUTO_TEST_CASE(chained_joinsplits)
         mtx.vJoinSplit.push_back(js2);
         mtx.vJoinSplit.push_back(js3);
 
-        BOOST_CHECK(cache.HaveShieldedRequirements(mtx) == std::nullopt);
+        BOOST_CHECK(cache.CheckShieldedRequirements(mtx).has_value());
     }
 
     {
@@ -424,7 +424,7 @@ BOOST_AUTO_TEST_CASE(chained_joinsplits)
         mtx.vJoinSplit.push_back(js2);
         mtx.vJoinSplit.push_back(js3);
 
-        BOOST_CHECK(cache.HaveShieldedRequirements(mtx) == std::nullopt);
+        BOOST_CHECK(cache.CheckShieldedRequirements(mtx).has_value());
     }
 }
 

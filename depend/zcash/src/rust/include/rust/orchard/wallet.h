@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2022 The Zcash developers
+// Copyright (c) 2021-2023 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
@@ -39,7 +39,7 @@ void orchard_wallet_free(OrchardWalletPtr* wallet);
  * in place with the expectation that they will be overwritten and/or updated in
  * the rescan process.
  */
-bool orchard_wallet_reset(OrchardWalletPtr* wallet);
+void orchard_wallet_reset(OrchardWalletPtr* wallet);
 
 /**
  * Checkpoint the note commitment tree. This returns `false` and leaves the note

@@ -4,9 +4,9 @@ Upstream-Contact: Electric Coin Company <team@electriccoin.co>
 Source: https://github.com/zcash/zcash
 
 Files: *
-Copyright: 2016-2022, The Zcash developers
- 2009-2022, Bitcoin Core developers
- 2009-2022, Bitcoin Developers
+Copyright: 2016-2023, The Zcash developers
+ 2009-2023, The Bitcoin Core developers
+ 2009-2023, Bitcoin Developers
 License: Expat
 Comment: The Bitcoin Core developers encompasses the current developers listed on
  bitcoin.org, as well as the numerous contributors to the project.
@@ -159,6 +159,12 @@ License: BSD-3-clause-Google
 Files: depends/sources/utfcpp-*.tar.gz
 Copyright: 2006 Nemanja Trifunovic
 License: Boost-Software-License-1.0
+
+Files: depends/sources/tl-expected-*.tar.gz
+Copyright: 2017-2021 Sy Brand <simonrbrand@gmail.com> (@TartanLlama), 2022 The Zcash developers
+License: CC0-1.0
+Comment: Other contributors are Simon Truscott (@bobbleclank), Kévin Alexandre Boissonneault (@KABoissonneault),
+ and Björn Fahller (@rollbear).
 
 Files: depends/*/vendored-sources/orchard/*
 Copyright: 2020-2022 The Electric Coin Company

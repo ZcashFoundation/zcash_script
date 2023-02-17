@@ -3,8 +3,7 @@
 # This script checks for updates to zcashd's dependencies.
 #
 # The SOURCE_ROOT constant specifies the location of the zcashd codebase to
-# check, and the GITHUB_API_* constants specify a personal access token for the
-# GitHub API, which need not have any special privileges.
+# check.
 #
 # All dependencies must be specified inside the get_dependency_list() function
 # below. A dependency is specified by:
@@ -36,6 +35,7 @@ import requests
 import os
 import re
 import sys
+import xdg
 import datetime
 
 SOURCE_ROOT = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..")
@@ -79,6 +79,10 @@ def get_dependency_list():
             GithubTagReleaseLister("llvm", "llvm-project", "^llvmorg-(\d+)\.(\d+).(\d+)$",
                 { "llvmorg-11.0.0": (11, 0, 0), "llvmorg-9.0.1-rc3": None}),
             DependsVersionGetter("native_clang")),
+        Dependency("native_cmake",
+            GithubTagReleaseLister("Kitware", "CMake", "^v?(\d+)\.(\d+)(?:\.(\d+))?$",
+                { "v3.21.2": (3, 21, 2), "v3.20.0-rc4": None}),
+            DependsVersionGetter("native_cmake")),
         Dependency("native_cxxbridge",
             GithubTagReleaseLister("dtolnay", "cxx", "^(\d+)\.(\d+)\.(\d+)$",
                 { "1.0.17": (1, 0, 17) }),
@@ -87,6 +91,10 @@ def get_dependency_list():
             GithubTagReleaseLister("rust-lang", "rust", "^(\d+)\.(\d+)(?:\.(\d+))?$",
                 { "1.33.0": (1, 33, 0), "0.9": (0, 9) }),
             DependsVersionGetter("native_rust")),
+        Dependency("native_zstd",
+            GithubTagReleaseLister("facebook", "zstd", "^v?(\d+)\.(\d+)(?:\.(\d+))?$",
+                { "v1.5.0": (1, 5, 0), "zstd-0.4.2": None}),
+            DependsVersionGetter("native_zstd")),
         # rustcxx matches the cxxbridge version
         Dependency("rustcxx",
             GithubTagReleaseLister("dtolnay", "cxx", "^(\d+)\.(\d+)\.(\d+)$",
@@ -100,6 +108,10 @@ def get_dependency_list():
             GithubTagReleaseLister("google", "leveldb", "^v(\d+)\.(\d+)$",
                 { "v1.13": (1, 13) }),
             LevelDbVersionGetter()),
+        Dependency("tl_expected",
+            GithubTagReleaseLister("TartanLlama", "expected", "^v(\d+)\.(\d+)(?:\.(\d+))?$",
+                { "v0.3": (0, 3), "v1.0.0": (1, 0, 0) }),
+            DependsVersionGetter("tl_expected")),
         Dependency("univalue",
             GithubTagReleaseLister("bitcoin-core", "univalue", "^v(\d+)\.(\d+)\.(\d+)$",
                 { "v1.0.1": (1, 0, 1) }),
@@ -112,24 +124,22 @@ def get_dependency_list():
 
     return dependencies
 
-class GitHubToken:
-    def __init__(self):
-        token_path = os.path.join(SOURCE_ROOT, ".updatecheck-token")
-        try:
-            with open(token_path, encoding='utf8') as f:
-                token = f.read().strip()
-                self._user = token.split(":")[0]
-                self._password = token.split(":")[1]
-        except:
-            print("Please make sure a GitHub API token is in .updatecheck-token in the root of this repository.")
-            print("The format is username:hex-token.")
-            sys.exit(1)
+def parse_token():
+    token_path = os.path.realpath(os.path.join(SOURCE_ROOT, ".updatecheck-token"))
+    if not os.path.exists(token_path):
+        token_path = os.path.join(xdg.xdg_data_home(), "zcash/updatecheck/token")
+    try:
+        with open(token_path, encoding='utf8') as f:
+            token = f.read().strip()
+            return token.split(":")[-1]
+    except:
+        print("You are missing a GitHub API token. This script will probably still work, but")
+        print("you are more likely to hit an API rate limit. Create a file named")
+        print(token_path)
+        print("containing the token to silence this warning.")
+        return ()
 
-    def user(self):
-        return self.user
-
-    def password(self):
-        return self.password
+token = parse_token()
 
 class Version(list):
     def __init__(self, version_tuple):
@@ -180,7 +190,6 @@ class GithubTagReleaseLister:
         self.repo = repo
         self.regex = regex
         self.testcases = testcases
-        self.token = GitHubToken()
 
         for tag, expected in testcases.items():
             match = re.match(self.regex, tag)
@@ -206,7 +215,10 @@ class GithubTagReleaseLister:
 
     def all_tag_names(self):
         url = "https://api.github.com/repos/" + safe(self.org) + "/" + safe(self.repo) + "/git/refs/tags"
-        r = requests.get(url, auth=requests.auth.HTTPBasicAuth(self.token.user(), self.token.password()))
+        auth = {}
+        if token:
+            auth = { 'Authorization': 'Bearer ' + token }
+        r = requests.get(url, headers=auth)
         if r.status_code != 200:
             print("API request failed (error %d)" % (r.status_code,), file=sys.stderr)
             print(r.text, file=sys.stderr)
