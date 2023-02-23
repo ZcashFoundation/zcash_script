@@ -28,7 +28,8 @@ to include a lot of other stuff e.g. the orchard library.
     - use `cargo tree --invert <crate>` to see if the crate is from `zcash_script` or another dependency
     - see the list in [Cargo.toml](https://github.com/ZcashFoundation/zcash_script/blob/master/Cargo.toml#L69)
 4. For new dependencies with a leading zero in their version (`0.x.y`), use a `>=` dependency [to make them automatically upgrade to match Zebra's dependencies](https://doc.rust-lang.org/cargo/reference/resolver.html#semver-compatibility)
-5. Publish a new release
+5. Check all open PRs to see if they can be merged before the release
+6. Publish a new release
 
 ### Updating `depend/zcash`
 
