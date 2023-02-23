@@ -24,11 +24,10 @@ to include a lot of other stuff e.g. the orchard library.
 
 1. Update `depend/zcash` with the latest tagged version of `zcashd`
 2. Update `Cargo.toml` versions to match the versions used by the latest tagged version of `zcashd`, and its dependencies
-3. For dependencies that are shared with a single Zebra dependency (but not `zcashd`), update to the matching version in that dependency:
-    - `bindgen`: Zebra's [current `rocksdb` dependency](https://github.com/ZcashFoundation/zebra/blob/main/zebra-state/Cargo.toml)
-4. For dependencies that are shared with multiple Zebra dependencies (but not `zcashd`), leave them at the minimum required version, and cargo will automatically upgrade them:
+3. For dependencies that are shared with Zebra (but not `zcashd`), match the latest version in Zebra's [Cargo.lock](https://github.com/ZcashFoundation/zebra/blob/main/Cargo.lock):
+    - use `cargo tree --invert <crate>` to see if the crate is from `zcash_script` or another dependency
     - see the list in [Cargo.toml](https://github.com/ZcashFoundation/zcash_script/blob/master/Cargo.toml#L69)
-    - for new dependencies on versions with a leading zero (`0.x.y`), use a `>=` dependency [to make them automatically upgrade](https://doc.rust-lang.org/cargo/reference/resolver.html#semver-compatibility)
+4. For new dependencies with a leading zero in their version (`0.x.y`), use a `>=` dependency [to make them automatically upgrade to match Zebra's dependencies](https://doc.rust-lang.org/cargo/reference/resolver.html#semver-compatibility)
 5. Publish a new release
 
 ### Updating `depend/zcash`
