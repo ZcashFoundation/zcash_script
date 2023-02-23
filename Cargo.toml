@@ -62,22 +62,27 @@ zcash_note_encryption = "0.2"
 zcash_primitives = { version = "0.9.1", features = ["transparent-inputs"] }
 
 [build-dependencies]
-# The `bindgen` dependency should match the version used by zebra-state's `rocksdb` dependency in:
+# The `bindgen` dependency should automatically upgrade to match the version used by zebra-state's `rocksdb` dependency in:
 # https://github.com/ZcashFoundation/zebra/blob/main/zebra-state/Cargo.toml
-bindgen = "0.60.1"
+#
+# Treat minor versions with a zero major version as compatible (cargo doesn't by default).
+bindgen = ">= 0.64.0"
 
 # These dependencies are shared with a lot of other Zebra dependencies,
 # so they should be left at the minimum required versions.
 # (They will automatically get upgraded as other libraries or Zebra upgrades.)
-cc = { version = ">= 1.0.36", features = ["parallel"] }
-cxx-gen = "0.7.73"
+cc = { version = "1.0.36", features = ["parallel"] }
+# Treat minor versions with a zero major version as compatible (cargo doesn't by default).
+cxx-gen = ">= 0.7.73"
 syn = { version = "1.0.99", features = ["full", "printing"] }
 
 [dev-dependencies]
 # These dependencies are shared with a lot of other Zebra dependencies.
 # (See above.)
-rustc-serialize = "0.3"
-hex = "0.4.2"
+#
+# Treat minor versions with a zero major version as compatible (cargo doesn't by default).
+rustc-serialize = ">= 0.3"
+hex = ">= 0.4.2"
 lazy_static = "1.4.0"
 
 [[package.metadata.release.pre-release-replacements]]
