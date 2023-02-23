@@ -81,7 +81,6 @@ syn = { version = "1.0.99", features = ["full", "printing"] }
 # (See above.)
 #
 # Treat minor versions with a zero major version as compatible (cargo doesn't by default).
-rustc-serialize = ">= 0.3"
 hex = ">= 0.4.2"
 lazy_static = "1.4.0"
 
