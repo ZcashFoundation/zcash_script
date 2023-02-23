@@ -24,10 +24,10 @@ to include a lot of other stuff e.g. the orchard library.
 
 1. Update `depend/zcash` with the latest tagged version of `zcashd`
 2. Update `Cargo.toml` versions to match the versions used by the latest tagged version of `zcashd`, and its dependencies
-3. For dependencies that aren't shared with `zcashd` or other Zebra dependencies, update to the latest version using dependabot:
-    - `cxx` 
-4. For dependencies that are shared with other Zebra dependencies (but not `zcashd`), update to the matching version in that dependency:
+3. For dependencies that are shared with a single Zebra dependency (but not `zcashd`), update to the matching version in that dependency:
     - `bindgen`: Zebra's [current `rocksdb` dependency](https://github.com/ZcashFoundation/zebra/blob/main/zebra-state/Cargo.toml)
+4. For dependencies that are shared with multiple Zebra dependencies (but not `zcashd`), leave them at the minimum required version so cargo automatically upgrades them:
+    - see the list in [Cargo.toml](https://github.com/ZcashFoundation/zcash_script/blob/master/Cargo.toml#L69)
 5. Publish a new release
 
 ### Updating `depend/zcash`
