@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+## [0.1.11] - 2023-02-24
+
+### Changed
+- Make dependencies automatically upgrade to match its parent project if a later minor version is already included
+- Upgrade to Rust 2021 edition
+
+## [0.1.10] - 2023-02-23
+
+### Changed
+- Updated `bindgen` version from 0.60.1 to 0.64.0
+
 ## [0.1.9] - 2023-02-23
 
 ### Changed
@@ -59,8 +70,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated `bindgen` to a non yanked version
 
 <!-- next-url -->
-[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/{{tag_name}}...HEAD
-[0.1.9]: https://github.com/ZcashFoundation/zcash_script/compare/{{tag_name}}...{{tag_name}}
+[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.11...HEAD
+[0.1.11]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.10...v0.1.11
+[0.1.10]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.6...v0.1.7
