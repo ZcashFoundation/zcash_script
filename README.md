@@ -30,7 +30,8 @@ to include a lot of other stuff e.g. the orchard library.
 4. For new dependencies with a leading zero in their version (`0.x.y`), use a `>=` dependency [to make them automatically upgrade to match Zebra's dependencies](https://doc.rust-lang.org/cargo/reference/resolver.html#semver-compatibility)
 5. Check all open PRs to see if they can be merged before the release
 6. Run `cargo-release` with `--no-publish` to commit any automatic changes
-7. Publish a new release
+7. Open a `zcash_script` PR with the changes, get it reviewed, and wait for CI to pass
+8. Publish a new release
 
 ### Updating `depend/zcash`
 
