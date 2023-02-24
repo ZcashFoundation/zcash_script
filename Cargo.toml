@@ -69,19 +69,19 @@ zcash_primitives = { version = "0.9.1", features = ["transparent-inputs"] }
 bindgen = ">= 0.64.0"
 
 # These dependencies are shared with a lot of other Zebra dependencies,
-# so they should be left at the minimum required versions.
-# (They will automatically get upgraded as other libraries or Zebra upgrades.)
-cc = { version = "1.0.36", features = ["parallel"] }
+# so they are configured to automatically upgrade to match Zebra.
+# But we try to use the latest versions here, to catch any bugs in `zcash_script`'s CI.
+cc = { version = "1.0.73", features = ["parallel"] }
 # Treat minor versions with a zero major version as compatible (cargo doesn't by default).
-cxx-gen = ">= 0.7.73"
-syn = { version = "1.0.99", features = ["full", "printing"] }
+cxx-gen = ">= 0.7.74"
+syn = { version = "1.0.104", features = ["full", "printing"] }
 
 [dev-dependencies]
 # These dependencies are shared with a lot of other Zebra dependencies.
 # (See above.)
 #
 # Treat minor versions with a zero major version as compatible (cargo doesn't by default).
-hex = ">= 0.4.2"
+hex = ">= 0.4.3"
 lazy_static = "1.4.0"
 
 [[package.metadata.release.pre-release-replacements]]
