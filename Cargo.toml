@@ -58,7 +58,7 @@ orchard = "0.3"
 rand_core = "0.6"
 tracing = "0.1"
 zcash_encoding = "0.2"
-zcash_note_encryption = "0.2"
+zcash_note_encryption = "0.3"
 zcash_primitives = { version = "0.9.1", features = ["transparent-inputs"] }
 
 [build-dependencies]
