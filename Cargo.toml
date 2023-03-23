@@ -74,7 +74,7 @@ bindgen = ">= 0.64.0"
 cc = { version = "1.0.73", features = ["parallel"] }
 # Treat minor versions with a zero major version as compatible (cargo doesn't by default).
 cxx-gen = ">= 0.7.74"
-syn = { version = "1.0.104", features = ["full", "printing"] }
+syn = { version = "2.0.8", features = ["full", "printing"] }
 
 [dev-dependencies]
 # These dependencies are shared with a lot of other Zebra dependencies.
