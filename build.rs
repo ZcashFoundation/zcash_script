@@ -123,9 +123,9 @@ fn main() -> Result<()> {
     language_std(&mut base_config, "c++17");
 
     base_config
-        .include("depend/zcash/src")
+        .include("depend/zcash/src/")
         .include("depend/zcash/src/rust/include/")
-        .include("depend/zcash/src/secp256k1/include")
+        .include("depend/zcash/src/secp256k1/include/")
         .include(&include_path)
         .flag_if_supported("-Wno-implicit-fallthrough")
         .flag_if_supported("-Wno-catch-value")
