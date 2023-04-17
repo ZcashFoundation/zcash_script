@@ -69,10 +69,10 @@ fn gen_cxxbridge() -> Result<()> {
     // These must match `CXXBRIDGE_RS` in depend/zcash/src/Makefile.am
     let filenames = [
         "blake2b",
-        "bundlecache",
+        "ed25519",
         "equihash",
-        "orchard_bundle",
-        "sapling",
+        "streams",
+        "bridge",
         "wallet_scanner",
     ];
 
@@ -101,7 +101,8 @@ fn gen_cxxbridge() -> Result<()> {
             path: "rust/cxx.h".to_string(),
             kind: cxx_gen::IncludeKind::Quoted,
         });
-        let output = cxx_gen::generate_header_and_cc(token_stream, &opt).unwrap();
+        let output = cxx_gen::generate_header_and_cc(token_stream, &opt)
+            .expect("invalid bridge file: try updating `filenames` to match zcashd");
 
         fs::write(out_path.join(format!("rust/{}.h", filename)), output.header).unwrap();
         fs::write(
