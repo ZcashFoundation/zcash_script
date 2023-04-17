@@ -15,7 +15,7 @@ jobs:
         rust:
           - stable
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v3
         with:
           submodules: true
       - uses: actions-rs/toolchain@v1
@@ -37,7 +37,7 @@ jobs:
           - stable
           - nightly
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v3
         with:
           submodules: true
       - uses: actions-rs/toolchain@v1
@@ -57,7 +57,7 @@ jobs:
           - stable
           - nightly
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v3
         with:
           submodules: true
       - uses: actions-rs/toolchain@v1
@@ -76,7 +76,7 @@ jobs:
         # "windows-latest" was removed; see https://github.com/ZcashFoundation/zcash_script/issues/38
         os: [ubuntu-latest, macOS-latest]
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v3
         with:
           submodules: true
       # - name: install LLVM on Linux
@@ -122,7 +122,7 @@ jobs:
         rust:
           - stable
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v3
         with:
           submodules: true
       - uses: actions-rs/toolchain@v1
@@ -143,7 +143,7 @@ jobs:
         rust:
           - stable
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v3
         with:
           submodules: true
       - uses: actions-rs/toolchain@v1
