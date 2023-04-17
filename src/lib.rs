@@ -3,13 +3,58 @@
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
+#![allow(unused_imports)]
+#![allow(unsafe_code)]
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
+// Include the items from depend/zcash/src/rust/src/rustzcash.rs (librustzcash/lib.rs)
+// that we need
+
+/// The code that uses this constant is not called by zcash_script.
+static mut SAPLING_SPEND_VK: Option<bellman::groth16::VerifyingKey<bls12_381::Bls12>> = None;
+/// The code that uses this constant is not called by zcash_script.
+static mut SAPLING_OUTPUT_VK: Option<bellman::groth16::VerifyingKey<bls12_381::Bls12>> = None;
+/// The code that uses this constant is not called by zcash_script.
+static mut SAPLING_SPEND_PARAMS: Option<bellman::groth16::Parameters<bls12_381::Bls12>> = None;
+/// The code that uses this constant is not called by zcash_script.
+static mut SAPLING_OUTPUT_PARAMS: Option<bellman::groth16::Parameters<bls12_381::Bls12>> = None;
+
+/// The code that uses this constant is not called by zcash_script.
+static mut ORCHARD_PK: Option<orchard::circuit::ProvingKey> = None;
+/// The code that uses this constant is not called by zcash_script.
 static mut ORCHARD_VK: Option<orchard::circuit::VerifyingKey> = None;
 
+/// Converts CtOption<t> into Option<T>
+fn de_ct<T>(ct: subtle::CtOption<T>) -> Option<T> {
+    if ct.is_some().into() {
+        Some(ct.unwrap())
+    } else {
+        None
+    }
+}
+
+/// The size of a Groth16 Sapling proof.
+const GROTH_PROOF_SIZE: usize = 48 // π_A
+    + 96 // π_B
+    + 48; // π_C
+
+// Include the modules from depend/zcash/src/rust (librustzcash) that we need
 mod blake2b;
+mod bridge;
 mod bundlecache;
+mod incremental_merkle_tree;
+mod merkle_frontier;
+mod note_encryption;
+mod orchard_bundle;
+mod params;
+mod sapling;
+mod streams;
+mod wallet;
+mod wallet_scanner;
+mod zcashd_orchard;
+
+mod builder_ffi;
 mod orchard_ffi;
 mod streams_ffi;
 mod transaction_ffi;
