@@ -101,8 +101,11 @@ fn gen_cxxbridge() -> Result<()> {
             path: "rust/cxx.h".to_string(),
             kind: cxx_gen::IncludeKind::Quoted,
         });
-        let output = cxx_gen::generate_header_and_cc(token_stream, &opt)
-            .expect("invalid bridge file: try updating `filenames` to match zcashd");
+        let output = cxx_gen::generate_header_and_cc(token_stream, &opt).unwrap_or_else(|err| {
+            panic!(
+                "invalid bridge file {filename}: {err}. Try updating `filenames` to match zcashd"
+            )
+        });
 
         fs::write(out_path.join(format!("rust/{}.h", filename)), output.header).unwrap();
         fs::write(
