@@ -67,14 +67,7 @@ fn gen_cxxbridge() -> Result<()> {
     let out_path = PathBuf::from(out_path).join("include");
 
     // These must match `CXXBRIDGE_RS` in depend/zcash/src/Makefile.am
-    let filenames = [
-        "blake2b",
-        "ed25519",
-        "equihash",
-        "streams",
-        "bridge",
-        "wallet_scanner",
-    ];
+    let filenames = ["blake2b", "ed25519", "equihash", "streams", "bridge"];
 
     // The output folder must exist
     fs::create_dir_all(out_path.join("rust")).unwrap();
