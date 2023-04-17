@@ -22,16 +22,17 @@ to include a lot of other stuff e.g. the orchard library.
 
 ### Updating this crate
 
-1. Update `depend/zcash` with the latest tagged version of `zcashd`
+1. Update `depend/zcash` with the latest tagged version of `zcashd`, using the instructions below
 2. Update `Cargo.toml` versions to match the versions used by the latest tagged version of `zcashd`, and its dependencies
 3. For dependencies that are shared with Zebra (but not `zcashd`), match the latest version in Zebra's [Cargo.lock](https://github.com/ZcashFoundation/zebra/blob/main/Cargo.lock):
     - use `cargo tree --invert <crate>` to see if the crate is from `zcash_script` or another dependency
     - see the list in [Cargo.toml](https://github.com/ZcashFoundation/zcash_script/blob/master/Cargo.toml#L69)
 4. For new dependencies with a leading zero in their version (`0.x.y`), use a `>=` dependency [to make them automatically upgrade to match Zebra's dependencies](https://doc.rust-lang.org/cargo/reference/resolver.html#semver-compatibility)
 5. Check all open PRs to see if they can be merged before the release
-6. Run `cargo-release` with `--no-publish` to commit any automatic changes
+6. Run `cargo release patch` to commit the release version bump (but not actually publish)
 7. Open a `zcash_script` PR with the changes, get it reviewed, and wait for CI to pass
-8. Publish a new release
+8. Publish a new release using `cargo release --execute patch`
+9. Check the release tag was pushed to https://github.com/ZcashFoundation/zcash_script/tags
 
 ### Updating `depend/zcash`
 
