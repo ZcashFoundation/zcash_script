@@ -180,7 +180,8 @@ fn build_secp256k1() {
 
     // Define configuration constants
     build
-        .define("SECP256K1_BUILD", "1")
+        // This matches the #define in depend/zcash/src/secp256k1/src/secp256k1.c
+        .define("SECP256K1_BUILD", "")
         .define("USE_NUM_NONE", "1")
         .define("USE_FIELD_INV_BUILTIN", "1")
         .define("USE_SCALAR_INV_BUILTIN", "1")
