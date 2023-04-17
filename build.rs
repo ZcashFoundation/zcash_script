@@ -1,3 +1,5 @@
+//! Build script for zcash_script.
+
 use std::{env, fmt, fs, io::Read, path::PathBuf};
 
 use syn::__private::ToTokens;
