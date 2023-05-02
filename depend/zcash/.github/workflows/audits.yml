@@ -1,0 +1,18 @@
+name: Audits
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  cargo-vet:
+    name: Vet Rust dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+        id: toolchain
+      - run: rustup override set ${{steps.toolchain.outputs.name}}
+      - run: cargo install cargo-vet --version ~0.6
+      - run: cargo vet --locked
