@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+## [0.1.12] - 2023-05-03
+
+### Changed
+- Update `depend/zcash` to version 5.5.0 which includes updated dependencies
+    - This includes additional `zcashd` C++ and Rust code, and its dependencies
+    - Fix code generation C++ header paths to avoid conflicts
+- Update other dependencies to match Zebra
+
+### Fixed
+- Improve error reporting in `build.rs`
+
 ## [0.1.11] - 2023-02-24
 
 ### Changed
