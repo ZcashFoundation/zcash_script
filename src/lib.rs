@@ -8,6 +8,7 @@
 #![allow(unsafe_code)]
 #![allow(unused_imports)]
 
+// Use the generated C++ bindings
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 // Include the items from depend/zcash/src/rust/src/rustzcash.rs (librustzcash/lib.rs)
