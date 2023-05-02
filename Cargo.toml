@@ -73,6 +73,10 @@ zcash_note_encryption = "0.3"
 zcash_primitives = { version = "0.11", features = ["temporary-zcashd", "transparent-inputs"] }
 zcash_proofs = "0.11"
 
+# This dependency makes `zcash_script` use the same C++ library as `zcashd`:
+# https://github.com/zcash/zcash/blob/master/doc/release-notes/release-notes-4.1.0.md#migration-to-clang-and-static-libc
+link-cplusplus = { version = "1.0", features = ["libc++"] }
+
 [build-dependencies]
 # The `bindgen` dependency should automatically upgrade to match the version used by zebra-state's `rocksdb` dependency in:
 # https://github.com/ZcashFoundation/zebra/blob/main/zebra-state/Cargo.toml

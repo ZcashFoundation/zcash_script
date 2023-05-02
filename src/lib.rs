@@ -8,6 +8,10 @@
 #![allow(unsafe_code)]
 #![allow(unused_imports)]
 
+/// This dependency makes `zcash_script` use the same C++ library as `zcashd`:
+/// https://github.com/zcash/zcash/blob/master/doc/release-notes/release-notes-4.1.0.md#migration-to-c
+extern crate link_cplusplus;
+
 // Use the generated C++ bindings
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 

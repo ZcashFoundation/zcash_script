@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Update other dependencies to match Zebra
 
 ### Fixed
+- Switch to using `clang`'s `libc++`, rather than `gcc`'s `libstdc++`, to [match `zcashd`'s behaviour](https://github.com/zcash/zcash/blob/master/doc/release-notes/release-notes-4.1.0.md#migration-to-clang-and-static-libc)
 - Improve error reporting in `build.rs`
 
 ## [0.1.11] - 2023-02-24
