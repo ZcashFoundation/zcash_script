@@ -20,7 +20,8 @@ def unspent_total(unspent):
 
 class WalletListUnspent(BitcoinTestFramework):
     def setup_nodes(self):
-        return start_nodes(4, self.options.tmpdir, [[
+        return start_nodes(4, self.options.tmpdir, extra_args=[[
+            '-minrelaytxfee=0',
             nuparams(NU5_BRANCH_ID, 201),
             '-allowdeprecated=getnewaddress',
         ]] * 4)
@@ -82,7 +83,7 @@ class WalletListUnspent(BitcoinTestFramework):
         opid = self.nodes[0].z_sendmany(
                 'ANY_TADDR',
                 [{'address': n1uaddr, 'amount': 2}],
-                1, 0, 'AllowRevealedSenders')
+                1, 0, 'AllowFullyTransparent')
         wait_and_assert_operationid_status(self.nodes[0], opid)
 
         self.nodes[0].generate(2)
@@ -92,7 +93,7 @@ class WalletListUnspent(BitcoinTestFramework):
         opid = self.nodes[0].z_sendmany(
                 'ANY_TADDR',
                 [{'address': n1uaddr, 'amount': 3}],
-                1, 0, 'AllowRevealedSenders')
+                1, 0, 'AllowFullyTransparent')
         wait_and_assert_operationid_status(self.nodes[0], opid)
 
         self.nodes[0].generate(2)

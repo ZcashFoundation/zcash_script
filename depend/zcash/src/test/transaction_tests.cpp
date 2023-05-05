@@ -35,8 +35,8 @@
 #include <boost/test/unit_test.hpp>
 #include <boost/test/data/test_case.hpp>
 
+#include <rust/bridge.h>
 #include <rust/ed25519.h>
-#include <rust/sapling.h>
 #include <rust/orchard.h>
 
 #include <univalue.h>
@@ -309,8 +309,7 @@ void test_simple_sapling_invalidity(uint32_t consensusBranchId, CMutableTransact
         CMutableTransaction newTx(tx);
         CValidationState state;
 
-        newTx.vShieldedSpend.push_back(SpendDescription());
-        newTx.vShieldedSpend[0].nullifier = InsecureRand256();
+        newTx.vShieldedSpend.push_back(RandomInvalidSpendDescription());
 
         BOOST_CHECK(!CheckTransactionWithoutProofVerification(newTx, state));
         BOOST_CHECK(state.GetRejectReason() == "bad-txns-no-sink-of-funds");
@@ -320,12 +319,11 @@ void test_simple_sapling_invalidity(uint32_t consensusBranchId, CMutableTransact
         CMutableTransaction newTx(tx);
         CValidationState state;
 
-        newTx.vShieldedSpend.push_back(SpendDescription());
-        newTx.vShieldedSpend[0].nullifier = InsecureRand256();
+        newTx.vShieldedSpend.push_back(RandomInvalidSpendDescription());
 
-        newTx.vShieldedOutput.push_back(OutputDescription());
+        newTx.vShieldedOutput.push_back(RandomInvalidOutputDescription());
 
-        newTx.vShieldedSpend.push_back(SpendDescription());
+        newTx.vShieldedSpend.push_back(RandomInvalidSpendDescription());
         newTx.vShieldedSpend[1].nullifier = newTx.vShieldedSpend[0].nullifier;
 
         BOOST_CHECK(!CheckTransactionWithoutProofVerification(newTx, state));
@@ -347,7 +345,7 @@ void test_simple_sapling_invalidity(uint32_t consensusBranchId, CMutableTransact
         vout.nValue = 1;
         newTx.vout.push_back(vout);
 
-        newTx.vShieldedSpend.push_back(SpendDescription());
+        newTx.vShieldedSpend.push_back(RandomInvalidSpendDescription());
 
         BOOST_CHECK(!CheckTransactionWithoutProofVerification(newTx, state));
         BOOST_CHECK(state.GetRejectReason() == "bad-cb-has-spend-description");
@@ -358,7 +356,7 @@ void test_simple_joinsplit_invalidity(uint32_t consensusBranchId, CMutableTransa
 {
     auto verifier = ProofVerifier::Strict();
     std::optional<rust::Box<sapling::BatchValidator>> saplingAuth = std::nullopt;
-    auto orchardAuth = orchard::AuthValidator::Disabled();
+    std::optional<rust::Box<orchard::BatchValidator>> orchardAuth = std::nullopt;
     {
         // Ensure that empty vin/vout remain invalid without
         // joinsplits.
@@ -367,8 +365,8 @@ void test_simple_joinsplit_invalidity(uint32_t consensusBranchId, CMutableTransa
         AssumeShieldedInputsExistAndAreSpendable baseView;
         CCoinsViewCache view(&baseView);
 
-        Ed25519SigningKey joinSplitPrivKey;
-        ed25519_generate_keypair(&joinSplitPrivKey, &newTx.joinSplitPubKey);
+        ed25519::SigningKey joinSplitPrivKey;
+        ed25519::generate_keypair(joinSplitPrivKey, newTx.joinSplitPubKey);
 
         // No joinsplits, vin and vout, means it should be invalid.
         BOOST_CHECK(!CheckTransactionWithoutProofVerification(newTx, state));
@@ -406,10 +404,10 @@ void test_simple_joinsplit_invalidity(uint32_t consensusBranchId, CMutableTransa
         CTransaction signTx(newTx);
         uint256 dataToBeSigned = SignatureHash(scriptCode, signTx, NOT_AN_INPUT, SIGHASH_ALL, 0, consensusBranchId, txdata);
 
-        assert(ed25519_sign(
-            &joinSplitPrivKey,
-            dataToBeSigned.begin(), 32,
-            &newTx.joinSplitSig));
+        ed25519::sign(
+            joinSplitPrivKey,
+            {dataToBeSigned.begin(), 32},
+            newTx.joinSplitSig);
 
         state = CValidationState();
         BOOST_CHECK(CheckTransactionWithoutProofVerification(newTx, state));
@@ -551,7 +549,7 @@ BOOST_DATA_TEST_CASE(test_Get, boost::unit_test::data::xrange(static_cast<int>(C
     uint32_t consensusBranchId = NetworkUpgradeInfo[sample].nBranchId;
 
     CBasicKeyStore keystore;
-    CCoinsView coinsDummy;
+    CCoinsViewDummy coinsDummy;
     CCoinsViewCache coins(&coinsDummy);
     std::vector<CMutableTransaction> dummyTransactions = SetupDummyInputs(keystore, coins);
 
@@ -675,7 +673,7 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
     LOCK(cs_main);
     auto chainparams = Params();
     CBasicKeyStore keystore;
-    CCoinsView coinsDummy;
+    CCoinsViewDummy coinsDummy;
     CCoinsViewCache coins(&coinsDummy);
     std::vector<CMutableTransaction> dummyTransactions = SetupDummyInputs(keystore, coins);
 
@@ -692,8 +690,9 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
     string reason;
     BOOST_CHECK(IsStandardTx(t, reason, chainparams));
 
-    // Check dust with default relay fee:
-    CAmount nDustThreshold = 182 * minRelayTxFee.GetFeePerK()/1000 * 3;
+    // Check dust threshold:
+    CFeeRate oneThirdDustThresholdRate{ONE_THIRD_DUST_THRESHOLD_RATE};
+    CAmount nDustThreshold = (34 + 148) * oneThirdDustThresholdRate.GetFeePerK()/1000 * 3;
     BOOST_CHECK_EQUAL(nDustThreshold, 54);
     // dust:
     t.vout[0].nValue = nDustThreshold - 1;
@@ -701,17 +700,6 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
     // not dust:
     t.vout[0].nValue = nDustThreshold;
     BOOST_CHECK(IsStandardTx(t, reason, chainparams));
-
-    // Check dust with odd relay fee to verify rounding:
-    // nDustThreshold = 182 * 1234 / 1000 * 3
-    minRelayTxFee = CFeeRate(1234);
-    // dust:
-    t.vout[0].nValue = 672 - 1;
-    BOOST_CHECK(!IsStandardTx(t, reason, chainparams));
-    // not dust:
-    t.vout[0].nValue = 672;
-    BOOST_CHECK(IsStandardTx(t, reason, chainparams));
-    minRelayTxFee = CFeeRate(DEFAULT_MIN_RELAY_TX_FEE);
 
     t.vout[0].scriptPubKey = CScript() << OP_1;
     BOOST_CHECK(!IsStandardTx(t, reason, chainparams));
@@ -769,7 +757,7 @@ BOOST_AUTO_TEST_CASE(test_IsStandardV2)
     LOCK(cs_main);
     auto chainparams = Params();
     CBasicKeyStore keystore;
-    CCoinsView coinsDummy;
+    CCoinsViewDummy coinsDummy;
     CCoinsViewCache coins(&coinsDummy);
     std::vector<CMutableTransaction> dummyTransactions = SetupDummyInputs(keystore, coins);
 

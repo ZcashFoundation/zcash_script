@@ -457,7 +457,7 @@ void TransactionBuilder::SendChangeTo(
     saplingChangeAddr = std::nullopt;
     sproutChangeAddr = std::nullopt;
 
-    std::visit(match {
+    examine(changeAddr, match {
         [&](const CKeyID& keyId) {
             tChangeAddr = keyId;
         },
@@ -470,7 +470,7 @@ void TransactionBuilder::SendChangeTo(
         [&](const libzcash::OrchardRawAddress& changeDest) {
             orchardChangeAddr = std::make_pair(ovk, changeDest);
         }
-    }, changeAddr);
+    });
 }
 
 void TransactionBuilder::SendChangeToSprout(const libzcash::SproutPaymentAddress& zaddr) {
@@ -501,7 +501,8 @@ TransactionBuilderResult TransactionBuilder::Build()
         change -= tOut.nValue;
     }
     if (change < 0) {
-        return TransactionBuilderResult("Change cannot be negative");
+        return TransactionBuilderResult(
+                strprintf("Change cannot be negative: %s", DisplayMoney(change)));
     }
 
     //
@@ -617,8 +618,8 @@ TransactionBuilderResult TransactionBuilder::Build()
     // Sprout JoinSplits
     //
 
-    Ed25519SigningKey joinSplitPrivKey;
-    ed25519_generate_keypair(&joinSplitPrivKey, &mtx.joinSplitPubKey);
+    ed25519::SigningKey joinSplitPrivKey;
+    ed25519::generate_keypair(joinSplitPrivKey, mtx.joinSplitPubKey);
 
     // Create Sprout JSDescriptions
     if (!jsInputs.empty() || !jsOutputs.empty()) {
@@ -676,19 +677,16 @@ TransactionBuilderResult TransactionBuilder::Build()
         mtx.bindingSig);
 
     // Create Sprout joinSplitSig
-    if (!ed25519_sign(
-        &joinSplitPrivKey,
-        dataToBeSigned.begin(), 32,
-        &mtx.joinSplitSig))
-    {
-        return TransactionBuilderResult("Failed to create Sprout joinSplitSig");
-    }
+    ed25519::sign(
+        joinSplitPrivKey,
+        {dataToBeSigned.begin(), 32},
+        mtx.joinSplitSig);
 
     // Sanity check Sprout joinSplitSig
-    if (!ed25519_verify(
-        &mtx.joinSplitPubKey,
-        &mtx.joinSplitSig,
-        dataToBeSigned.begin(), 32))
+    if (!ed25519::verify(
+        mtx.joinSplitPubKey,
+        mtx.joinSplitSig,
+        {dataToBeSigned.begin(), 32}))
     {
         return TransactionBuilderResult("Sprout joinSplitSig sanity check failed");
     }

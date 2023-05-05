@@ -241,8 +241,7 @@ TEST(TransactionBuilder, TransparentToOrchard)
     libzcash::diversifier_index_t j(0);
     auto recipient = ivk.Address(j);
 
-    TransactionBuilderCoinsViewDB fakeDB;
-    auto orchardAnchor = fakeDB.GetBestAnchor(ShieldedType::ORCHARD);
+    auto orchardAnchor = uint256();
 
     // Create a shielding transaction from transparent to Orchard
     // 0.00005 t-ZEC in, 0.00004 z-ZEC out, default fee
@@ -318,18 +317,18 @@ TEST(TransactionBuilder, FailsWithNegativeChange)
     // 0.00005 z-ZEC out, default fee
     auto builder = TransactionBuilder(consensusParams, 1, std::nullopt);
     builder.AddSaplingOutput(fvk.ovk, pa, 5000, {});
-    EXPECT_EQ("Change cannot be negative", builder.Build().GetError());
+    EXPECT_EQ("Change cannot be negative: -0.00006 ZEC", builder.Build().GetError());
 
     // Fail if there is only a transparent output
     // 0.00005 t-ZEC out, default fee
     builder = TransactionBuilder(consensusParams, 1, std::nullopt, &keystore);
     builder.AddTransparentOutput(taddr, 5000);
-    EXPECT_EQ("Change cannot be negative", builder.Build().GetError());
+    EXPECT_EQ("Change cannot be negative: -0.00006 ZEC", builder.Build().GetError());
 
     // Fails if there is insufficient input
     // 0.00005 t-ZEC out, default fee, 0.00005999 z-ZEC in
     builder.AddSaplingSpend(expsk, testNote.note, testNote.tree.root(), testNote.tree.witness());
-    EXPECT_EQ("Change cannot be negative", builder.Build().GetError());
+    EXPECT_EQ("Change cannot be negative: -0.00000001 ZEC", builder.Build().GetError());
 
     // Succeeds if there is sufficient input
     builder.AddTransparentInput(COutPoint(), scriptPubKey, 1);

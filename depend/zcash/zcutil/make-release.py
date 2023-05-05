@@ -9,6 +9,7 @@ import subprocess
 import traceback
 import unittest
 import random
+from datetime import date, datetime, timedelta, timezone
 from io import StringIO
 from functools import wraps
 
@@ -107,6 +108,9 @@ def main_logged(revision, release, releaseprev, releasefrom, releaseheight, hotf
             release.novtext,
         ),
     )
+
+    update_book(release, releaseheight)
+    commit('Updated book for {}.'.format(release.novtext))
 
 
 def phase(message):
@@ -333,6 +337,11 @@ def update_debian_changelog(release):
     )
 
 
+@phase('Updating book.')
+def update_book(release, releaseheight):
+    patch_book_release_support(release, releaseheight)
+
+
 # Helper code:
 def commit(message):
     logging.info('Committing: %r', message)
@@ -385,6 +394,60 @@ def patch_gitian_linux_yml(release, releaseprev, path):
         ), repr(secondline)
 
         outf.write('name: "zcash-{}"\n'.format(release.novtext))
+        outf.write(inf.read())
+
+
+def patch_book_release_support(release, releaseheight):
+    with PathPatcher('doc/book/src/user/release-support.md') as (inf, outf):
+        # Find the start marker.
+        cur_line = inf.readline()
+        while not 'RELEASE_SCRIPT_START_MARKER' in cur_line:
+            outf.write(cur_line)
+            cur_line = inf.readline()
+        outf.write(cur_line)
+
+        # The next two lines are the table heading.
+        for _ in range(2):
+            outf.write(inf.readline())
+
+        # The remaining lines before the end marker are table rows.
+        table_rows = []
+        cur_line = inf.readline()
+        while not 'RELEASE_SCRIPT_END_MARKER' in cur_line:
+            [row_ver, row_released, row_halt, row_eos] = cur_line.strip('| \n').split(' | ')
+            row_released = date.fromisoformat(row_released)
+            row_eos = date.fromisoformat(row_eos)
+            table_rows.append((row_ver, row_released, int(row_halt), row_eos))
+            cur_line = inf.readline()
+
+        # Prune rows for releases that have reached EoS.
+        today = datetime.now(timezone.utc).date()
+        table_rows = [row for row in table_rows if row[3] >= today]
+
+        # Add a row for this release.
+        with open('src/deprecation.h', 'r', encoding='utf8') as f:
+            weeks_prefix = 'RELEASE_TO_DEPRECATION_WEEKS = '
+            halt_prefix = 'DEPRECATION_HEIGHT = '
+            for line in f:
+                if weeks_prefix in line:
+                    weeks_to_eos = int(line.split(weeks_prefix)[1].split(';')[0])
+                if halt_prefix in line:
+                    val = line.split(halt_prefix)[1].split(';')[0]
+                    if val == 'APPROX_RELEASE_HEIGHT + ACTIVATION_TO_DEPRECATION_BLOCKS':
+                        halt_height = None
+                    else:
+                        halt_height = int(val)
+        if halt_height is None:
+            halt_height = releaseheight + (weeks_to_eos * 7 * 24 * 48)
+        eos_date = today + timedelta(weeks=weeks_to_eos)
+        table_rows.append((release.novtext, today, halt_height, eos_date))
+
+        # Write out the updated table rows.
+        for row in table_rows:
+            outf.write('| %s | %s | %s | %s |\n' % row)
+
+        # Write out the end marker and the rest of the page.
+        outf.write(cur_line)
         outf.write(inf.read())
 
 

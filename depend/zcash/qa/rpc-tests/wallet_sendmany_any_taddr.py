@@ -19,13 +19,13 @@ TX_EXPIRING_SOON_THRESHOLD = 3
 # Test ANY_TADDR special string in z_sendmany
 class WalletSendManyAnyTaddr(BitcoinTestFramework):
     def setup_nodes(self):
-        return start_nodes(self.num_nodes, self.options.tmpdir,
-            [[
-                "-txexpirydelta=%d" % TX_EXPIRY_DELTA,
-                "-allowdeprecated=getnewaddress",
-                "-allowdeprecated=z_getnewaddress",
-                "-allowdeprecated=z_getbalance",
-            ]] * self.num_nodes)
+        return start_nodes(self.num_nodes, self.options.tmpdir, extra_args=[[
+            '-minrelaytxfee=0',
+            '-txexpirydelta=%d' % TX_EXPIRY_DELTA,
+            '-allowdeprecated=getnewaddress',
+            '-allowdeprecated=z_getnewaddress',
+            '-allowdeprecated=z_getbalance',
+        ]] * self.num_nodes)
 
     def run_test(self):
         # Sanity-check the test harness
@@ -77,7 +77,7 @@ class WalletSendManyAnyTaddr(BitcoinTestFramework):
             self.nodes[3].z_sendmany(
                 'ANY_TADDR',
                 [{'address': recipient, 'amount': 100}],
-                1, DEFAULT_FEE, 'AllowRevealedSenders'),
+                1, DEFAULT_FEE, 'AllowFullyTransparent'),
         )
 
         self.sync_all()
@@ -97,7 +97,7 @@ class WalletSendManyAnyTaddr(BitcoinTestFramework):
             self.nodes[3].z_sendmany(
                 'ANY_TADDR',
                 [{'address': recipient, 'amount': 20}],
-                1, DEFAULT_FEE, 'AllowRevealedSenders'),
+                1, DEFAULT_FEE, 'AllowFullyTransparent'),
         )
 
         self.sync_all()
@@ -112,7 +112,7 @@ class WalletSendManyAnyTaddr(BitcoinTestFramework):
             'ANY_TADDR',
             [{'address': recipient, 'amount': 20}],
             1, DEFAULT_FEE, 'AllowRevealedSenders')
-        wait_and_assert_operationid_status(self.nodes[3], myopid, "failed", "Insufficient funds: have 14.99998, need 20.00001; note that coinbase outputs will not be selected if you specify ANY_TADDR or if any transparent recipients are included.")
+        wait_and_assert_operationid_status(self.nodes[3], myopid, "failed", "Insufficient funds: have 14.99998, need 20.00001; note that coinbase outputs will not be selected if you specify ANY_TADDR, any transparent recipients are included, or if the `privacyPolicy` parameter is not set to `AllowRevealedSenders` or weaker.")
 
         # Create an expired transaction on node 3.
         self.split_network()
@@ -144,7 +144,7 @@ class WalletSendManyAnyTaddr(BitcoinTestFramework):
                 'ANY_TADDR',
                 [{'address': recipient, 'amount': 13}],
                 1, DEFAULT_FEE, 'AllowRevealedSenders'),
-            "failed", "Insufficient funds: have 0.00, need 13.00001; note that coinbase outputs will not be selected if you specify ANY_TADDR or if any transparent recipients are included.")
+            "failed", "Insufficient funds: have 0.00, need 13.00001; note that coinbase outputs will not be selected if you specify ANY_TADDR, any transparent recipients are included, or if the `privacyPolicy` parameter is not set to `AllowRevealedSenders` or weaker.")
 
 if __name__ == '__main__':
     WalletSendManyAnyTaddr().main()

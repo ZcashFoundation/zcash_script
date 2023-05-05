@@ -1,8 +1,8 @@
 package=native_zstd
-$(package)_version=1.5.2
+$(package)_version=1.5.5
 $(package)_download_path=https://github.com/facebook/zstd/releases/download/v$($(package)_version)
 $(package)_file_name=zstd-$($(package)_version).tar.gz
-$(package)_sha256_hash=7c42d56fac126929a6a85dbc73ff1db2411d04f104fae9bdea51305663a83fd0
+$(package)_sha256_hash=9c4396cc829cfae319a6e2615202e82aad41372073482fce286fac78646d3ee4
 $(package)_build_subdir=build/cmake
 $(package)_dependencies=native_cmake
 

@@ -34,7 +34,7 @@
 
 #include "librustzcash.h"
 
-#include <rust/bundlecache.h>
+#include <rust/bridge.h>
 
 const std::function<std::string(const char*)> G_TRANSLATION_FUN = nullptr;
 
@@ -174,7 +174,7 @@ TestChain100Setup::CreateAndProcessBlock(const std::vector<CMutableTransaction>&
     boost::shared_ptr<CReserveScript> mAddr(new CReserveScript());
     mAddr->reserveScript = scriptPubKey;
 
-    CBlockTemplate *pblocktemplate = CreateNewBlock(chainparams, mAddr);
+    CBlockTemplate *pblocktemplate = BlockAssembler(chainparams).CreateNewBlock(mAddr);
     CBlock& block = pblocktemplate->block;
 
     // Replace mempool-selected txns with just coinbase plus passed-in txns:
@@ -231,7 +231,7 @@ CTxMemPoolEntry TestMemPoolEntryHelper::FromTx(CMutableTransaction &tx, CTxMemPo
     CTransaction txn(tx);
     bool hasNoDependencies = pool ? pool->HasNoInputsOf(tx) : hadNoDependencies;
 
-    return CTxMemPoolEntry(txn, nFee, nTime, dPriority, nHeight,
+    return CTxMemPoolEntry(txn, nFee, nTime, nHeight,
                            hasNoDependencies, spendsCoinbase, sigOpCount, nBranchId);
 }
 

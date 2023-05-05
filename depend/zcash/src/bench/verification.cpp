@@ -15,8 +15,8 @@
 #include "version.h"
 
 #include "librustzcash.h"
+#include <rust/bridge.h>
 #include <rust/ed25519.h>
-#include <rust/sapling.h>
 
 static void ECDSA(benchmark::State& state)
 {
@@ -80,20 +80,20 @@ static void ECDSA(benchmark::State& state)
 
 static void JoinSplitSig(benchmark::State& state)
 {
-    Ed25519VerificationKey joinSplitPubKey;
-    Ed25519SigningKey joinSplitPrivKey;
+    ed25519::VerificationKey joinSplitPubKey;
+    ed25519::SigningKey joinSplitPrivKey;
     uint256 dataToBeSigned;
-    Ed25519Signature joinSplitSig;
+    ed25519::Signature joinSplitSig;
 
-    ed25519_generate_keypair(&joinSplitPrivKey, &joinSplitPubKey);
-    ed25519_sign(&joinSplitPrivKey, dataToBeSigned.begin(), 32, &joinSplitSig);
+    ed25519::generate_keypair(joinSplitPrivKey, joinSplitPubKey);
+    ed25519::sign(joinSplitPrivKey, {dataToBeSigned.begin(), 32}, joinSplitSig);
 
     while (state.KeepRunning()) {
         // Declared with warn_unused_result.
-        auto res = ed25519_verify(
-            &joinSplitPubKey,
-            &joinSplitSig,
-            dataToBeSigned.begin(), 32);
+        auto res = ed25519::verify(
+            joinSplitPubKey,
+            joinSplitSig,
+            {dataToBeSigned.begin(), 32});
     }
 }
 

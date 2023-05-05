@@ -43,7 +43,7 @@
 #include <utility>
 #include <vector>
 
-#include <rust/sapling.h>
+#include <rust/bridge.h>
 #include <rust/orchard.h>
 
 #include <boost/unordered_map.hpp>
@@ -68,14 +68,16 @@ static const unsigned int MAX_REORG_LENGTH = COINBASE_MATURITY - 1;
 static const bool DEFAULT_WHITELISTRELAY = true;
 /** Default for DEFAULT_WHITELISTFORCERELAY. */
 static const bool DEFAULT_WHITELISTFORCERELAY = true;
-/** Default for -minrelaytxfee, minimum relay fee for transactions in zatoshis/kB */
+/** Default for -minrelaytxfee, minimum relay fee rate for transactions in zatoshis per 1000 bytes. TODO(misnamed, this is a rate) */
 static const unsigned int DEFAULT_MIN_RELAY_TX_FEE = 100;
-//! -maxtxfee default
+/** Default for -maxtxfee in zatoshis. */
 static const CAmount DEFAULT_TRANSACTION_MAXFEE = 0.1 * COIN;
-//! Discourage users to set fees higher than this amount (in satoshis) per kB
+/** Discourage users from setting fee rates higher than this in zatoshis per 1000 bytes. */
 static const CAmount HIGH_TX_FEE_PER_KB = 0.01 * COIN;
-//! -maxtxfee will warn if called with a higher fee than this amount (in satoshis)
+/** Warn if -maxtxfee is set to a fee higher than this in zatoshis. */
 static const CAmount HIGH_MAX_TX_FEE = 100 * HIGH_TX_FEE_PER_KB;
+//! -maxtxfee will error if called with a fee that won’t allow tx to have this many actions
+static const unsigned int LOW_LOGICAL_ACTIONS = 10;
 /** Default for -maxorphantx, maximum number of orphan transactions kept in memory */
 static const unsigned int DEFAULT_MAX_ORPHAN_TRANSACTIONS = 100;
 /** Default for -limitancestorcount, max number of in-mempool ancestors */
@@ -135,8 +137,6 @@ static const unsigned int INVENTORY_BROADCAST_INTERVAL = 5;
  *  Limits the impact of low-fee transaction floods. */
 static const unsigned int INVENTORY_BROADCAST_MAX = 7 * INVENTORY_BROADCAST_INTERVAL;
 
-static const unsigned int DEFAULT_LIMITFREERELAY = 15;
-static const bool DEFAULT_RELAYPRIORITY = false;
 static const int64_t DEFAULT_MAX_TIP_AGE = 24 * 60 * 60;
 
 /** Default for -permitbaremultisig */
@@ -210,9 +210,9 @@ extern bool fIBDSkipTxVerification;
 // it is unneeded for testing
 extern bool fCoinbaseEnforcedShieldingEnabled;
 extern size_t nCoinCacheUsage;
-/** A fee rate smaller than this is considered zero fee (for relaying, mining and transaction creation) */
+/** Transactions must have at least this fee rate (in zatoshis per 1000 bytes) for relaying, mining and transaction creation. */
 extern CFeeRate minRelayTxFee;
-/** Absolute maximum transaction fee (in satoshis) used by wallet and mempool (rejects high fee in sendrawtransaction) */
+/** Absolute maximum transaction fee (in zatoshis) used by wallet and mempool (rejects high fee in sendrawtransaction). */
 extern CAmount maxTxFee;
 extern bool fAlerts;
 /** If the tip is older than this (in seconds), the node is considered to be in initial block download. */
@@ -332,7 +332,7 @@ void FindFilesToPrune(std::set<int>& setFilesToPrune, uint64_t nPruneAfterHeight
 void UnlinkPrunedFiles(std::set<int>& setFilesToPrune);
 
 /** Create a new block index entry for a given block hash */
-CBlockIndex * InsertBlockIndex(uint256 hash);
+CBlockIndex * InsertBlockIndex(const uint256& hash);
 /** Get statistics from node state */
 bool GetNodeStateStats(NodeId nodeid, CNodeStateStats &stats);
 /** Increase a node's misbehavior score. */
@@ -358,9 +358,6 @@ struct CNodeStateStats {
     std::vector<int> vHeightInFlight;
 };
 
-
-
-CAmount GetMinRelayFee(const CTransaction& tx, unsigned int nBytes, bool fAllowFree);
 
 /**
  * Count ECDSA signature operations the old-fashioned (pre-0.6) way
@@ -414,7 +411,7 @@ bool ContextualCheckShieldedInputs(
         CValidationState &state,
         const CCoinsViewCache &view,
         std::optional<rust::Box<sapling::BatchValidator>>& saplingAuth,
-        std::optional<orchard::AuthValidator>& orchardAuth,
+        std::optional<rust::Box<orchard::BatchValidator>>& orchardAuth,
         const Consensus::Params& consensus,
         uint32_t consensusBranchId,
         bool nu5Active,

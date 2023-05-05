@@ -35,8 +35,8 @@
 #include "zcash/Note.hpp"
 #include "librustzcash.h"
 
-#include <rust/ed25519/types.h>
-#include <rust/sapling.h>
+#include <rust/bridge.h>
+#include <rust/ed25519.h>
 
 using namespace libzcash;
 // This method is based on Shutdown from init.cpp
@@ -98,7 +98,7 @@ double benchmark_sleep()
 
 double benchmark_create_joinsplit()
 {
-    Ed25519VerificationKey joinSplitPubKey;
+    ed25519::VerificationKey joinSplitPubKey;
 
     /* Get the anchor of an empty commitment tree. */
     uint256 anchor = SproutMerkleTree().root();
@@ -145,7 +145,7 @@ double benchmark_verify_joinsplit(const JSDescription &joinsplit)
 {
     struct timeval tv_start;
     timer_start(tv_start);
-    Ed25519VerificationKey joinSplitPubKey;
+    ed25519::VerificationKey joinSplitPubKey;
     auto verifier = ProofVerifier::Strict();
     verifier.VerifySprout(joinsplit, joinSplitPubKey);
     return timer_stop(tv_start);
@@ -310,7 +310,7 @@ double benchmark_try_decrypt_sapling_notes(size_t nKeys)
 
     struct timeval tv_start;
     timer_start(tv_start);
-    auto noteDataMapAndAddressesToAdd = wallet.FindMySaplingNotes(Params().GetConsensus(), tx, 1);
+    auto noteDataMapAndAddressesToAdd = wallet.FindMySaplingNotes(Params(), tx, 1);
     assert(noteDataMapAndAddressesToAdd.first.empty());
     return timer_stop(tv_start);
 }
@@ -458,6 +458,7 @@ public:
         OrchardMerkleFrontier emptyOrchardTree;
         orchardTrees.push_back(emptyOrchardTree);
     }
+    ~FakeCoinsViewDB() {}
 
     void SetSaplingTrees(std::vector<std::string> trees) {
         saplingTrees.clear();
@@ -545,6 +546,10 @@ public:
                 throw new std::runtime_error("Unknown shielded type");
         }
     }
+
+    HistoryIndex GetHistoryLength(uint32_t epochId) const { return 0; }
+    HistoryNode GetHistoryAt(uint32_t epochId, HistoryIndex index) const { return HistoryNode(); }
+    uint256 GetHistoryRoot(uint32_t epochId) const { return uint256(); }
 
     bool BatchWrite(CCoinsMap &mapCoins,
                     const uint256 &hashBlock,

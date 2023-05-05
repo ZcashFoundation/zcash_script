@@ -27,6 +27,7 @@
 #include "policy/policy.h"
 #include "pow.h"
 #include "reverse_iterator.h"
+#include "time.h"
 #include "txmempool.h"
 #include "ui_interface.h"
 #include "undo.h"
@@ -37,6 +38,7 @@
 #include "wallet/asyncrpcoperation_shieldcoinbase.h"
 #include "warnings.h"
 
+#include <algorithm>
 #include <atomic>
 #include <sstream>
 #include <variant>
@@ -979,6 +981,37 @@ bool ContextualCheckTransaction(
             // https://zips.z.cash/zip-0213#specification
             uint256 ovk;
             for (const OutputDescription &output : tx.vShieldedOutput) {
+              bool zip_212_enabled;
+              libzcash::SaplingPaymentAddress zaddr;
+              CAmount value;
+
+              // EoS height for 5.3.3 and 5.4.2 is 2121024 (mainnet).
+              // On testnet this height will be in the past, as of the 5.5.0 release.
+              if (nHeight >= 2121200) {
+                try {
+                    auto decrypted = wallet::try_sapling_output_recovery(
+                        *chainparams.RustNetwork(),
+                        nHeight,
+                        ovk.GetRawBytes(),
+                        {
+                            output.cv.GetRawBytes(),
+                            output.cmu.GetRawBytes(),
+                            output.ephemeralKey.GetRawBytes(),
+                            output.encCiphertext,
+                            output.outCiphertext,
+                        });
+                    zip_212_enabled = decrypted->zip_212_enabled();
+
+                    libzcash::SaplingNotePlaintext notePt;
+                    std::tie(notePt, zaddr) = SaplingNotePlaintext::from_rust(std::move(decrypted));
+                    value = notePt.value();
+                } catch (const rust::Error &e) {
+                    return state.DoS(
+                        DOS_LEVEL_BLOCK,
+                        error("ContextualCheckTransaction(): failed to recover plaintext of coinbase output description"),
+                        REJECT_INVALID, "bad-cb-output-desc-invalid-outct");
+                }
+              } else {
                 auto outPlaintext = SaplingOutgoingPlaintext::decrypt(
                     output.outCiphertext, ovk, output.cv, output.cmu, output.ephemeralKey);
                 if (!outPlaintext) {
@@ -1005,12 +1038,20 @@ bool ContextualCheckTransaction(
                         REJECT_INVALID, "bad-cb-output-desc-invalid-encct");
                 }
 
+                auto leadByte = encPlaintext->get_leadbyte();
+                assert(leadByte == 0x01 || leadByte == 0x02);
+                zip_212_enabled = (leadByte == 0x02);
+
+                zaddr = libzcash::SaplingPaymentAddress(encPlaintext->d, outPlaintext->pk_d);
+                value = encPlaintext->value();
+              }
+
+              {
                 // ZIP 207: detect shielded funding stream elements
                 if (canopyActive) {
-                    libzcash::SaplingPaymentAddress zaddr(encPlaintext->d, outPlaintext->pk_d);
                     for (auto it = fundingStreamElements.begin(); it != fundingStreamElements.end(); ++it) {
                         const libzcash::SaplingPaymentAddress* streamAddr = std::get_if<libzcash::SaplingPaymentAddress>(&(it->first));
-                        if (streamAddr && zaddr == *streamAddr && encPlaintext->value() == it->second) {
+                        if (streamAddr && zaddr == *streamAddr && value == it->second) {
                             fundingStreamElements.erase(it);
                             break;
                         }
@@ -1022,15 +1063,14 @@ bool ContextualCheckTransaction(
                 // to 0x02. This applies even during the grace period, and also applies to
                 // funding stream outputs sent to shielded payment addresses, if any.
                 // https://zips.z.cash/zip-0212#consensus-rule-change-for-coinbase-transactions
-                auto leadByte = encPlaintext->get_leadbyte();
-                assert(leadByte == 0x01 || leadByte == 0x02);
-                if (canopyActive != (leadByte == 0x02)) {
+                if (canopyActive != zip_212_enabled) {
                     return state.DoS(
                         DOS_LEVEL_BLOCK,
                         error("ContextualCheckTransaction(): coinbase output description has invalid note plaintext version"),
                         REJECT_INVALID,
                         "bad-cb-output-desc-invalid-note-plaintext-version");
                 }
+              }
             }
         }
     } else {
@@ -1246,7 +1286,7 @@ bool ContextualCheckShieldedInputs(
         CValidationState &state,
         const CCoinsViewCache &view,
         std::optional<rust::Box<sapling::BatchValidator>>& saplingAuth,
-        std::optional<orchard::AuthValidator>& orchardAuth,
+        std::optional<rust::Box<orchard::BatchValidator>>& orchardAuth,
         const Consensus::Params& consensus,
         uint32_t consensusBranchId,
         bool nu5Active,
@@ -1293,15 +1333,15 @@ bool ContextualCheckShieldedInputs(
 
     if (!tx.vJoinSplit.empty())
     {
-        if (!ed25519_verify(&tx.joinSplitPubKey, &tx.joinSplitSig, dataToBeSigned.begin(), 32)) {
+        if (!ed25519::verify(tx.joinSplitPubKey, tx.joinSplitSig, {dataToBeSigned.begin(), 32})) {
             // Check whether the failure was caused by an outdated consensus
             // branch ID; if so, inform the node that they need to upgrade. We
             // only check the previous epoch's branch ID, on the assumption that
             // users creating transactions will notice their transactions
             // failing before a second network upgrade occurs.
-            if (ed25519_verify(&tx.joinSplitPubKey,
-                               &tx.joinSplitSig,
-                               prevDataToBeSigned.begin(), 32)) {
+            if (ed25519::verify(tx.joinSplitPubKey,
+                                tx.joinSplitSig,
+                                {prevDataToBeSigned.begin(), 32})) {
                 return state.DoS(
                     dosLevelPotentiallyRelaxing, false, REJECT_INVALID, strprintf(
                         "old-consensus-branch-id (Expected %s, found %s)",
@@ -1371,7 +1411,7 @@ bool ContextualCheckShieldedInputs(
 
     // Queue Orchard bundle to be batch-validated.
     if (orchardAuth.has_value()) {
-        tx.GetOrchardBundle().QueueAuthValidation(orchardAuth.value(), dataToBeSigned);
+        tx.GetOrchardBundle().QueueAuthValidation(*orchardAuth.value(), dataToBeSigned);
     }
 
     return true;
@@ -1732,32 +1772,6 @@ bool CheckTransactionWithoutProofVerification(const CTransaction& tx, CValidatio
     return true;
 }
 
-CAmount GetMinRelayFee(const CTransaction& tx, const CTxMemPool& pool, unsigned int nBytes, bool fAllowFree)
-{
-    uint256 hash = tx.GetHash();
-    double dPriorityDelta = 0;
-    CAmount nFeeDelta = 0;
-    pool.ApplyDeltas(hash, dPriorityDelta, nFeeDelta);
-    if (dPriorityDelta > 0 || nFeeDelta > 0)
-        return 0;
-
-    CAmount nMinFee = ::minRelayTxFee.GetFeeForRelay(nBytes);
-
-    if (fAllowFree)
-    {
-        // There is a free transaction area in blocks created by most miners,
-        // * If we are relaying we allow transactions up to DEFAULT_BLOCK_PRIORITY_SIZE - 1000
-        //   to be considered to fall into this category. We don't want to encourage sending
-        //   multiple transactions instead of one big transaction to avoid fees.
-        if (nBytes < (DEFAULT_BLOCK_PRIORITY_SIZE - 1000))
-            nMinFee = 0;
-    }
-
-    if (!MoneyRange(nMinFee))
-        nMinFee = MAX_MONEY;
-    return nMinFee;
-}
-
 /** Convert CValidationState to a human-readable message for logging */
 std::string FormatStateMessage(const CValidationState &state)
 {
@@ -1842,7 +1856,7 @@ bool AcceptToMemoryPool(
     }
 
     {
-        CCoinsView dummy;
+        CCoinsViewDummy dummy;
         CCoinsViewCache view(&dummy);
 
         CAmount nValueIn = 0;
@@ -1900,7 +1914,9 @@ bool AcceptToMemoryPool(
 
         CAmount nValueOut = tx.GetValueOut();
         CAmount nFees = nValueIn-nValueOut;
-        double dPriority = view.GetPriority(tx, chainActive.Height());
+        // nModifiedFees includes any fee deltas from PrioritiseTransaction
+        CAmount nModifiedFees = nFees;
+        pool.ApplyDelta(hash, nModifiedFees);
 
         // Keep track of transactions that spend a coinbase, which we re-scan
         // during reorgs to ensure COINBASE_MATURITY is still met.
@@ -1916,46 +1932,20 @@ bool AcceptToMemoryPool(
         // For v1-v4 transactions, we don't yet know if the transaction commits
         // to consensusBranchId, but if the entry gets added to the mempool, then
         // it has passed ContextualCheckInputs and therefore this is correct.
-        CTxMemPoolEntry entry(tx, nFees, GetTime(), dPriority, chainActive.Height(), pool.HasNoInputsOf(tx), fSpendsCoinbase, nSigOps, consensusBranchId);
+        CTxMemPoolEntry entry(tx, nFees, GetTime(), chainActive.Height(), pool.HasNoInputsOf(tx), fSpendsCoinbase, nSigOps, consensusBranchId);
         unsigned int nSize = entry.GetTxSize();
 
-        // Before zcashd 4.2.0, we had a condition here to always accept a tx if it contained
-        // JoinSplits and had at least the default fee. It is no longer necessary to treat
-        // that as a special case, because the fee returned by GetMinRelayFee is always at
-        // most DEFAULT_FEE.
-
-        CAmount txMinFee = GetMinRelayFee(tx, pool, nSize, true);
-        if (fLimitFree && nFees < txMinFee) {
-            return state.DoS(0, false, REJECT_INSUFFICIENTFEE, "insufficient fee", false,
-                strprintf("%d < %d", nFees, txMinFee));
-        }
-
-        // Require that free transactions have sufficient priority to be mined in the next block.
-        if (GetBoolArg("-relaypriority", DEFAULT_RELAYPRIORITY) && nFees < ::minRelayTxFee.GetFeeForRelay(nSize) && !AllowFree(view.GetPriority(tx, chainActive.Height() + 1))) {
-            return state.DoS(0, false, REJECT_INSUFFICIENTFEE, "insufficient priority");
-        }
-
-        // Continuously rate-limit free (really, very-low-fee) transactions
-        // This mitigates 'penny-flooding' -- sending thousands of free transactions just to
-        // be annoying or make others' transactions take longer to confirm.
-        if (fLimitFree && nFees < ::minRelayTxFee.GetFeeForRelay(nSize))
-        {
-            static CCriticalSection csFreeLimiter;
-            static double dFreeCount;
-            static int64_t nLastTime;
-            int64_t nNow = GetTime();
-
-            LOCK(csFreeLimiter);
-
-            // Use an exponentially decaying ~10-minute window:
-            dFreeCount *= pow(1.0 - 1.0/600.0, (double)(nNow - nLastTime));
-            nLastTime = nNow;
-            // -limitfreerelay unit is thousand-bytes-per-minute
-            // At default rate it would take over a month to fill 1GB
-            if (dFreeCount >= GetArg("-limitfreerelay", DEFAULT_LIMITFREERELAY) * 10 * 1000)
-                return state.DoS(0, false, REJECT_INSUFFICIENTFEE, "rate limited free transaction");
-            LogPrint("mempool", "Rate limit dFreeCount: %g => %g\n", dFreeCount, dFreeCount+nSize);
-            dFreeCount += nSize;
+        // No transactions are allowed with modified fee below the minimum relay fee,
+        // except from disconnected blocks. The minimum relay fee will never be more
+        // than DEFAULT_FEE zatoshis.
+        CAmount minRelayFee = ::minRelayTxFee.GetFeeForRelay(nSize);
+        if (fLimitFree && nModifiedFees < minRelayFee) {
+            LogPrint("mempool",
+                    "Not accepting transaction with txid %s, size %d bytes, effective fee %d " + MINOR_CURRENCY_UNIT +
+                    ", and fee delta %d " + MINOR_CURRENCY_UNIT + " to the mempool due to insufficient fee. " +
+                    " The minimum acceptance/relay fee for this transaction is %d " + MINOR_CURRENCY_UNIT,
+                    tx.GetHash().ToString(), nSize, nModifiedFees, nModifiedFees - nFees, minRelayFee);
+            return state.DoS(0, false, REJECT_INSUFFICIENTFEE, "min relay fee not met");
         }
 
         if (fRejectAbsurdFee && nFees > maxTxFee) {
@@ -2009,7 +1999,7 @@ bool AcceptToMemoryPool(
 
         // This will be a single-transaction batch, which is still more efficient as every
         // Orchard bundle contains at least two signatures.
-        std::optional<orchard::AuthValidator> orchardAuth = orchard::AuthValidator::Batch(true);
+        std::optional<rust::Box<orchard::BatchValidator>> orchardAuth = orchard::init_batch_validator(true);
 
         // Check shielded input signatures.
         if (!ContextualCheckShieldedInputs(
@@ -2032,7 +2022,7 @@ bool AcceptToMemoryPool(
         if (!saplingAuth.value()->validate()) {
             return state.DoS(100, false, REJECT_INVALID, "bad-sapling-bundle-authorization");
         }
-        if (!orchardAuth.value().Validate()) {
+        if (!orchardAuth.value()->validate()) {
             return state.DoS(100, false, REJECT_INVALID, "bad-orchard-bundle-authorization");
         }
 
@@ -3115,8 +3105,8 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
     // Disable Sapling and Orchard batch validation if possible.
     std::optional<rust::Box<sapling::BatchValidator>> saplingAuth = fExpensiveChecks ?
         std::optional(sapling::init_batch_validator(fCacheResults)) : std::nullopt;
-    std::optional<orchard::AuthValidator> orchardAuth = fExpensiveChecks ?
-        orchard::AuthValidator::Batch(fCacheResults) : orchard::AuthValidator::Disabled();
+    std::optional<rust::Box<orchard::BatchValidator>> orchardAuth = fExpensiveChecks ?
+        std::optional(orchard::init_batch_validator(fCacheResults)) : std::nullopt;
 
     // If in initial block download, and this block is an ancestor of a checkpoint,
     // and -ibdskiptxverification is set, disable all transaction checks.
@@ -3625,7 +3615,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
     }
 
     // Ensure Orchard signatures are valid (if we are checking them)
-    if (orchardAuth.has_value() && !orchardAuth.value().Validate()) {
+    if (orchardAuth.has_value() && !orchardAuth.value()->validate()) {
         return state.DoS(100,
             error("ConnectBlock(): an Orchard bundle within the block is invalid"),
             REJECT_INVALID, "bad-orchard-bundle-authorization");
@@ -4119,7 +4109,7 @@ bool static ConnectTip(CValidationState& state, const CChainParams& chainparams,
     // Increment the count of `ConnectTip` calls.
     nConnectedSequence += 1;
 
-    EnforceNodeDeprecation(pindexNew->nHeight);
+    EnforceNodeDeprecation(chainparams, pindexNew->nHeight);
 
     int64_t nTime6 = GetTimeMicros(); nTimePostConnect += nTime6 - nTime5;
     LogPrint("bench", "  - Connect postprocess: %.2fms [%.2fs]\n", (nTime6 - nTime5) * 0.001, nTimePostConnect * 0.000001);
@@ -4386,7 +4376,17 @@ bool ActivateBestChain(CValidationState& state, const CChainParams& chainparams,
     CBlockIndex *pindexMostWork = NULL;
     CBlockIndex *pindexNewTip = NULL;
     do {
-        boost::this_thread::interruption_point();
+        // Sleep briefly to allow other threads a chance at grabbing cs_main if
+        // we are connecting a long chain of blocks and would otherwise hold the
+        // lock almost continuously. As of 2023-02-03 the Zcash mainnet chain is
+        // around height 1,972,000; the total time slept here while activating
+        // the best chain from genesis to that height is ~6.6 minutes. This helps
+        // the internal wallet, if it is enabled, to keep up with the connected
+        // blocks, reducing the overall time until the node becomes usable.
+        //
+        // This is defined to be an interruption point.
+        // <https://www.boost.org/doc/libs/1_81_0/doc/html/thread/thread_management.html#interruption_points>
+        boost::this_thread::sleep_for(boost::chrono::microseconds(200));
 
         bool fInitialDownload;
         int nNewHeight;
@@ -5442,7 +5442,7 @@ fs::path GetBlockPosFilename(const CDiskBlockPos &pos, const char *prefix)
     return GetDataDir() / "blocks" / strprintf("%s%05u.dat", prefix, pos.nFile);
 }
 
-CBlockIndex * InsertBlockIndex(uint256 hash)
+CBlockIndex * InsertBlockIndex(const uint256& hash)
 {
     if (hash.IsNull())
         return NULL;
@@ -5664,7 +5664,7 @@ bool static LoadBlockIndexDB(const CChainParams& chainparams)
         DateTimeStrFormat("%Y-%m-%d %H:%M:%S", chainActive.Tip()->GetBlockTime()),
         Checkpoints::GuessVerificationProgress(chainparams.Checkpoints(), chainActive.Tip()));
 
-    EnforceNodeDeprecation(chainActive.Height(), true);
+    EnforceNodeDeprecation(chainparams, chainActive.Height(), true);
 
     return true;
 }
@@ -6550,9 +6550,6 @@ void static ProcessGetData(CNode* pfrom, const Consensus::Params& consensusParam
                 }
             }
 
-            // Track requests for our stuff.
-            GetMainSignals().Inventory(inv.hash);
-
             if (inv.type == MSG_BLOCK || inv.type == MSG_FILTERED_BLOCK)
                 break;
         }
@@ -6719,6 +6716,10 @@ bool static ProcessMessage(const CChainParams& chainparams, CNode* pfrom, string
             {
                 pfrom->PushMessage("getaddr");
                 pfrom->fGetAddr = true;
+
+                // When requesting a getaddr, accept an additional MAX_ADDR_TO_SEND addresses in response
+                // (bypassing the MAX_ADDR_PROCESSING_TOKEN_BUCKET limit).
+                pfrom->m_addr_token_bucket += MAX_ADDR_TO_SEND;
             }
             addrman.Good(pfrom->addr);
         } else {
@@ -6811,13 +6812,38 @@ bool static ProcessMessage(const CChainParams& chainparams, CNode* pfrom, string
         vector<CAddress> vAddrOk;
         int64_t nNow = GetTime();
         int64_t nSince = nNow - 10 * 60;
+
+        // Update/increment addr rate limiting bucket.
+        const int64_t current_time = GetTimeMicros();
+        if (pfrom->m_addr_token_bucket < MAX_ADDR_PROCESSING_TOKEN_BUCKET) {
+            // Don't increment bucket if it's already full
+            const auto time_diff = std::max(current_time - pfrom->m_addr_token_timestamp, (int64_t) 0);
+            const double increment = (time_diff / 1000000) * MAX_ADDR_RATE_PER_SECOND;
+            pfrom->m_addr_token_bucket = std::min<double>(pfrom->m_addr_token_bucket + increment, MAX_ADDR_PROCESSING_TOKEN_BUCKET);
+        }
+        pfrom->m_addr_token_timestamp = current_time;
+
+        uint64_t num_proc = 0;
+        uint64_t num_rate_limit = 0;
+        std::shuffle(vAddr.begin(), vAddr.end(), ZcashRandomEngine());
         for (CAddress& addr : vAddr)
         {
             boost::this_thread::interruption_point();
 
+            // Apply rate limiting if the address is not whitelisted
+            if (pfrom->m_addr_token_bucket < 1.0) {
+                if (!pfrom->IsWhitelistedRange(addr)) {
+                    ++num_rate_limit;
+                    continue;
+                }
+            } else {
+                pfrom->m_addr_token_bucket -= 1.0;
+            }
+
             if (addr.nTime <= 100000000 || addr.nTime > nNow + 10 * 60)
                 addr.nTime = nNow - 5 * 24 * 60 * 60;
-            pfrom->AddAddressKnown(addr);
+            pfrom->AddAddressIfNotAlreadyKnown(addr);
+            ++num_proc;
             bool fReachable = IsReachable(addr);
             if (addr.nTime > nSince && !pfrom->fGetAddr && vAddr.size() <= 10 && addr.IsRoutable())
             {
@@ -6848,6 +6874,15 @@ bool static ProcessMessage(const CChainParams& chainparams, CNode* pfrom, string
             if (fReachable)
                 vAddrOk.push_back(addr);
         }
+        pfrom->m_addr_processed += num_proc;
+        pfrom->m_addr_rate_limited += num_rate_limit;
+        LogPrintf("ProcessMessage: Received addr: %u addresses (%u processed, %u rate-limited) from peer=%d%s\n",
+                 vAddr.size(),
+                 num_proc,
+                 num_rate_limit,
+                 pfrom->GetId(),
+                 fLogIPs ? ", peeraddr=" + pfrom->addr.ToString() : "");
+
         addrman.Add(vAddrOk, pfrom->addr, 2 * 60 * 60);
         if (vAddr.size() < 1000)
             pfrom->fGetAddr = false;
@@ -6912,15 +6947,12 @@ bool static ProcessMessage(const CChainParams& chainparams, CNode* pfrom, string
             }
             else
             {
-                pfrom->AddKnownTx(WTxId(inv.hash, inv.hashAux));
+                pfrom->AddKnownWTxId(WTxId(inv.hash, inv.hashAux));
                 if (fBlocksOnly)
                     LogPrint("net", "transaction (%s) inv sent in violation of protocol peer=%d\n", inv.hash.ToString(), pfrom->id);
                 else if (!fAlreadyHave && !IsInitialBlockDownload(chainparams.GetConsensus()))
                     pfrom->AskFor(inv);
             }
-
-            // Track requests for our stuff
-            GetMainSignals().Inventory(inv.hash);
 
             if (pfrom->nSendSize > (SendBufferSize() * 2)) {
                 Misbehaving(pfrom->GetId(), 50);
@@ -7061,7 +7093,7 @@ bool static ProcessMessage(const CChainParams& chainparams, CNode* pfrom, string
 
         LOCK(cs_main);
 
-        pfrom->AddKnownTx(wtxid);
+        pfrom->AddKnownWTxId(wtxid);
 
         bool fMissingInputs = false;
         CValidationState state;
@@ -7125,7 +7157,7 @@ bool static ProcessMessage(const CChainParams& chainparams, CNode* pfrom, string
                             LogPrint("mempool", "   invalid orphan tx %s\n", orphanHash.ToString());
                         }
                         // Has inputs but not accepted to mempool
-                        // Probably non-standard or insufficient fee/priority
+                        // Probably non-standard or insufficient fee
                         LogPrint("mempool", "   removed orphan tx %s\n", orphanHash.ToString());
                         vEraseQueue.push_back(orphanHash);
                         // Add the wtxid of this transaction to our reject filter.
@@ -7758,9 +7790,8 @@ bool SendMessages(const Consensus::Params& params, CNode* pto)
             vAddr.reserve(pto->vAddrToSend.size());
             for (const CAddress& addr : pto->vAddrToSend)
             {
-                if (!pto->addrKnown.contains(addr.GetKey()))
+                if (pto->AddAddressIfNotAlreadyKnown(addr))
                 {
-                    pto->addrKnown.insert(addr.GetKey());
                     vAddr.push_back(addr);
                     // receiver rejects addr messages larger than 1000
                     if (vAddr.size() >= 1000)
@@ -7833,6 +7864,12 @@ bool SendMessages(const Consensus::Params& params, CNode* pto)
         vector<CInv> vInv;
         {
             LOCK(pto->cs_inventory);
+            // Avoid possibly adding to pto->filterInventoryKnown after it has been reset in CloseSocketDisconnect.
+            if (pto->fDisconnect) {
+                // We can safely return here because SendMessages would, in any case, do nothing after
+                // this block if pto->fDisconnect is set.
+                return true;
+            }
             vInv.reserve(std::max<size_t>(pto->vInventoryBlockToSend.size(), INVENTORY_BROADCAST_MAX));
 
             // Add blocks
@@ -7880,7 +7917,7 @@ bool SendMessages(const Consensus::Params& params, CNode* pto)
                     if (pto->pfilter) {
                         if (!pto->pfilter->IsRelevantAndUpdate(*txinfo.tx)) continue;
                     }
-                    pto->filterInventoryKnown.insert(hash);
+                    pto->AddKnownTxId(hash);
                     vInv.push_back(inv);
                     if (vInv.size() == MAX_INV_SZ) {
                         pto->PushMessage("inv", vInv);
@@ -7915,7 +7952,7 @@ bool SendMessages(const Consensus::Params& params, CNode* pto)
                     // Remove it from the to-be-sent set
                     pto->setInventoryTxToSend.erase(it);
                     // Check if not in the filter already
-                    if (pto->filterInventoryKnown.contains(hash)) {
+                    if (pto->HasKnownTxId(hash)) {
                         continue;
                     }
                     // Not in the mempool anymore? don't bother sending it.
@@ -7950,7 +7987,7 @@ bool SendMessages(const Consensus::Params& params, CNode* pto)
                         pto->PushMessage("inv", vInv);
                         vInv.clear();
                     }
-                    pto->filterInventoryKnown.insert(hash);
+                    pto->AddKnownTxId(hash);
                 }
             }
         }

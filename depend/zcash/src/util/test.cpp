@@ -11,6 +11,7 @@
 #include <optional>
 
 #include <rust/ed25519.h>
+#include <rust/test_harness.h>
 
 // Sprout
 CMutableTransaction GetValidSproutReceiveTransaction(
@@ -40,8 +41,8 @@ CMutableTransaction GetValidSproutReceiveTransaction(
     allPrevOutputs.resize(mtx.vin.size());
 
     // Generate an ephemeral keypair.
-    Ed25519SigningKey joinSplitPrivKey;
-    ed25519_generate_keypair(&joinSplitPrivKey, &mtx.joinSplitPubKey);
+    ed25519::SigningKey joinSplitPrivKey;
+    ed25519::generate_keypair(joinSplitPrivKey, mtx.joinSplitPubKey);
 
     std::array<libzcash::JSInput, 2> inputs = {
         libzcash::JSInput(), // dummy input
@@ -64,8 +65,7 @@ CMutableTransaction GetValidSproutReceiveTransaction(
     // depend on this happening.
     if (version >= 4) {
         // Shielded Output
-        OutputDescription od;
-        mtx.vShieldedOutput.push_back(od);
+        mtx.vShieldedOutput.push_back(RandomInvalidOutputDescription());
     }
 
     // Empty output script.
@@ -76,10 +76,10 @@ CMutableTransaction GetValidSproutReceiveTransaction(
     uint256 dataToBeSigned = SignatureHash(scriptCode, signTx, NOT_AN_INPUT, SIGHASH_ALL, 0, consensusBranchId, txdata);
 
     // Add the signature
-    assert(ed25519_sign(
-        &joinSplitPrivKey,
-        dataToBeSigned.begin(), 32,
-        &mtx.joinSplitSig));
+    ed25519::sign(
+        joinSplitPrivKey,
+        {dataToBeSigned.begin(), 32},
+        mtx.joinSplitSig);
 
     return mtx;
 }
@@ -143,8 +143,8 @@ CWalletTx GetValidSproutSpend(const libzcash::SproutSpendingKey& sk,
     mtx.vout[1].nValue = 0;
 
     // Generate an ephemeral keypair.
-    Ed25519SigningKey joinSplitPrivKey;
-    ed25519_generate_keypair(&joinSplitPrivKey, &mtx.joinSplitPubKey);
+    ed25519::SigningKey joinSplitPrivKey;
+    ed25519::generate_keypair(joinSplitPrivKey, mtx.joinSplitPubKey);
 
     // Fake tree for the unused witness
     SproutMerkleTree tree;
@@ -193,10 +193,10 @@ CWalletTx GetValidSproutSpend(const libzcash::SproutSpendingKey& sk,
     uint256 dataToBeSigned = SignatureHash(scriptCode, signTx, NOT_AN_INPUT, SIGHASH_ALL, 0, consensusBranchId, txdata);
 
     // Add the signature
-    assert(ed25519_sign(
-        &joinSplitPrivKey,
-        dataToBeSigned.begin(), 32,
-        &mtx.joinSplitSig));
+    ed25519::sign(
+        joinSplitPrivKey,
+        {dataToBeSigned.begin(), 32},
+        mtx.joinSplitSig);
     CTransaction tx {mtx};
     CWalletTx wtx {NULL, tx};
     return wtx;
@@ -332,6 +332,27 @@ CKey AddTestCKeyToKeyStore(CBasicKeyStore& keyStore) {
     CKey tsk = keyIO.DecodeSecret(T_SECRET_REGTEST);
     keyStore.AddKey(tsk);
     return tsk;
+}
+
+SpendDescription RandomInvalidSpendDescription() {
+    SpendDescription sdesc;
+    zcash_test_harness_random_jubjub_point(sdesc.cv.begin());
+    zcash_test_harness_random_jubjub_base(sdesc.anchor.begin());
+    sdesc.nullifier = GetRandHash();
+    zcash_test_harness_random_jubjub_point(sdesc.rk.begin());
+    GetRandBytes(sdesc.zkproof.begin(), sdesc.zkproof.size());
+    return sdesc;
+}
+
+OutputDescription RandomInvalidOutputDescription() {
+    OutputDescription odesc;
+    zcash_test_harness_random_jubjub_point(odesc.cv.begin());
+    zcash_test_harness_random_jubjub_base(odesc.cmu.begin());
+    zcash_test_harness_random_jubjub_point(odesc.ephemeralKey.begin());
+    GetRandBytes(odesc.encCiphertext.begin(), odesc.encCiphertext.size());
+    GetRandBytes(odesc.outCiphertext.begin(), odesc.outCiphertext.size());
+    GetRandBytes(odesc.zkproof.begin(), odesc.zkproof.size());
+    return odesc;
 }
 
 TestSaplingNote GetTestSaplingNote(const libzcash::SaplingPaymentAddress& pa, CAmount value) {

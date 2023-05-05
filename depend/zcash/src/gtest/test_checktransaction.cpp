@@ -6,12 +6,13 @@
 #include "consensus/validation.h"
 #include "transaction_builder.h"
 #include "gtest/utils.h"
+#include "test/test_util.h"
 #include "util/test.h"
 #include "zcash/JoinSplit.hpp"
 
 #include <librustzcash.h>
+#include <rust/bridge.h>
 #include <rust/ed25519.h>
-#include <rust/sapling.h>
 #include <rust/orchard.h>
 
 // Subclass of CTransaction which doesn't call UpdateHash when constructing
@@ -106,8 +107,8 @@ CMutableTransaction GetValidTransaction(uint32_t consensusBranchId=SPROUT_BRANCH
 
 void CreateJoinSplitSignature(CMutableTransaction& mtx, uint32_t consensusBranchId) {
     // Generate an ephemeral keypair.
-    Ed25519SigningKey joinSplitPrivKey;
-    ed25519_generate_keypair(&joinSplitPrivKey, &mtx.joinSplitPubKey);
+    ed25519::SigningKey joinSplitPrivKey;
+    ed25519::generate_keypair(joinSplitPrivKey, mtx.joinSplitPubKey);
 
     // Compute the correct hSig.
     // TODO: #966.
@@ -125,10 +126,10 @@ void CreateJoinSplitSignature(CMutableTransaction& mtx, uint32_t consensusBranch
     }
 
     // Add the signature
-    assert(ed25519_sign(
-        &joinSplitPrivKey,
-        dataToBeSigned.begin(), 32,
-        &mtx.joinSplitSig));
+    ed25519::sign(
+        joinSplitPrivKey,
+        {dataToBeSigned.begin(), 32},
+        mtx.joinSplitSig);
 }
 
 TEST(ChecktransactionTests, ValidTransaction) {
@@ -536,7 +537,7 @@ TEST(ContextualCheckShieldedInputsTest, BadTxnsInvalidJoinsplitSignature) {
     SelectParams(CBaseChainParams::REGTEST);
     auto consensus = Params().GetConsensus();
     std::optional<rust::Box<sapling::BatchValidator>> saplingAuth = std::nullopt;
-    auto orchardAuth = orchard::AuthValidator::Disabled();
+    std::optional<rust::Box<orchard::BatchValidator>> orchardAuth = std::nullopt;
 
     CMutableTransaction mtx = GetValidTransaction();
     mtx.joinSplitSig.bytes[0] += 1;
@@ -568,7 +569,7 @@ TEST(ContextualCheckShieldedInputsTest, JoinsplitSignatureDetectsOldBranchId) {
     SelectParams(CBaseChainParams::REGTEST);
     auto consensus = Params().GetConsensus();
     std::optional<rust::Box<sapling::BatchValidator>> saplingAuth = std::nullopt;
-    auto orchardAuth = orchard::AuthValidator::Disabled();
+    std::optional<rust::Box<orchard::BatchValidator>> orchardAuth = std::nullopt;
 
     auto saplingBranchId = NetworkUpgradeInfo[Consensus::UPGRADE_SAPLING].nBranchId;
     auto blossomBranchId = NetworkUpgradeInfo[Consensus::UPGRADE_BLOSSOM].nBranchId;
@@ -618,7 +619,7 @@ TEST(ContextualCheckShieldedInputsTest, NonCanonicalEd25519Signature) {
     SelectParams(CBaseChainParams::REGTEST);
     auto consensus = Params().GetConsensus();
     std::optional<rust::Box<sapling::BatchValidator>> saplingAuth = std::nullopt;
-    auto orchardAuth = orchard::AuthValidator::Disabled();
+    std::optional<rust::Box<orchard::BatchValidator>> orchardAuth = std::nullopt;
 
     AssumeShieldedInputsExistAndAreSpendable baseView;
     CCoinsViewCache view(&baseView);
@@ -855,7 +856,7 @@ TEST(ChecktransactionTests, SaplingSproutInputSumsTooLarge) {
     {
         // create JSDescription
         uint256 rt;
-        Ed25519VerificationKey joinSplitPubKey;
+        ed25519::VerificationKey joinSplitPubKey;
         std::array<libzcash::JSInput, ZC_NUM_JS_INPUTS> inputs = {
             libzcash::JSInput(),
             libzcash::JSInput()
@@ -878,7 +879,7 @@ TEST(ChecktransactionTests, SaplingSproutInputSumsTooLarge) {
         mtx.vJoinSplit.push_back(jsdesc);
     }
 
-    mtx.vShieldedSpend.push_back(SpendDescription());
+    mtx.vShieldedSpend.push_back(RandomInvalidSpendDescription());
 
     mtx.vJoinSplit[0].vpub_new = (MAX_MONEY / 2) + 10;
 
@@ -1150,7 +1151,7 @@ TEST(ChecktransactionTests, InvalidSaplingShieldedCoinbase) {
     // Make it an invalid shielded coinbase (no ciphertexts or commitments).
     mtx.vin.resize(1);
     mtx.vin[0].prevout.SetNull();
-    mtx.vShieldedOutput.resize(1);
+    mtx.vShieldedOutput.push_back(RandomInvalidOutputDescription());
     mtx.vJoinSplit.resize(0);
 
     CTransaction tx(mtx);
@@ -1324,7 +1325,7 @@ TEST(ChecktransactionTests, HeartwoodEnforcesSaplingRulesOnShieldedCoinbase) {
     EXPECT_TRUE(ContextualCheckTransaction(tx, state, chainparams, 10, 57));
 
     std::optional<rust::Box<sapling::BatchValidator>> saplingAuth = sapling::init_batch_validator(false);
-    auto orchardAuth = orchard::AuthValidator::Disabled();
+    std::optional<rust::Box<orchard::BatchValidator>> orchardAuth = std::nullopt;
     auto heartwoodBranchId = NetworkUpgradeInfo[Consensus::UPGRADE_HEARTWOOD].nBranchId;
 
     // Coinbase transaction does not pass shielded input checks, as bindingSig

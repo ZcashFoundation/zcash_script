@@ -23,7 +23,7 @@
 #include "zcash/Zcash.h"
 #include "zcash/Proof.hpp"
 
-#include <rust/ed25519/types.h>
+#include <rust/ed25519.h>
 #include <primitives/orchard.h>
 
 // Overwinter transaction version group id
@@ -625,26 +625,11 @@ public:
 
     uint256 GetHash() const;
 
-    CAmount GetDustThreshold(const CFeeRate &minRelayTxFee) const
-    {
-        // "Dust" is defined in terms of CTransaction::minRelayTxFee,
-        // which has units satoshis-per-kilobyte.
-        // If you'd pay more than 1/3 in fees
-        // to spend something, then we consider it dust.
-        // A typical spendable txout is 34 bytes big, and will
-        // need a CTxIn of at least 148 bytes to spend:
-        // so dust is a spendable txout less than
-        // 54*minRelayTxFee/1000 (in satoshis)
-        if (scriptPubKey.IsUnspendable())
-            return 0;
+    CAmount GetDustThreshold() const;
 
-        size_t nSize = GetSerializeSize(*this, SER_DISK, 0) + 148u;
-        return 3*minRelayTxFee.GetFee(nSize);
-    }
-
-    bool IsDust(const CFeeRate &minRelayTxFee) const
+    bool IsDust() const
     {
-        return (nValue < GetDustThreshold(minRelayTxFee));
+        return nValue < GetDustThreshold();
     }
 
     friend bool operator==(const CTxOut& a, const CTxOut& b)
@@ -772,8 +757,8 @@ public:
     const std::vector<SpendDescription> vShieldedSpend;
     const std::vector<OutputDescription> vShieldedOutput;
     const std::vector<JSDescription> vJoinSplit;
-    const Ed25519VerificationKey joinSplitPubKey;
-    const Ed25519Signature joinSplitSig;
+    const ed25519::VerificationKey joinSplitPubKey;
+    const ed25519::Signature joinSplitSig;
     const binding_sig_t bindingSig = {{0}};
 
     /** Construct a CTransaction that qualifies as IsNull() */
@@ -888,8 +873,8 @@ public:
                 auto os = WithVersion(&s, static_cast<int>(header));
                 ::SerReadWrite(os, *const_cast<std::vector<JSDescription>*>(&vJoinSplit), ser_action);
                 if (vJoinSplit.size() > 0) {
-                    READWRITE(*const_cast<Ed25519VerificationKey*>(&joinSplitPubKey));
-                    READWRITE(*const_cast<Ed25519Signature*>(&joinSplitSig));
+                    READWRITE(*const_cast<ed25519::VerificationKey*>(&joinSplitPubKey));
+                    READWRITE(*const_cast<ed25519::Signature*>(&joinSplitSig));
                 }
             }
             if ((isSaplingV4 || isFuture) && !(vShieldedSpend.empty() && vShieldedOutput.empty())) {
@@ -971,11 +956,13 @@ public:
     // Return sum of (positive valueBalanceSapling or zero) and JoinSplit vpub_new
     CAmount GetShieldedValueIn() const;
 
-    // Compute priority, given priority of inputs and (optionally) tx size
-    double ComputePriority(double dPriorityInputs, unsigned int nTxSize=0) const;
+    // Return the conventional fee for this transaction calculated according to
+    // <https://zips.z.cash/zip-0317#fee-calculation>.
+    CAmount GetConventionalFee() const;
 
-    // Compute modified tx size for priority calculation (optionally given tx size)
-    unsigned int CalculateModifiedSize(unsigned int nTxSize=0) const;
+    // Return the number of logical actions calculated according to
+    // <https://zips.z.cash/zip-0317#fee-calculation>.
+    size_t GetLogicalActionCount() const;
 
     bool IsCoinBase() const
     {
@@ -1013,8 +1000,8 @@ struct CMutableTransaction
     std::vector<OutputDescription> vShieldedOutput;
     OrchardBundle orchardBundle;
     std::vector<JSDescription> vJoinSplit;
-    Ed25519VerificationKey joinSplitPubKey;
-    Ed25519Signature joinSplitSig;
+    ed25519::VerificationKey joinSplitPubKey;
+    ed25519::Signature joinSplitSig;
     CTransaction::binding_sig_t bindingSig = {{0}};
 
     CMutableTransaction();

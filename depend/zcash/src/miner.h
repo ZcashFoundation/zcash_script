@@ -8,8 +8,11 @@
 #define BITCOIN_MINER_H
 
 #include "primitives/block.h"
+#include "txmempool.h"
+#include "weighted_map.h"
 
 #include <stdint.h>
+#include <memory>
 #include <variant>
 
 #include <boost/shared_ptr.hpp>
@@ -17,6 +20,7 @@
 class CBlockIndex;
 class CChainParams;
 class CScript;
+
 namespace Consensus { struct Params; };
 
 static const bool DEFAULT_GENERATE = false;
@@ -95,7 +99,70 @@ struct CBlockTemplate
 CMutableTransaction CreateCoinbaseTransaction(const CChainParams& chainparams, CAmount nFees, const MinerAddress& minerAddress, int nHeight);
 
 /** Generate a new block, without valid proof-of-work */
-CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const MinerAddress& minerAddress, const std::optional<CMutableTransaction>& next_coinbase_mtx = std::nullopt);
+class BlockAssembler
+{
+private:
+    // The constructed block template
+    std::unique_ptr<CBlockTemplate> pblocktemplate;
+    // A convenience pointer that always refers to the CBlock in pblocktemplate
+    CBlock* pblock;
+
+    // Configuration parameters for the block size and unpaid action limit
+    unsigned int nBlockMaxSize;
+    size_t nBlockUnpaidActionLimit;
+
+    // Information on the current status of the block
+    uint64_t nBlockSize;
+    uint64_t nBlockTx;
+    unsigned int nBlockSigOps;
+    CAmount nFees;
+    CTxMemPool::setEntries inBlock;
+
+    // Information on the current chain state after this block
+    CAmount sproutValue;
+    CAmount saplingValue;
+    CAmount orchardValue;
+    bool monitoring_pool_balances;
+
+    // Chain context for the block
+    int nHeight;
+    int64_t nLockTimeCutoff;
+    const CChainParams& chainparams;
+
+    // Variables used for addScoreTxs and addPriorityTxs
+    int lastFewTxs;
+    bool blockFinished;
+
+public:
+    BlockAssembler(const CChainParams& chainparams);
+    /** Construct a new block template with coinbase to minerAddress */
+    CBlockTemplate* CreateNewBlock(
+        const MinerAddress& minerAddress,
+        const std::optional<CMutableTransaction>& next_coinbase_mtx = std::nullopt);
+
+private:
+    void constructZIP317BlockTemplate();
+    void addTransactions(
+        CTxMemPool::weightedCandidates& candidates,
+        CTxMemPool::queueEntries& waiting,
+        CTxMemPool::queueEntries& cleared);
+
+    // utility functions
+    /** Clear the block's state and prepare for assembling a new block */
+    void resetBlock(const MinerAddress& minerAddress);
+    /** Add a tx to the block */
+    void AddToBlock(CTxMemPool::txiter iter);
+
+    // Methods for how to add transactions to a block.
+    /** Add transactions based on modified feerate */
+    void addScoreTxs();
+
+    // helper function for addScoreTxs and addPriorityTxs
+    /** Test if tx will still "fit" in the block */
+    bool TestForBlock(CTxMemPool::txiter iter);
+    /** Test if tx still has unconfirmed parents not yet in block */
+    bool isStillDependent(CTxMemPool::txiter iter);
+};
 
 #ifdef ENABLE_MINING
 /** Get -mineraddress */

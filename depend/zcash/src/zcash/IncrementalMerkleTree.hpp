@@ -7,12 +7,13 @@
 
 #include "uint256.h"
 #include "serialize.h"
+#include "streams_rust.h"
 
 #include "Zcash.h"
 #include "zcash/util.h"
 
 #include <primitives/orchard.h>
-#include <rust/orchard/incremental_merkle_tree.h>
+#include <rust/bridge.h>
 
 namespace libzcash {
 
@@ -265,19 +266,18 @@ class OrchardMerkleFrontierLegacySer;
 class OrchardMerkleFrontier
 {
 private:
-    /// An incremental Sinsemilla tree; this pointer may never be null.
-    /// Memory is allocated by Rust.
-    std::unique_ptr<OrchardMerkleFrontierPtr, decltype(&orchard_merkle_frontier_free)> inner;
+    /// An incremental Sinsemilla tree. Memory is allocated by Rust.
+    rust::Box<merkle_frontier::Orchard> inner;
 
     friend class OrchardWallet;
     friend class OrchardMerkleFrontierLegacySer;
 public:
-    OrchardMerkleFrontier() : inner(orchard_merkle_frontier_empty(), orchard_merkle_frontier_free) {}
+    OrchardMerkleFrontier() : inner(merkle_frontier::new_orchard()) {}
 
     OrchardMerkleFrontier(OrchardMerkleFrontier&& frontier) : inner(std::move(frontier.inner)) {}
 
     OrchardMerkleFrontier(const OrchardMerkleFrontier& frontier) :
-        inner(orchard_merkle_frontier_clone(frontier.inner.get()), orchard_merkle_frontier_free) {}
+        inner(frontier.inner->box_clone()) {}
 
     OrchardMerkleFrontier& operator=(OrchardMerkleFrontier&& frontier)
     {
@@ -289,52 +289,47 @@ public:
     OrchardMerkleFrontier& operator=(const OrchardMerkleFrontier& frontier)
     {
         if (this != &frontier) {
-            inner.reset(orchard_merkle_frontier_clone(frontier.inner.get()));
+            inner = frontier.inner->box_clone();
         }
         return *this;
     }
 
     template<typename Stream>
     void Serialize(Stream& s) const {
-        RustStream rs(s);
-        if (!orchard_merkle_frontier_serialize(inner.get(), &rs, RustStream<Stream>::write_callback)) {
-            throw std::ios_base::failure("Failed to serialize v5 Orchard tree");
+        try {
+            inner->serialize(*ToRustStream(s));
+        } catch (const std::exception& e) {
+            throw std::ios_base::failure(e.what());
         }
     }
 
     template<typename Stream>
     void Unserialize(Stream& s) {
-        RustStream rs(s);
-        OrchardMerkleFrontierPtr* tree = orchard_merkle_frontier_parse(
-                &rs, RustStream<Stream>::read_callback);
-        if (tree == nullptr) {
-            throw std::ios_base::failure("Failed to parse v5 Orchard tree");
+        try {
+            inner = merkle_frontier::parse_orchard(*ToRustStream(s));
+        } catch (const std::exception& e) {
+            throw std::ios_base::failure(e.what());
         }
-        inner.reset(tree);
     }
 
     size_t DynamicMemoryUsage() const {
-        return orchard_merkle_frontier_dynamic_mem_usage(inner.get());
+        return inner->dynamic_memory_usage();
     }
 
     bool AppendBundle(const OrchardBundle& bundle) {
-       return orchard_merkle_frontier_append_bundle(inner.get(), bundle.inner.get());
+        return inner->append_bundle(*bundle.GetDetails());
     }
 
     const uint256 root() const {
-        uint256 value;
-        orchard_merkle_frontier_root(inner.get(), value.begin());
-        return value;
+        return uint256::FromRawBytes(inner->root());
     }
 
     static uint256 empty_root() {
-        uint256 value;
-        orchard_merkle_tree_empty_root(value.begin());
-        return value;
+        return uint256::FromRawBytes(merkle_frontier::orchard_empty_root());
     }
 
     size_t size() const {
-        return orchard_merkle_frontier_num_leaves(inner.get());
+        return inner->size();
     }
 };
 
@@ -346,9 +341,10 @@ public:
 
     template<typename Stream>
     void Serialize(Stream& s) const {
-        RustStream rs(s);
-        if (!orchard_merkle_frontier_serialize_legacy(frontier.inner.get(), &rs, RustStream<Stream>::write_callback)) {
-            throw std::ios_base::failure("Failed to serialize Orchard merkle frontier in legacy format.");
+        try {
+            frontier.inner->serialize_legacy(*ToRustStream(s));
+        } catch (const std::exception& e) {
+            throw std::ios_base::failure(e.what());
         }
     }
 };

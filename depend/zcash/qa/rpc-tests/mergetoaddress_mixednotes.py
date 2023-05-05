@@ -18,8 +18,10 @@ class MergeToAddressMixedNotes(BitcoinTestFramework):
     def setup_nodes(self):
         self.num_nodes = 4
         return start_nodes(self.num_nodes, self.options.tmpdir, extra_args=[[
+            '-minrelaytxfee=0',
             '-anchorconfirmations=1',
             '-allowdeprecated=getnewaddress',
+            '-allowdeprecated=legacy_privacy',
             '-allowdeprecated=z_getnewaddress',
             '-allowdeprecated=z_getbalance',
             '-allowdeprecated=z_gettotalbalance',

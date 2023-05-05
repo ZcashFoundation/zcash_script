@@ -102,7 +102,7 @@ public:
     std::set<ReceiverType> GetKnownReceiverTypes() const {
         std::set<ReceiverType> result;
         for (const auto& receiver : receivers) {
-            std::visit(match {
+            examine(receiver, match {
                 [&](const libzcash::OrchardRawAddress &zaddr) {
                     result.insert(ReceiverType::Orchard);
                 },
@@ -117,7 +117,7 @@ public:
                 },
                 [&](const libzcash::UnknownReceiver &uaddr) {
                 }
-            }, receiver);
+            });
         }
         return result;
     }
@@ -270,13 +270,13 @@ typedef std::variant<
     SproutSpendingKey,
     SaplingExtendedSpendingKey> SpendingKey;
 
-class IsShieldedRecipient {
+class HasShieldedRecipient {
 public:
     bool operator()(const CKeyID& p2pkh) { return false; }
     bool operator()(const CScriptID& p2sh) { return false; }
     bool operator()(const SproutPaymentAddress& addr) { return true; }
     bool operator()(const SaplingPaymentAddress& addr) { return true; }
-    bool operator()(const OrchardRawAddress& addr) { return true; }
+    bool operator()(const UnifiedAddress& addr) { return true; }
 };
 
 class SelectRecipientAddress {

@@ -13,6 +13,7 @@
 #include "test/test_bitcoin.h"
 #include "test/test_util.h"
 #include "util/system.h"
+#include "util/test.h"
 #include "version.h"
 
 #include <iostream>
@@ -79,7 +80,7 @@ uint256 static SignatureHashOld(CScript scriptCode, const CTransaction& txTo, un
     }
 
     // Blank out the joinsplit signature.
-    memset(&txTmp.joinSplitSig.bytes, 0, ED25519_SIGNATURE_LEN);
+    txTmp.joinSplitSig.bytes.fill(0);
 
     // Serialize and hash
     CHashWriter ss(SER_GETHASH, 0);
@@ -149,23 +150,10 @@ void static RandomTransaction(CMutableTransaction &tx, bool fSingle, uint32_t co
     if (tx.nVersionGroupId == SAPLING_VERSION_GROUP_ID) {
         tx.valueBalanceSapling = InsecureRandRange(100000000);
         for (int spend = 0; spend < shielded_spends; spend++) {
-            SpendDescription sdesc;
-            zcash_test_harness_random_jubjub_point(sdesc.cv.begin());
-            zcash_test_harness_random_jubjub_base(sdesc.anchor.begin());
-            sdesc.nullifier = InsecureRand256();
-            zcash_test_harness_random_jubjub_point(sdesc.rk.begin());
-            GetRandBytes(sdesc.zkproof.begin(), sdesc.zkproof.size());
-            tx.vShieldedSpend.push_back(sdesc);
+            tx.vShieldedSpend.push_back(RandomInvalidSpendDescription());
         }
         for (int out = 0; out < shielded_outs; out++) {
-            OutputDescription odesc;
-            zcash_test_harness_random_jubjub_point(odesc.cv.begin());
-            zcash_test_harness_random_jubjub_base(odesc.cmu.begin());
-            zcash_test_harness_random_jubjub_point(odesc.ephemeralKey.begin());
-            GetRandBytes(odesc.encCiphertext.begin(), odesc.encCiphertext.size());
-            GetRandBytes(odesc.outCiphertext.begin(), odesc.outCiphertext.size());
-            GetRandBytes(odesc.zkproof.begin(), odesc.zkproof.size());
-            tx.vShieldedOutput.push_back(odesc);
+            tx.vShieldedOutput.push_back(RandomInvalidOutputDescription());
         }
     }
     // We have removed pre-Sapling Sprout support.
@@ -196,8 +184,8 @@ void static RandomTransaction(CMutableTransaction &tx, bool fSingle, uint32_t co
             tx.vJoinSplit.push_back(jsdesc);
         }
 
-        Ed25519SigningKey joinSplitPrivKey;
-        ed25519_generate_keypair(&joinSplitPrivKey, &tx.joinSplitPubKey);
+        ed25519::SigningKey joinSplitPrivKey;
+        ed25519::generate_keypair(joinSplitPrivKey, tx.joinSplitPubKey);
 
         // Empty output script.
         CScript scriptCode;
@@ -205,10 +193,10 @@ void static RandomTransaction(CMutableTransaction &tx, bool fSingle, uint32_t co
         PrecomputedTransactionData txdata(signTx, {});
         uint256 dataToBeSigned = SignatureHash(scriptCode, signTx, NOT_AN_INPUT, SIGHASH_ALL, 0, consensusBranchId, txdata);
 
-        assert(ed25519_sign(
-            &joinSplitPrivKey,
-            dataToBeSigned.begin(), 32,
-            &tx.joinSplitSig));
+        ed25519::sign(
+            joinSplitPrivKey,
+            {dataToBeSigned.begin(), 32},
+            tx.joinSplitSig);
     }
 }
 

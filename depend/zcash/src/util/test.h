@@ -33,6 +33,38 @@ public:
         // Always return false so we treat every nullifier as being unspent.
         return false;
     }
+
+    bool GetCoins(const uint256 &txid, CCoins &coins) const { return false; }
+    bool HaveCoins(const uint256 &txid) const { return false; }
+    uint256 GetBestBlock() const {
+        throw std::runtime_error("`GetBestBlock` unimplemented for mock AssumeShieldedInputsExistAndAreSpendable");
+    }
+    uint256 GetBestAnchor(ShieldedType type) const {
+        throw std::runtime_error("`GetBestAnchor` unimplemented for mock AssumeShieldedInputsExistAndAreSpendable");
+    }
+    HistoryIndex GetHistoryLength(uint32_t epochId) const { return 0; }
+    HistoryNode GetHistoryAt(uint32_t epochId, HistoryIndex index) const {
+        throw std::runtime_error("`GetHistoryAt` unimplemented for mock AssumeShieldedInputsExistAndAreSpendable");
+    }
+    uint256 GetHistoryRoot(uint32_t epochId) const {
+        throw std::runtime_error("`GetHistoryRoot` unimplemented for mock AssumeShieldedInputsExistAndAreSpendable");
+    }
+
+    bool BatchWrite(CCoinsMap &mapCoins,
+                    const uint256 &hashBlock,
+                    const uint256 &hashSproutAnchor,
+                    const uint256 &hashSaplingAnchor,
+                    const uint256 &hashOrchardAnchor,
+                    CAnchorsSproutMap &mapSproutAnchors,
+                    CAnchorsSaplingMap &mapSaplingAnchors,
+                    CAnchorsOrchardMap &mapOrchardAnchors,
+                    CNullifiersMap &mapSproutNullifiers,
+                    CNullifiersMap &mapSaplingNullifiers,
+                    CNullifiersMap &mapOrchardNullifiers,
+                    CHistoryCacheMap &historyCacheMap) {
+        return false;
+    }
+    bool GetStats(CCoinsStats &stats) const { return false; }
 };
 
 // Sprout
@@ -89,6 +121,9 @@ void RegtestDeactivateNU5();
 libzcash::SaplingExtendedSpendingKey GetTestMasterSaplingSpendingKey();
 
 CKey AddTestCKeyToKeyStore(CBasicKeyStore& keyStore);
+
+SpendDescription RandomInvalidSpendDescription();
+OutputDescription RandomInvalidOutputDescription();
 
 /**
  * Generate a dummy SaplingNote and a SaplingMerkleTree with that note's commitment.

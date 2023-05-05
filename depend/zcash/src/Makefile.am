@@ -28,6 +28,7 @@ LIBBITCOIN_UTIL=libbitcoin_util.a
 LIBBITCOIN_CRYPTO=crypto/libbitcoin_crypto.a
 LIBBITCOIN_CRYPTO_SSE41=crypto/libbitcoin_crypto_sse41.a
 LIBBITCOIN_CRYPTO_AVX2=crypto/libbitcoin_crypto_avx2.a
+LIBCXXBRIDGE=libcxxbridge.a
 LIBRUSTZCASH=$(top_builddir)/target/$(RUST_TARGET)/release/librustzcash.a
 LIBSECP256K1=secp256k1/libsecp256k1.la
 LIBUNIVALUE=univalue/libunivalue.la
@@ -49,28 +50,24 @@ if ENABLE_WALLET
 LIBBITCOIN_WALLET=libbitcoin_wallet.a
 endif
 
-# TODO: Figure out how to avoid an explicit file list.
 CXXBRIDGE_RS = \
   rust/src/blake2b.rs \
-  rust/src/bundlecache.rs \
+  rust/src/ed25519.rs \
   rust/src/equihash.rs \
-  rust/src/orchard_bundle.rs \
-  rust/src/sapling.rs \
-  rust/src/wallet_scanner.rs
+  rust/src/streams.rs \
+  rust/src/bridge.rs
 CXXBRIDGE_H = \
   rust/gen/include/rust/blake2b.h \
-  rust/gen/include/rust/bundlecache.h \
+  rust/gen/include/rust/ed25519.h \
   rust/gen/include/rust/equihash.h \
-  rust/gen/include/rust/orchard_bundle.h \
-  rust/gen/include/rust/sapling.h \
-  rust/gen/include/rust/wallet_scanner.h
+  rust/gen/include/rust/streams.h \
+  rust/gen/include/rust/bridge.h
 CXXBRIDGE_CPP = \
   rust/gen/src/blake2b.cpp \
-  rust/gen/src/bundlecache.cpp \
+  rust/gen/src/ed25519.cpp \
   rust/gen/src/equihash.cpp \
-  rust/gen/src/orchard_bundle.cpp \
-  rust/gen/src/sapling.cpp \
-  rust/gen/src/wallet_scanner.cpp
+  rust/gen/src/streams.cpp \
+  rust/gen/src/bridge.cpp
 
 # We add a rust/cxx.h include to indicate that we provide this (via the rustcxx depends
 # package), so that cxxbridge doesn't include it within the generated headers and code.
@@ -163,6 +160,7 @@ EXTRA_LIBRARIES += \
   $(LIBBITCOIN_CLI) \
   $(LIBBITCOIN_WALLET) \
   $(LIBBITCOIN_ZMQ) \
+  $(LIBCXXBRIDGE) \
   $(LIBZCASH)
 
 lib_LTLIBRARIES = $(LIBZCASH_SCRIPT)
@@ -246,6 +244,7 @@ BITCOIN_CORE_H = \
   httprpc.h \
   httpserver.h \
   init.h \
+  int128.h \
   key.h \
   key_constants.h \
   key_io.h \
@@ -289,6 +288,7 @@ BITCOIN_CORE_H = \
   serialize.h \
   spentindex.h \
   streams.h \
+  streams_rust.h \
   support/allocators/secure.h \
   support/allocators/zeroafterfree.h \
   support/cleanse.h \
@@ -321,6 +321,7 @@ BITCOIN_CORE_H = \
   wallet/asyncrpcoperation_saplingmigration.h \
   wallet/asyncrpcoperation_sendmany.h \
   wallet/asyncrpcoperation_shieldcoinbase.h \
+  wallet/wallet_tx_builder.h \
   wallet/crypter.h \
   wallet/db.h \
   wallet/memo.h \
@@ -332,6 +333,8 @@ BITCOIN_CORE_H = \
   wallet/walletdb.h \
   wallet/wallet_tx_builder.h \
   warnings.h \
+  weighted_map.h \
+  zip317.h \
   zmq/zmqabstractnotifier.h \
   zmq/zmqconfig.h\
   zmq/zmqnotificationinterface.h \
@@ -391,6 +394,12 @@ libbitcoin_server_a_SOURCES = \
   $(BITCOIN_CORE_H) \
   $(LIBZCASH_H)
 
+libcxxbridge_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(EVENT_CFLAGS) $(EVENT_PTHREADS_CFLAGS)
+libcxxbridge_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+libcxxbridge_a_SOURCES = \
+  $(CXXBRIDGE_CPP) \
+  $(CXXBRIDGE_H)
+
 if ENABLE_ZMQ
 libbitcoin_zmq_a_CPPFLAGS = $(BITCOIN_INCLUDES) $(ZMQ_CFLAGS)
 libbitcoin_zmq_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
@@ -411,6 +420,7 @@ libbitcoin_wallet_a_SOURCES = \
   wallet/asyncrpcoperation_saplingmigration.cpp \
   wallet/asyncrpcoperation_sendmany.cpp \
   wallet/asyncrpcoperation_shieldcoinbase.cpp \
+  wallet/wallet_tx_builder.cpp \
   wallet/crypter.cpp \
   wallet/db.cpp \
   wallet/orchard.cpp \
@@ -523,9 +533,11 @@ libbitcoin_common_a_SOURCES = \
   script/script_error.cpp \
   script/sign.cpp \
   script/standard.cpp \
+  streams_rust.cpp \
   transaction_builder.cpp \
   util/test.cpp \
   warnings.cpp \
+  zip317.cpp \
   $(BITCOIN_CORE_H) \
   $(LIBZCASH_H)
 
@@ -584,6 +596,7 @@ zcashd_LDADD = \
   $(LIBBITCOIN_SERVER) \
   $(LIBBITCOIN_WALLET) \
   $(LIBBITCOIN_COMMON) \
+  $(LIBCXXBRIDGE) \
   $(LIBUNIVALUE) \
   $(LIBBITCOIN_UTIL) \
   $(LIBBITCOIN_ZMQ) \
@@ -617,6 +630,7 @@ zcash_cli_LDADD = \
   $(LIBBITCOIN_CLI) \
   $(LIBUNIVALUE) \
   $(LIBBITCOIN_UTIL) \
+  $(LIBCXXBRIDGE) \
   $(BOOST_LIBS) \
   $(EVENT_LIBS) \
   $(LIBRUSTZCASH) \
@@ -641,6 +655,7 @@ zcash_tx_LDADD = \
   $(LIBUNIVALUE) \
   $(LIBBITCOIN_COMMON) \
   $(LIBBITCOIN_UTIL) \
+  $(LIBCXXBRIDGE) \
   $(LIBSECP256K1) \
   $(LIBRUSTZCASH) \
   $(LIBZCASH) \
@@ -652,7 +667,6 @@ zcash_tx_LDADD += $(BOOST_LIBS)
 
 # zcash protocol primitives #
 libzcash_a_SOURCES = \
-  $(CXXBRIDGE_CPP) \
   zcash/IncrementalMerkleTree.cpp \
   zcash/NoteEncryption.cpp \
   zcash/Address.cpp \
@@ -672,7 +686,6 @@ libzcash_a_SOURCES = \
 
 libzcash_a_CPPFLAGS = $(AM_CPPFLAGS) $(PIC_FLAGS) $(BITCOIN_INCLUDES)
 libzcash_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
-libzcash_a_LDFLAGS = $(AM_LDFLAGS)
 
 # zcash_script library #
 if BUILD_BITCOIN_LIBS
@@ -691,7 +704,8 @@ libzcash_script_la_SOURCES = \
   script/interpreter.cpp \
   script/script.cpp \
   uint256.cpp \
-  util/strencodings.cpp
+  util/strencodings.cpp \
+  zip317.cpp
 
 if GLIBC_BACK_COMPAT
   libzcash_script_la_SOURCES += compat/glibc_compat.cpp
@@ -724,7 +738,7 @@ clean-local:
 	-$(MAKE) -C secp256k1 clean
 	-$(MAKE) -C univalue clean
 	rm -f leveldb/*/*.gcno leveldb/helpers/memenv/*.gcno
-	rm -f rust/gen
+	rm -rf rust/gen
 	rm -f fuzz.cpp
 	rm -rf fuzzing/*/output
 	-rm -f config.h
@@ -733,10 +747,6 @@ clean-local:
 .rc.o:
 	@test -f $(WINDRES)
 	$(AM_V_GEN) $(WINDRES) -DWINDRES_PREPROC -i $< -o $@
-
-.mm.o:
-	$(AM_V_CXX) $(OBJCXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
-	  $(CPPFLAGS) $(AM_CXXFLAGS) $(AM_CXXFLAGS) $(PIE_FLAGS) $(CXXFLAGS) -c -o $@ $<
 
 check-symbols: $(bin_PROGRAMS) $(bin_SCRIPTS)
 if GLIBC_BACK_COMPAT

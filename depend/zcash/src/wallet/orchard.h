@@ -226,7 +226,8 @@ public:
      */
     void InitNoteCommitmentTree(const OrchardMerkleFrontier& frontier) {
         assert(!GetLastCheckpointHeight().has_value());
-        assert(orchard_wallet_init_from_frontier(inner.get(), frontier.inner.get()));
+        assert(frontier.inner->init_wallet(
+            reinterpret_cast<merkle_frontier::OrchardWallet*>(inner.get())));
     }
 
     /**
@@ -282,7 +283,7 @@ public:
         if (orchard_wallet_add_notes_from_bundle(
                 inner.get(),
                 tx.GetHash().begin(),
-                tx.GetOrchardBundle().inner.get(),
+                tx.GetOrchardBundle().inner->as_ptr(),
                 &txMeta,
                 PushOrchardActionIVK,
                 PushSpendActionIdx
@@ -309,7 +310,7 @@ public:
         return orchard_wallet_load_bundle(
                 inner.get(),
                 tx.GetHash().begin(),
-                tx.GetOrchardBundle().inner.get(),
+                tx.GetOrchardBundle().inner->as_ptr(),
                 rawHints.data(),
                 rawHints.size(),
                 txMeta.vActionsSpendingMyNotes.data(),
@@ -331,7 +332,7 @@ public:
                     (uint32_t) nBlockHeight,
                     txidx,
                     tx.GetHash().begin(),
-                    tx.GetOrchardBundle().inner.get()
+                    tx.GetOrchardBundle().inner->as_ptr()
                     )) {
                 return false;
             }
@@ -475,7 +476,7 @@ public:
         OrchardActions result;
         orchard_wallet_get_txdata(
                 inner.get(),
-                tx.GetOrchardBundle().inner.get(),
+                tx.GetOrchardBundle().inner->as_ptr(),
                 reinterpret_cast<const unsigned char*>(ovks.data()),
                 ovks.size(),
                 &result,

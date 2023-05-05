@@ -25,6 +25,7 @@ class WalletChangeAddressesTest(BitcoinTestFramework):
 
     def setup_network(self):
         args = [
+            '-minrelaytxfee=0',
             nuparams(SAPLING_BRANCH_ID, 1),
             '-txindex',              # Avoid JSONRPC error: No information available about transaction
             '-allowdeprecated=getnewaddress',
@@ -44,7 +45,7 @@ class WalletChangeAddressesTest(BitcoinTestFramework):
         midAddr = self.nodes[0].z_getnewaddress('sapling')
         myopid = self.nodes[0].z_shieldcoinbase(get_coinbase_address(self.nodes[0]), midAddr, 0)['opid']
         wait_and_assert_operationid_status(self.nodes[0], myopid)
-        
+
         self.sync_all()
         self.nodes[1].generate(1)
         self.sync_all()
@@ -87,7 +88,7 @@ class WalletChangeAddressesTest(BitcoinTestFramework):
 
         print()
         print('Checking z_sendmany(taddr->Sapling)')
-        check_change_taddr_reuse(saplingAddr, 'AllowRevealedSenders')
+        check_change_taddr_reuse(saplingAddr, 'AllowFullyTransparent')
         print()
         print('Checking z_sendmany(taddr->taddr)')
         check_change_taddr_reuse(taddr, 'AllowFullyTransparent')

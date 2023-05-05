@@ -32,7 +32,7 @@
 #include <boost/assign/list_of.hpp>
 
 #include <univalue.h>
-#include <rust/orchard_bundle.h>
+#include <rust/bridge.h>
 
 using namespace std;
 
@@ -181,7 +181,7 @@ UniValue TxActionsToJSON(const rust::Vec<orchard_bundle::Action>& actions)
 // See https://zips.z.cash/zip-0225
 UniValue TxOrchardBundleToJSON(const CTransaction& tx, UniValue& entry)
 {
-    auto bundle = tx.GetOrchardBundle().GetDetails();
+    const auto& bundle = tx.GetOrchardBundle().GetDetails();
 
     UniValue obj(UniValue::VOBJ);
     auto actions = bundle->actions();
@@ -309,12 +309,12 @@ void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry)
         // it is byte-flipped in the RPC output.
         uint256 joinSplitPubKey;
         std::copy(
-            tx.joinSplitPubKey.bytes,
-            tx.joinSplitPubKey.bytes + ED25519_VERIFICATION_KEY_LEN,
+            tx.joinSplitPubKey.bytes.begin(),
+            tx.joinSplitPubKey.bytes.end(),
             joinSplitPubKey.begin());
         entry.pushKV("joinSplitPubKey", joinSplitPubKey.GetHex());
         entry.pushKV("joinSplitSig",
-            HexStr(tx.joinSplitSig.bytes, tx.joinSplitSig.bytes + ED25519_SIGNATURE_LEN));
+            HexStr(tx.joinSplitSig.bytes.begin(), tx.joinSplitSig.bytes.end()));
     }
 
     if (!hashBlock.IsNull()) {
@@ -1036,7 +1036,7 @@ UniValue signrawtransaction(const UniValue& params, bool fHelp)
     CMutableTransaction mergedTx(txVariants[0]);
 
     // Fetch previous transactions (inputs):
-    CCoinsView viewDummy;
+    CCoinsViewDummy viewDummy;
     CCoinsViewCache view(&viewDummy);
     {
         LOCK(mempool.cs);
@@ -1285,7 +1285,7 @@ UniValue sendrawtransaction(const UniValue& params, bool fHelp)
         // push to local node and sync with wallets
         CValidationState state;
         bool fMissingInputs;
-        if (!AcceptToMemoryPool(chainparams, mempool, state, tx, false, &fMissingInputs, !fOverrideFees)) {
+        if (!AcceptToMemoryPool(chainparams, mempool, state, tx, true, &fMissingInputs, !fOverrideFees)) {
             if (state.IsInvalid()) {
                 throw JSONRPCError(RPC_TRANSACTION_REJECTED, strprintf("%i: %s", state.GetRejectCode(), state.GetRejectReason()));
             } else {

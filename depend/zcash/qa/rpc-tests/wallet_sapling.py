@@ -4,7 +4,6 @@
 # file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.authproxy import JSONRPCException
 from test_framework.util import (
     assert_equal,
     get_coinbase_address,
@@ -20,6 +19,7 @@ class WalletSaplingTest(BitcoinTestFramework):
 
     def setup_nodes(self):
         return start_nodes(self.num_nodes, self.options.tmpdir, extra_args=[[
+            '-minrelaytxfee=0',
             '-allowdeprecated=getnewaddress',
             '-allowdeprecated=z_getnewaddress',
             '-allowdeprecated=z_getbalance',
@@ -55,10 +55,6 @@ class WalletSaplingTest(BitcoinTestFramework):
 
         self.sync_all()
 
-        # Verify priority of tx is MAX_PRIORITY, defined as 1E+16 (10000000000000000)
-        mempool = self.nodes[0].getrawmempool(True)
-        assert(Decimal(mempool[mytxid]['startingpriority']) == Decimal('1E+16'))
-
         # Shield another coinbase UTXO
         myopid = self.nodes[0].z_sendmany(get_coinbase_address(self.nodes[0]), recipients, 1, 0, 'AllowRevealedSenders')
         mytxid = wait_and_assert_operationid_status(self.nodes[0], myopid)
@@ -81,11 +77,6 @@ class WalletSaplingTest(BitcoinTestFramework):
         mytxid = wait_and_assert_operationid_status(self.nodes[0], myopid)
 
         self.sync_all()
-
-        # Verify priority of tx is MAX_PRIORITY, defined as 1E+16 (10000000000000000)
-        mempool = self.nodes[0].getrawmempool(True)
-        assert(Decimal(mempool[mytxid]['startingpriority']) == Decimal('1E+16'))
-
         self.nodes[2].generate(1)
         self.sync_all()
 
@@ -105,11 +96,6 @@ class WalletSaplingTest(BitcoinTestFramework):
         mytxid = wait_and_assert_operationid_status(self.nodes[1], myopid)
 
         self.sync_all()
-
-        # Verify priority of tx is MAX_PRIORITY, defined as 1E+16 (10000000000000000)
-        mempool = self.nodes[1].getrawmempool(True)
-        assert(Decimal(mempool[mytxid]['startingpriority']) == Decimal('1E+16'))
-
         self.nodes[2].generate(1)
         self.sync_all()
 
@@ -170,16 +156,13 @@ class WalletSaplingTest(BitcoinTestFramework):
         # Make sure we get a useful error when trying to send to both sprout and sapling
         node4_sproutaddr = self.nodes[3].z_getnewaddress('sprout')
         node4_saplingaddr = self.nodes[3].z_getnewaddress('sapling')
-        try:
-            self.nodes[1].z_sendmany(
-                taddr1,
-                [{'address': node4_sproutaddr, 'amount': Decimal('2.5')},
-                 {'address': node4_saplingaddr, 'amount': Decimal('2.5') - DEFAULT_FEE}],
-                1, DEFAULT_FEE, 'AllowRevealedSenders'
-            )
-            raise AssertionError("Should have thrown an exception")
-        except JSONRPCException as e:
-            assert_equal("Sending funds into the Sprout value pool is not supported by z_sendmany", e.error['message'])
+        myopid = self.nodes[1].z_sendmany(
+            taddr1,
+            [{'address': node4_sproutaddr, 'amount': Decimal('2.5')},
+             {'address': node4_saplingaddr, 'amount': Decimal('2.5') - DEFAULT_FEE}],
+            1, DEFAULT_FEE, 'AllowRevealedSenders'
+        )
+        wait_and_assert_operationid_status(self.nodes[1], myopid, "failed", "Sending funds into the Sprout pool is no longer supported.")
 
 if __name__ == '__main__':
     WalletSaplingTest().main()

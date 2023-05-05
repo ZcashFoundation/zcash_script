@@ -12,7 +12,9 @@ use zcash_note_encryption::EphemeralKeyBytes;
 use zcash_primitives::{
     merkle_tree::MerklePath,
     sapling::{
+        note::ExtractedNoteCommitment,
         redjubjub::{self, Signature},
+        value::ValueCommitment,
         Diversifier, Nullifier, PaymentAddress, ProofGenerationKey, Rseed,
     },
     transaction::{
@@ -34,106 +36,7 @@ use crate::bundlecache::{
     sapling_bundle_validity_cache, sapling_bundle_validity_cache_mut, CacheEntries,
 };
 
-#[cxx::bridge(namespace = "sapling")]
-mod ffi {
-    extern "Rust" {
-        type Bundle;
-        type BundleAssembler;
-        fn new_bundle_assembler() -> Box<BundleAssembler>;
-        fn add_spend(
-            self: &mut BundleAssembler,
-            cv: &[u8; 32],
-            anchor: &[u8; 32],
-            nullifier: [u8; 32],
-            rk: &[u8; 32],
-            zkproof: [u8; 192], // GROTH_PROOF_SIZE
-            spend_auth_sig: &[u8; 64],
-        ) -> bool;
-        fn add_output(
-            self: &mut BundleAssembler,
-            cv: &[u8; 32],
-            cmu: &[u8; 32],
-            ephemeral_key: [u8; 32],
-            enc_ciphertext: [u8; 580],
-            out_ciphertext: [u8; 80],
-            zkproof: [u8; 192], // GROTH_PROOF_SIZE
-        ) -> bool;
-        fn finish_bundle_assembly(
-            assembler: Box<BundleAssembler>,
-            value_balance: i64,
-            binding_sig: [u8; 64],
-        ) -> Box<Bundle>;
-
-        type Prover;
-
-        fn init_prover() -> Box<Prover>;
-        #[allow(clippy::too_many_arguments)]
-        fn create_spend_proof(
-            self: &mut Prover,
-            ak: &[u8; 32],
-            nsk: &[u8; 32],
-            diversifier: &[u8; 11],
-            rcm: &[u8; 32],
-            ar: &[u8; 32],
-            value: u64,
-            anchor: &[u8; 32],
-            merkle_path: &[u8; 1065], // 1 + 33 * SAPLING_TREE_DEPTH + 8
-            cv: &mut [u8; 32],
-            rk_out: &mut [u8; 32],
-            zkproof: &mut [u8; 192], // GROTH_PROOF_SIZE
-        ) -> bool;
-        fn create_output_proof(
-            self: &mut Prover,
-            esk: &[u8; 32],
-            payment_address: &[u8; 43],
-            rcm: &[u8; 32],
-            value: u64,
-            cv: &mut [u8; 32],
-            zkproof: &mut [u8; 192], // GROTH_PROOF_SIZE
-        ) -> bool;
-        fn binding_sig(
-            self: &mut Prover,
-            value_balance: i64,
-            sighash: &[u8; 32],
-            result: &mut [u8; 64],
-        ) -> bool;
-
-        type Verifier;
-
-        fn init_verifier() -> Box<Verifier>;
-        #[allow(clippy::too_many_arguments)]
-        fn check_spend(
-            self: &mut Verifier,
-            cv: &[u8; 32],
-            anchor: &[u8; 32],
-            nullifier: &[u8; 32],
-            rk: &[u8; 32],
-            zkproof: &[u8; 192], // GROTH_PROOF_SIZE
-            spend_auth_sig: &[u8; 64],
-            sighash_value: &[u8; 32],
-        ) -> bool;
-        fn check_output(
-            self: &mut Verifier,
-            cv: &[u8; 32],
-            cm: &[u8; 32],
-            ephemeral_key: &[u8; 32],
-            zkproof: &[u8; 192], // GROTH_PROOF_SIZE
-        ) -> bool;
-        fn final_check(
-            self: &Verifier,
-            value_balance: i64,
-            binding_sig: &[u8; 64],
-            sighash_value: &[u8; 32],
-        ) -> bool;
-
-        type BatchValidator;
-        fn init_batch_validator(cache_store: bool) -> Box<BatchValidator>;
-        fn check_bundle(self: &mut BatchValidator, bundle: Box<Bundle>, sighash: [u8; 32]) -> bool;
-        fn validate(self: &mut BatchValidator) -> bool;
-    }
-}
-
-struct Bundle(sapling::Bundle<sapling::Authorized>);
+pub(crate) struct Bundle(sapling::Bundle<sapling::Authorized>);
 
 impl Bundle {
     fn commitment<D: TransactionDigest<Authorized>>(&self, digester: D) -> D::SaplingDigest {
@@ -141,12 +44,12 @@ impl Bundle {
     }
 }
 
-struct BundleAssembler {
+pub(crate) struct BundleAssembler {
     shielded_spends: Vec<sapling::SpendDescription<sapling::Authorized>>,
     shielded_outputs: Vec<sapling::OutputDescription<[u8; 192]>>, // GROTH_PROOF_SIZE
 }
 
-fn new_bundle_assembler() -> Box<BundleAssembler> {
+pub(crate) fn new_bundle_assembler() -> Box<BundleAssembler> {
     Box::new(BundleAssembler {
         shielded_spends: vec![],
         shielded_outputs: vec![],
@@ -154,7 +57,7 @@ fn new_bundle_assembler() -> Box<BundleAssembler> {
 }
 
 impl BundleAssembler {
-    fn add_spend(
+    pub(crate) fn add_spend(
         self: &mut BundleAssembler,
         cv: &[u8; 32],
         anchor: &[u8; 32],
@@ -164,7 +67,7 @@ impl BundleAssembler {
         spend_auth_sig: &[u8; 64],
     ) -> bool {
         // Deserialize the value commitment
-        let cv = match de_ct(jubjub::ExtendedPoint::from_bytes(cv)) {
+        let cv = match Option::from(ValueCommitment::from_bytes_not_small_order(cv)) {
             Some(p) => p,
             None => return false,
         };
@@ -188,19 +91,20 @@ impl BundleAssembler {
             Err(_) => return false,
         };
 
-        self.shielded_spends.push(sapling::SpendDescription {
-            cv,
-            anchor,
-            nullifier: Nullifier(nullifier),
-            rk,
-            zkproof,
-            spend_auth_sig,
-        });
+        self.shielded_spends
+            .push(sapling::SpendDescription::temporary_zcashd_from_parts(
+                cv,
+                anchor,
+                Nullifier(nullifier),
+                rk,
+                zkproof,
+                spend_auth_sig,
+            ));
 
         true
     }
 
-    fn add_output(
+    pub(crate) fn add_output(
         self: &mut BundleAssembler,
         cv: &[u8; 32],
         cm: &[u8; 32],
@@ -210,33 +114,33 @@ impl BundleAssembler {
         zkproof: [u8; 192], // GROTH_PROOF_SIZE
     ) -> bool {
         // Deserialize the value commitment
-        let cv = match de_ct(jubjub::ExtendedPoint::from_bytes(cv)) {
+        let cv = match Option::from(ValueCommitment::from_bytes_not_small_order(cv)) {
             Some(p) => p,
             None => return false,
         };
 
-        // Deserialize the commitment, which should be an element
-        // of Fr.
-        let cmu = match de_ct(bls12_381::Scalar::from_bytes(cm)) {
+        // Deserialize the extracted note commitment.
+        let cmu = match Option::from(ExtractedNoteCommitment::from_bytes(cm)) {
             Some(a) => a,
             None => return false,
         };
 
-        self.shielded_outputs.push(sapling::OutputDescription {
-            cv,
-            cmu,
-            ephemeral_key: EphemeralKeyBytes(ephemeral_key),
-            enc_ciphertext,
-            out_ciphertext,
-            zkproof,
-        });
+        self.shielded_outputs
+            .push(sapling::OutputDescription::temporary_zcashd_from_parts(
+                cv,
+                cmu,
+                EphemeralKeyBytes(ephemeral_key),
+                enc_ciphertext,
+                out_ciphertext,
+                zkproof,
+            ));
 
         true
     }
 }
 
 #[allow(clippy::boxed_local)]
-fn finish_bundle_assembly(
+pub(crate) fn finish_bundle_assembly(
     assembler: Box<BundleAssembler>,
     value_balance: i64,
     binding_sig: [u8; 64],
@@ -244,23 +148,23 @@ fn finish_bundle_assembly(
     let value_balance = Amount::from_i64(value_balance).expect("parsed elsewhere");
     let binding_sig = redjubjub::Signature::read(&binding_sig[..]).expect("parsed elsewhere");
 
-    Box::new(Bundle(sapling::Bundle {
-        shielded_spends: assembler.shielded_spends,
-        shielded_outputs: assembler.shielded_outputs,
+    Box::new(Bundle(sapling::Bundle::temporary_zcashd_from_parts(
+        assembler.shielded_spends,
+        assembler.shielded_outputs,
         value_balance,
-        authorization: sapling::Authorized { binding_sig },
-    }))
+        sapling::Authorized { binding_sig },
+    )))
 }
 
-struct Prover(SaplingProvingContext);
+pub(crate) struct Prover(SaplingProvingContext);
 
-fn init_prover() -> Box<Prover> {
+pub(crate) fn init_prover() -> Box<Prover> {
     Box::new(Prover(SaplingProvingContext::new()))
 }
 
 impl Prover {
     #[allow(clippy::too_many_arguments)]
-    fn create_spend_proof(
+    pub(crate) fn create_spend_proof(
         &mut self,
         ak: &[u8; 32],
         nsk: &[u8; 32],
@@ -335,8 +239,12 @@ impl Prover {
                 value,
                 anchor,
                 merkle_path,
-                unsafe { SAPLING_SPEND_PARAMS.as_ref() }.unwrap(),
-                &prepare_verifying_key(unsafe { SAPLING_SPEND_VK.as_ref() }.unwrap()),
+                unsafe { SAPLING_SPEND_PARAMS.as_ref() }.expect(
+                    "Parameters not loaded: SAPLING_SPEND_PARAMS should have been initialized",
+                ),
+                &prepare_verifying_key(unsafe { SAPLING_SPEND_VK.as_ref() }.expect(
+                    "Parameters not loaded: SAPLING_SPEND_VK should have been initialized",
+                )),
             )
             .expect("proving should not fail");
 
@@ -354,7 +262,8 @@ impl Prover {
 
         true
     }
-    fn create_output_proof(
+
+    pub(crate) fn create_output_proof(
         &mut self,
         esk: &[u8; 32],
         payment_address: &[u8; 43],
@@ -387,7 +296,9 @@ impl Prover {
             payment_address,
             rcm,
             value,
-            unsafe { SAPLING_OUTPUT_PARAMS.as_ref() }.unwrap(),
+            unsafe { SAPLING_OUTPUT_PARAMS.as_ref() }.expect(
+                "Parameters not loaded: SAPLING_OUTPUT_PARAMS should have been initialized",
+            ),
         );
 
         // Write the proof out to the caller
@@ -400,7 +311,8 @@ impl Prover {
 
         true
     }
-    fn binding_sig(
+
+    pub(crate) fn binding_sig(
         &mut self,
         value_balance: i64,
         sighash: &[u8; 32],
@@ -425,9 +337,9 @@ impl Prover {
     }
 }
 
-struct Verifier(SaplingVerificationContext);
+pub(crate) struct Verifier(SaplingVerificationContext);
 
-fn init_verifier() -> Box<Verifier> {
+pub(crate) fn init_verifier() -> Box<Verifier> {
     // We consider ZIP 216 active all of the time because blocks prior to NU5
     // activation (on mainnet and testnet) did not contain Sapling transactions
     // that violated its canonicity rule.
@@ -436,7 +348,7 @@ fn init_verifier() -> Box<Verifier> {
 
 impl Verifier {
     #[allow(clippy::too_many_arguments)]
-    fn check_spend(
+    pub(crate) fn check_spend(
         &mut self,
         cv: &[u8; 32],
         anchor: &[u8; 32],
@@ -447,7 +359,7 @@ impl Verifier {
         sighash_value: &[u8; 32],
     ) -> bool {
         // Deserialize the value commitment
-        let cv = match de_ct(jubjub::ExtendedPoint::from_bytes(cv)) {
+        let cv = match Option::from(ValueCommitment::from_bytes_not_small_order(cv)) {
             Some(p) => p,
             None => return false,
         };
@@ -478,17 +390,21 @@ impl Verifier {
         };
 
         self.0.check_spend(
-            cv,
+            &cv,
             anchor,
             nullifier,
             rk,
             sighash_value,
             spend_auth_sig,
             zkproof,
-            &prepare_verifying_key(unsafe { SAPLING_SPEND_VK.as_ref() }.unwrap()),
+            &prepare_verifying_key(
+                unsafe { SAPLING_SPEND_VK.as_ref() }
+                    .expect("Parameters not loaded: SAPLING_SPEND_VK should have been initialized"),
+            ),
         )
     }
-    fn check_output(
+
+    pub(crate) fn check_output(
         &mut self,
         cv: &[u8; 32],
         cm: &[u8; 32],
@@ -496,14 +412,13 @@ impl Verifier {
         zkproof: &[u8; GROTH_PROOF_SIZE],
     ) -> bool {
         // Deserialize the value commitment
-        let cv = match de_ct(jubjub::ExtendedPoint::from_bytes(cv)) {
+        let cv = match Option::from(ValueCommitment::from_bytes_not_small_order(cv)) {
             Some(p) => p,
             None => return false,
         };
 
-        // Deserialize the commitment, which should be an element
-        // of Fr.
-        let cm = match de_ct(bls12_381::Scalar::from_bytes(cm)) {
+        // Deserialize the extracted note commitment.
+        let cmu = match Option::from(ExtractedNoteCommitment::from_bytes(cm)) {
             Some(a) => a,
             None => return false,
         };
@@ -521,14 +436,19 @@ impl Verifier {
         };
 
         self.0.check_output(
-            cv,
-            cm,
+            &cv,
+            cmu,
             epk,
             zkproof,
-            &prepare_verifying_key(unsafe { SAPLING_OUTPUT_VK.as_ref() }.unwrap()),
+            &prepare_verifying_key(
+                unsafe { SAPLING_OUTPUT_VK.as_ref() }.expect(
+                    "Parameters not loaded: SAPLING_OUTPUT_VK should have been initialized",
+                ),
+            ),
         )
     }
-    fn final_check(
+
+    pub(crate) fn final_check(
         &self,
         value_balance: i64,
         binding_sig: &[u8; 64],
@@ -555,9 +475,9 @@ struct BatchValidatorInner {
     queued_entries: CacheEntries,
 }
 
-struct BatchValidator(Option<BatchValidatorInner>);
+pub(crate) struct BatchValidator(Option<BatchValidatorInner>);
 
-fn init_batch_validator(cache_store: bool) -> Box<BatchValidator> {
+pub(crate) fn init_batch_validator(cache_store: bool) -> Box<BatchValidator> {
     Box::new(BatchValidator(Some(BatchValidatorInner {
         validator: sapling_proofs::BatchValidator::new(),
         queued_entries: CacheEntries::new(cache_store),
@@ -579,7 +499,7 @@ impl BatchValidator {
     /// the global bundle validity cache, it will have been removed (and this method will
     /// return `true`).
     #[allow(clippy::boxed_local)]
-    fn check_bundle(&mut self, bundle: Box<Bundle>, sighash: [u8; 32]) -> bool {
+    pub(crate) fn check_bundle(&mut self, bundle: Box<Bundle>, sighash: [u8; 32]) -> bool {
         if let Some(inner) = &mut self.0 {
             let cache = sapling_bundle_validity_cache();
 
@@ -622,11 +542,14 @@ impl BatchValidator {
     /// If this batch was configured to cache the results, then if this method returns
     /// `true` every bundle added to the batch will have also been added to the global
     /// bundle validity cache.
-    fn validate(&mut self) -> bool {
+    pub(crate) fn validate(&mut self) -> bool {
         if let Some(inner) = self.0.take() {
             if inner.validator.validate(
-                unsafe { SAPLING_SPEND_VK.as_ref() }.unwrap(),
-                unsafe { SAPLING_OUTPUT_VK.as_ref() }.unwrap(),
+                unsafe { SAPLING_SPEND_VK.as_ref() }
+                    .expect("Parameters not loaded: SAPLING_SPEND_VK should have been initialized"),
+                unsafe { SAPLING_OUTPUT_VK.as_ref() }.expect(
+                    "Parameters not loaded: SAPLING_OUTPUT_VK should have been initialized",
+                ),
                 OsRng,
             ) {
                 // `Self::validate()` is only called if every `Self::check_bundle()`

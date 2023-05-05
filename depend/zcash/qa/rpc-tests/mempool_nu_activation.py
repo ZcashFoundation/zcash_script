@@ -30,10 +30,12 @@ class MempoolUpgradeActivationTest(BitcoinTestFramework):
 
     def setup_network(self):
         args = [
-            "-checkmempool",
-            "-debug=mempool",
-            "-blockmaxsize=4000",
+            '-minrelaytxfee=0',
+            '-checkmempool',
+            '-debug=mempool',
+            '-blockmaxsize=4000',
             '-allowdeprecated=getnewaddress',
+            '-allowdeprecated=legacy_privacy',
             '-allowdeprecated=z_getnewaddress',
             '-allowdeprecated=z_getbalance',
             nuparams(BLOSSOM_BRANCH_ID, 200),
@@ -61,7 +63,7 @@ class MempoolUpgradeActivationTest(BitcoinTestFramework):
         node1_taddr = get_coinbase_address(self.nodes[1])
         node0_zaddr = self.nodes[0].z_getnewaddress('sapling')
         recipients = [{'address': node0_zaddr, 'amount': Decimal('10')}]
-        myopid = self.nodes[1].z_sendmany(node1_taddr, recipients, 1, 0, 'AllowRevealedSenders')
+        myopid = self.nodes[1].z_sendmany(node1_taddr, recipients, 1, 0)
         print(wait_and_assert_operationid_status(self.nodes[1], myopid))
         self.sync_all()
         self.nodes[0].generate(1)

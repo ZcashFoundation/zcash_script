@@ -1,5 +1,6 @@
 use core::fmt;
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::io;
 use std::mem;
 use std::sync::{
@@ -8,69 +9,19 @@ use std::sync::{
 };
 
 use crossbeam_channel as channel;
-use group::GroupEncoding;
 use memuse::DynamicUsage;
 use zcash_note_encryption::{batch, BatchDomain, Domain, ShieldedOutput, ENC_CIPHERTEXT_SIZE};
 use zcash_primitives::{
     block::BlockHash,
-    consensus, constants,
-    sapling::{
-        note_encryption::{PreparedIncomingViewingKey, SaplingDomain},
-        SaplingIvk,
-    },
+    consensus,
+    sapling::note_encryption::SaplingDomain,
     transaction::{
         components::{sapling::GrothProofBytes, OutputDescription},
         Transaction, TxId,
     },
 };
 
-#[cxx::bridge]
-mod ffi {
-    #[namespace = "wallet"]
-    struct SaplingDecryptionResult {
-        txid: [u8; 32],
-        output: u32,
-        ivk: [u8; 32],
-        diversifier: [u8; 11],
-        pk_d: [u8; 32],
-    }
-
-    #[namespace = "wallet"]
-    extern "Rust" {
-        type Network;
-        type BatchScanner;
-        type BatchResult;
-
-        fn network(
-            network: &str,
-            overwinter: i32,
-            sapling: i32,
-            blossom: i32,
-            heartwood: i32,
-            canopy: i32,
-            nu5: i32,
-        ) -> Result<Box<Network>>;
-
-        fn init_batch_scanner(
-            network: &Network,
-            sapling_ivks: &[[u8; 32]],
-        ) -> Result<Box<BatchScanner>>;
-        fn add_transaction(
-            self: &mut BatchScanner,
-            block_tag: [u8; 32],
-            tx_bytes: &[u8],
-            height: u32,
-        ) -> Result<()>;
-        fn flush(self: &mut BatchScanner);
-        fn collect_results(
-            self: &mut BatchScanner,
-            block_tag: [u8; 32],
-            txid: [u8; 32],
-        ) -> Box<BatchResult>;
-
-        fn get_sapling(self: &BatchResult) -> Vec<SaplingDecryptionResult>;
-    }
-}
+use crate::{bridge::ffi, note_encryption::parse_and_prepare_sapling_ivk, params::Network};
 
 /// The minimum number of outputs to trial decrypt in a batch.
 ///
@@ -81,147 +32,6 @@ const METRIC_OUTPUTS_SCANNED: &str = "zcashd.wallet.batchscanner.outputs.scanned
 const METRIC_LABEL_KIND: &str = "kind";
 
 const METRIC_SIZE_TXS: &str = "zcashd.wallet.batchscanner.size.transactions";
-
-/// Chain parameters for the networks supported by `zcashd`.
-#[derive(Clone, Copy)]
-pub enum Network {
-    Consensus(consensus::Network),
-    RegTest {
-        overwinter: Option<consensus::BlockHeight>,
-        sapling: Option<consensus::BlockHeight>,
-        blossom: Option<consensus::BlockHeight>,
-        heartwood: Option<consensus::BlockHeight>,
-        canopy: Option<consensus::BlockHeight>,
-        nu5: Option<consensus::BlockHeight>,
-    },
-}
-
-impl DynamicUsage for Network {
-    fn dynamic_usage(&self) -> usize {
-        match self {
-            Network::Consensus(params) => params.dynamic_usage(),
-            // We know that `Option<BlockHeight>` allocates no memory.
-            Network::RegTest { .. } => 0,
-        }
-    }
-
-    fn dynamic_usage_bounds(&self) -> (usize, Option<usize>) {
-        match self {
-            Network::Consensus(params) => params.dynamic_usage_bounds(),
-            // We know that `Option<BlockHeight>` allocates no memory.
-            Network::RegTest { .. } => (0, Some(0)),
-        }
-    }
-}
-
-/// Constructs a `Network` from the given network string.
-///
-/// The heights are only for constructing a regtest network, and are ignored otherwise.
-fn network(
-    network: &str,
-    overwinter: i32,
-    sapling: i32,
-    blossom: i32,
-    heartwood: i32,
-    canopy: i32,
-    nu5: i32,
-) -> Result<Box<Network>, &'static str> {
-    let i32_to_optional_height = |n: i32| {
-        if n.is_negative() {
-            None
-        } else {
-            Some(consensus::BlockHeight::from_u32(n.unsigned_abs()))
-        }
-    };
-
-    let params = match network {
-        "main" => Network::Consensus(consensus::Network::MainNetwork),
-        "test" => Network::Consensus(consensus::Network::TestNetwork),
-        "regtest" => Network::RegTest {
-            overwinter: i32_to_optional_height(overwinter),
-            sapling: i32_to_optional_height(sapling),
-            blossom: i32_to_optional_height(blossom),
-            heartwood: i32_to_optional_height(heartwood),
-            canopy: i32_to_optional_height(canopy),
-            nu5: i32_to_optional_height(nu5),
-        },
-        _ => return Err("Unsupported network kind"),
-    };
-
-    Ok(Box::new(params))
-}
-
-impl consensus::Parameters for Network {
-    fn activation_height(&self, nu: consensus::NetworkUpgrade) -> Option<consensus::BlockHeight> {
-        match self {
-            Self::Consensus(params) => params.activation_height(nu),
-            Self::RegTest {
-                overwinter,
-                sapling,
-                blossom,
-                heartwood,
-                canopy,
-                nu5,
-            } => match nu {
-                consensus::NetworkUpgrade::Overwinter => *overwinter,
-                consensus::NetworkUpgrade::Sapling => *sapling,
-                consensus::NetworkUpgrade::Blossom => *blossom,
-                consensus::NetworkUpgrade::Heartwood => *heartwood,
-                consensus::NetworkUpgrade::Canopy => *canopy,
-                consensus::NetworkUpgrade::Nu5 => *nu5,
-            },
-        }
-    }
-
-    fn coin_type(&self) -> u32 {
-        match self {
-            Self::Consensus(params) => params.coin_type(),
-            Self::RegTest { .. } => constants::regtest::COIN_TYPE,
-        }
-    }
-
-    fn address_network(&self) -> Option<zcash_address::Network> {
-        match self {
-            Self::Consensus(params) => params.address_network(),
-            Self::RegTest { .. } => Some(zcash_address::Network::Regtest),
-        }
-    }
-
-    fn hrp_sapling_extended_spending_key(&self) -> &str {
-        match self {
-            Self::Consensus(params) => params.hrp_sapling_extended_spending_key(),
-            Self::RegTest { .. } => constants::regtest::HRP_SAPLING_EXTENDED_SPENDING_KEY,
-        }
-    }
-
-    fn hrp_sapling_extended_full_viewing_key(&self) -> &str {
-        match self {
-            Self::Consensus(params) => params.hrp_sapling_extended_full_viewing_key(),
-            Self::RegTest { .. } => constants::regtest::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
-        }
-    }
-
-    fn hrp_sapling_payment_address(&self) -> &str {
-        match self {
-            Self::Consensus(params) => params.hrp_sapling_payment_address(),
-            Self::RegTest { .. } => constants::regtest::HRP_SAPLING_PAYMENT_ADDRESS,
-        }
-    }
-
-    fn b58_pubkey_address_prefix(&self) -> [u8; 2] {
-        match self {
-            Self::Consensus(params) => params.b58_pubkey_address_prefix(),
-            Self::RegTest { .. } => constants::regtest::B58_PUBKEY_ADDRESS_PREFIX,
-        }
-    }
-
-    fn b58_script_address_prefix(&self) -> [u8; 2] {
-        match self {
-            Self::Consensus(params) => params.b58_script_address_prefix(),
-            Self::RegTest { .. } => constants::regtest::B58_SCRIPT_ADDRESS_PREFIX,
-        }
-    }
-}
 
 trait OutputDomain: BatchDomain {
     // The kind of output, for metrics labelling.
@@ -743,7 +553,7 @@ type SaplingRunner =
     BatchRunner<[u8; 32], SaplingDomain<Network>, OutputDescription<GrothProofBytes>, WithUsage>;
 
 /// A batch scanner for the `zcashd` wallet.
-struct BatchScanner {
+pub(crate) struct BatchScanner {
     params: Network,
     sapling_runner: Option<SaplingRunner>,
 }
@@ -758,7 +568,7 @@ impl DynamicUsage for BatchScanner {
     }
 }
 
-fn init_batch_scanner(
+pub(crate) fn init_batch_scanner(
     network: &Network,
     sapling_ivks: &[[u8; 32]],
 ) -> Result<Box<BatchScanner>, &'static str> {
@@ -768,10 +578,8 @@ fn init_batch_scanner(
         let ivks: Vec<(_, _)> = sapling_ivks
             .iter()
             .map(|raw_ivk| {
-                let ivk: Option<_> = jubjub::Fr::from_bytes(raw_ivk)
-                    .map(|scalar_ivk| PreparedIncomingViewingKey::new(&SaplingIvk(scalar_ivk)))
-                    .into();
-                ivk.map(|prepared_ivk| (*raw_ivk, prepared_ivk))
+                parse_and_prepare_sapling_ivk(raw_ivk)
+                    .map(|prepared_ivk| (*raw_ivk, prepared_ivk))
                     .ok_or("Invalid Sapling ivk passed to wallet::init_batch_scanner()")
             })
             .collect::<Result<_, _>>()?;
@@ -794,7 +602,7 @@ impl BatchScanner {
     /// After adding the outputs, any accumulated batch of sufficient size is run on the
     /// global threadpool. Subsequent calls to `Self::add_transaction` will accumulate
     /// those output kinds into new batches.
-    fn add_transaction(
+    pub(crate) fn add_transaction(
         &mut self,
         block_tag: [u8; 32],
         tx_bytes: &[u8],
@@ -815,7 +623,7 @@ impl BatchScanner {
                 block_tag,
                 txid,
                 || SaplingDomain::for_height(params, height),
-                &bundle.shielded_outputs,
+                bundle.shielded_outputs(),
             );
         }
 
@@ -828,7 +636,7 @@ impl BatchScanner {
     /// Runs the currently accumulated batches on the global threadpool.
     ///
     /// Subsequent calls to `Self::add_transaction` will be accumulated into new batches.
-    fn flush(&mut self) {
+    pub(crate) fn flush(&mut self) {
         if let Some(runner) = &mut self.sapling_runner {
             runner.flush();
         }
@@ -841,7 +649,11 @@ impl BatchScanner {
     /// mempool change).
     ///
     /// TODO: Return the `HashMap`s directly once `cxx` supports it.
-    fn collect_results(&mut self, block_tag: [u8; 32], txid: [u8; 32]) -> Box<BatchResult> {
+    pub(crate) fn collect_results(
+        &mut self,
+        block_tag: [u8; 32],
+        txid: [u8; 32],
+    ) -> Box<BatchResult> {
         let block_tag = BlockHash(block_tag);
         let txid = TxId::from_bytes(txid);
 
@@ -858,12 +670,12 @@ impl BatchScanner {
     }
 }
 
-struct BatchResult {
+pub(crate) struct BatchResult {
     sapling: HashMap<(TxId, usize), DecryptedNote<[u8; 32], SaplingDomain<Network>>>,
 }
 
 impl BatchResult {
-    fn get_sapling(&self) -> Vec<ffi::SaplingDecryptionResult> {
+    pub(crate) fn get_sapling(&self) -> Vec<ffi::SaplingDecryptionResult> {
         self.sapling
             .iter()
             .map(
@@ -872,7 +684,9 @@ impl BatchResult {
                     output: *output as u32,
                     ivk: decrypted_note.ivk_tag,
                     diversifier: decrypted_note.recipient.diversifier().0,
-                    pk_d: decrypted_note.recipient.pk_d().to_bytes(),
+                    pk_d: decrypted_note.recipient.to_bytes()[11..]
+                        .try_into()
+                        .unwrap(),
                 },
             )
             .collect()
