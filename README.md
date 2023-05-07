@@ -22,17 +22,17 @@ to include a lot of other stuff e.g. the orchard library.
 
 ### Updating this crate
 
-1. Update `depend/zcash` with the latest tagged version of `zcashd`, using the instructions below
-2. Update `Cargo.toml` versions to match the versions used by the latest tagged version of `zcashd`, and its dependencies
-3. For dependencies that are shared with Zebra (but not `zcashd`), match the latest version in Zebra's [Cargo.lock](https://github.com/ZcashFoundation/zebra/blob/main/Cargo.lock):
+
+1. Create a new branch batch so all the release commits can be made into a PR
+2. Update `depend/zcash` with the latest tagged version of `zcashd`, using the instructions below
+3. Update `Cargo.toml` versions to match the versions used by the latest tagged version of `zcashd`, and its dependencies
+4. For dependencies that are shared with Zebra (but not `zcashd`), match the latest version in Zebra's [Cargo.lock](https://github.com/ZcashFoundation/zebra/blob/main/Cargo.lock):
     - use `cargo tree --invert <crate>` to see if the crate is from `zcash_script` or another dependency
     - see the list in [Cargo.toml](https://github.com/ZcashFoundation/zcash_script/blob/master/Cargo.toml#L69)
-4. For new dependencies with a leading zero in their version (`0.x.y`), use a `>=` dependency [to make them automatically upgrade to match Zebra's dependencies](https://doc.rust-lang.org/cargo/reference/resolver.html#semver-compatibility)
-5. Check all open PRs to see if they can be merged before the release
-6. Run `cargo release patch` to commit the release version bump (but not actually publish)
-7. Open a `zcash_script` PR with the changes, get it reviewed, and wait for CI to pass
-8. Publish a new release using `cargo release --execute patch`
-9. Check the release tag was pushed to https://github.com/ZcashFoundation/zcash_script/tags
+5. For new dependencies with a leading zero in their version (`0.x.y`), use a `>=` dependency [to make them automatically upgrade to match Zebra's dependencies](https://doc.rust-lang.org/cargo/reference/resolver.html#semver-compatibility)
+6. Check all open PRs to see if they can be merged before the release
+7. Do the release, following the instructions below
+8. Check the release tag was pushed to https://github.com/ZcashFoundation/zcash_script/tags
 
 ### Updating `depend/zcash`
 
@@ -79,12 +79,9 @@ once the `zcash_script`, `librustzcash`, and `orchard` versions have all been up
 
 Releases for `zcash-script` are made with the help of [cargo release](https://github.com/sunng87/cargo-release).
 
-**Checklist:**
-
-* create a new branch batch the release commits into a PR
-* update `CHANGELOG.md` to document any major changes since the last release
-  https://github.com/rust-lang/cargo/issues/8597)
-* open a PR to merge your branch into `master`
-* locally run `cargo release -- <level>` where `level` can be `patch`, `minor`, or `major` ([source](https://github.com/sunng87/cargo-release/blob/master/docs/reference.md#bump-level))
+1. Update `CHANGELOG.md` to document any major changes since the last release
+2. Run `cargo release <level>` to commit the release version bump (but not actually publish), `<level>` can be `patch`, `minor` or `major`
+3. Open a `zcash_script` PR with the changes, get it reviewed, and wait for CI to pass
+4. Publish a new release using `cargo release --execute <level>`
 
 **NOTE**: It's important to specify the level when using cargo release because of the way it implements the substitutions. We specify a number of automatic substitutions in `Cargo.toml` but they will only be applied if `cargo release` also handles incrementing the version itself, **do not increment the version by hand and then run `cargo release` or `cargo release -- release`, or it will not correctly update all version references in the codebase.**
