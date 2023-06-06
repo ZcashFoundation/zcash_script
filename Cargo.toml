@@ -57,7 +57,7 @@ byteorder = "1"
 crossbeam-channel = "0.5"
 cxx = { version = "=1.0.94", features = ["c++17"] }
 group = "0.13"
-incrementalmerkletree = "0.3"
+incrementalmerkletree = "0.4"
 jubjub = "0.10"
 libc = "0.2"
 memuse = "0.2"
