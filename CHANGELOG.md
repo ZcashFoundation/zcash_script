@@ -8,7 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
-## [0.1.12] - 2023-05-07
+## [0.1.13] - 2023-06-27
+
+### Changed
+- Update `depend/zcash` to version 5.6.1 which includes updated dependencies
+- Update other dependencies to match Zebra
 
 ## [0.1.12] - 2023-05-03
 
