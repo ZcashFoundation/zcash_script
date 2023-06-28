@@ -133,6 +133,7 @@ fn main() -> Result<()> {
         .include("depend/zcash/src/")
         .include("depend/zcash/src/rust/include/")
         .include("depend/zcash/src/secp256k1/include/")
+        .include("depend/expected/include/")
         .include(&gen_path.join("include"))
         .flag_if_supported("-Wno-implicit-fallthrough")
         .flag_if_supported("-Wno-catch-value")
