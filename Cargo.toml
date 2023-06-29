@@ -98,6 +98,8 @@ syn = { version = "1.0.109", features = ["full", "printing"] }
 # Treat minor versions with a zero major version as compatible (cargo doesn't by default).
 hex = ">= 0.4.3"
 lazy_static = "1.4.0"
+incrementalmerkletree = { version = "0.4", features = ["test-dependencies"] }
+zcash_primitives = { version = "0.12", features = ["temporary-zcashd", "transparent-inputs", "test-dependencies"] }
 
 [[package.metadata.release.pre-release-replacements]]
 file = "CHANGELOG.md"
