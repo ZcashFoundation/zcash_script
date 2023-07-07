@@ -1,7 +1,7 @@
 //! Rust bindings for Zcash transparent scripts.
 
 #![doc(html_logo_url = "https://www.zfnd.org/images/zebra-icon.png")]
-#![doc(html_root_url = "https://docs.rs/zcash_script/0.1.12")]
+#![doc(html_root_url = "https://docs.rs/zcash_script/0.1.13")]
 #![allow(missing_docs)]
 #![allow(clippy::needless_lifetimes)]
 #![allow(non_upper_case_globals)]
@@ -55,6 +55,7 @@ mod orchard_bundle;
 mod params;
 mod sapling;
 mod streams;
+mod test_harness_ffi;
 mod wallet;
 mod wallet_scanner;
 mod zcashd_orchard;

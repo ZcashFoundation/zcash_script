@@ -12,7 +12,7 @@ from test_framework.util import (
     assert_raises_message,
     connect_nodes_bi,
     nuparams,
-    DEFAULT_FEE,
+    LEGACY_DEFAULT_FEE,
     NU5_BRANCH_ID,
 )
 from test_framework.util import wait_and_assert_operationid_status, start_nodes
@@ -66,7 +66,7 @@ class ListReceivedTest (BitcoinTestFramework):
         opid = self.nodes[1].z_sendmany(taddr, [
             {'address': zaddr1, 'amount': 1, 'memo': my_memo},
             {'address': zaddrExt, 'amount': 2},
-        ], 1, DEFAULT_FEE, 'AllowFullyTransparent')
+        ], 1, LEGACY_DEFAULT_FEE, 'AllowFullyTransparent')
         txid = wait_and_assert_operationid_status(self.nodes[1], opid)
         self.sync_all()
 
@@ -77,13 +77,13 @@ class ListReceivedTest (BitcoinTestFramework):
         assert_equal(len(pt['spends']), 0)
         assert_equal(len(pt['outputs']), 2)
 
-        # Outputs are not returned in a defined order but the amounts are deterministic
+        # Outputs are shuffled during transaction building, but the amounts are deterministic
         outputs = sorted(pt['outputs'], key=lambda x: x['valueZat'])
         assert_equal(outputs[0]['pool'], 'sapling')
         assert_equal(outputs[0]['address'], zaddr1)
         assert_equal(outputs[0]['value'], Decimal('1'))
         assert_equal(outputs[0]['valueZat'], 100000000)
-        assert_equal(outputs[0]['output'], 0)
+        output_1zec = outputs[0]['output']
         assert_equal(outputs[0]['outgoing'], False)
         assert_equal(outputs[0]['memo'], my_memo)
         assert_equal(outputs[0]['memoStr'], my_memo_str)
@@ -92,7 +92,6 @@ class ListReceivedTest (BitcoinTestFramework):
         assert_equal(outputs[1]['address'], zaddrExt)
         assert_equal(outputs[1]['value'], Decimal('2'))
         assert_equal(outputs[1]['valueZat'], 200000000)
-        assert_equal(outputs[1]['output'], 1)
         assert_equal(outputs[1]['outgoing'], True)
         assert_equal(outputs[1]['memo'], no_memo)
         assert 'memoStr' not in outputs[1]
@@ -147,18 +146,17 @@ class ListReceivedTest (BitcoinTestFramework):
         assert_equal(pt['spends'][0]['pool'], 'sapling')
         assert_equal(pt['spends'][0]['txidPrev'], txidPrev)
         assert_equal(pt['spends'][0]['spend'], 0)
-        assert_equal(pt['spends'][0]['outputPrev'], 0)
+        assert_equal(pt['spends'][0]['outputPrev'], output_1zec)
         assert_equal(pt['spends'][0]['address'], zaddr1)
         assert_equal(pt['spends'][0]['value'], Decimal('1.0'))
         assert_equal(pt['spends'][0]['valueZat'], 100000000)
 
-        # Outputs are not returned in a defined order but the amounts are deterministic
+        # Outputs are shuffled during transaction building, but the amounts are deterministic
         outputs = sorted(pt['outputs'], key=lambda x: x['valueZat'])
         assert_equal(outputs[0]['pool'], 'sapling')
         assert_equal(outputs[0]['address'], zaddr1)
         assert_equal(outputs[0]['value'], Decimal('0.4') - conventional_fee(2))
         assert_equal(outputs[0]['valueZat'], 40000000 - conventional_fee_zats(2))
-        assert_equal(outputs[0]['output'], 1)
         assert_equal(outputs[0]['outgoing'], False)
         assert_equal(outputs[0]['memo'], no_memo)
         assert 'memoStr' not in outputs[0]
@@ -167,7 +165,6 @@ class ListReceivedTest (BitcoinTestFramework):
         assert_equal(outputs[1]['address'], zaddr2)
         assert_equal(outputs[1]['value'], Decimal('0.6'))
         assert_equal(outputs[1]['valueZat'], 60000000)
-        assert_equal(outputs[1]['output'], 0)
         assert_equal(outputs[1]['outgoing'], False)
         assert_equal(outputs[1]['memo'], no_memo)
         assert 'memoStr' not in outputs[1]
@@ -179,7 +176,7 @@ class ListReceivedTest (BitcoinTestFramework):
         assert_equal(txid, r[0]['txid'])
         assert_equal(Decimal('0.4')-conventional_fee(2), r[0]['amount'])
         assert_equal(40000000-conventional_fee_zats(2), r[0]['amountZat'])
-        assert_equal(r[0]['change'], True, "Note valued at (0.4-"+str(DEFAULT_FEE)+") should be change")
+        assert_equal(r[0]['change'], True, "Note valued at (0.4-"+str(LEGACY_DEFAULT_FEE)+") should be change")
         assert_equal(no_memo, r[0]['memo'])
 
         # The old note still exists (it's immutable), even though it is spent

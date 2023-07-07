@@ -10,7 +10,6 @@
 #include "consensus/consensus.h"
 #include "consensus/validation.h"
 #include "main.h"
-#include "policy/fees.h"
 #include "streams.h"
 #include "timedata.h"
 #include "util/system.h"
@@ -342,13 +341,11 @@ CTxMemPool::CTxMemPool(const CFeeRate& _minReasonableRelayFee) :
     // of transactions in the pool
     nCheckFrequency = 0;
 
-    minerPolicyEstimator = new CBlockPolicyEstimator(_minReasonableRelayFee);
     minReasonableRelayFee = _minReasonableRelayFee;
 }
 
 CTxMemPool::~CTxMemPool()
 {
-    delete minerPolicyEstimator;
     delete recentlyEvicted;
     delete limitSet;
 }
@@ -378,7 +375,7 @@ void CTxMemPool::AddTransactionsUpdated(unsigned int n)
     nTransactionsUpdated += n;
 }
 
-bool CTxMemPool::addUnchecked(const uint256& hash, const CTxMemPoolEntry &entry, setEntries &setAncestors, bool fCurrentEstimate)
+bool CTxMemPool::addUnchecked(const uint256& hash, const CTxMemPoolEntry &entry, setEntries &setAncestors)
 {
     // Add to memory pool without checking anything.
     // Used by main.cpp AcceptToMemoryPool(), which DOES do
@@ -434,8 +431,8 @@ bool CTxMemPool::addUnchecked(const uint256& hash, const CTxMemPoolEntry &entry,
             mapSproutNullifiers[nf] = &tx;
         }
     }
-    for (const SpendDescription &spendDescription : tx.vShieldedSpend) {
-        mapSaplingNullifiers[spendDescription.nullifier] = &tx;
+    for (const auto& spendDescription : tx.GetSaplingSpends()) {
+        mapSaplingNullifiers[spendDescription.nullifier()] = &tx;
     }
     for (const uint256 &orchardNullifier : tx.GetOrchardBundle().GetNullifiers()) {
         mapOrchardNullifiers[orchardNullifier] = &tx;
@@ -443,7 +440,6 @@ bool CTxMemPool::addUnchecked(const uint256& hash, const CTxMemPoolEntry &entry,
 
     nTransactionsUpdated++;
     totalTxSize += entry.GetTxSize();
-    minerPolicyEstimator->processTransaction(entry, fCurrentEstimate);
 
     return true;
 }
@@ -566,8 +562,8 @@ void CTxMemPool::removeUnchecked(txiter it)
             mapSproutNullifiers.erase(nf);
         }
     }
-    for (const SpendDescription &spendDescription : it->GetTx().vShieldedSpend) {
-        mapSaplingNullifiers.erase(spendDescription.nullifier);
+    for (const auto& spendDescription : it->GetTx().GetSaplingSpends()) {
+        mapSaplingNullifiers.erase(spendDescription.nullifier());
     }
     for (const uint256 &orchardNullifier : it->GetTx().GetOrchardBundle().GetNullifiers()) {
         mapOrchardNullifiers.erase(orchardNullifier);
@@ -579,7 +575,6 @@ void CTxMemPool::removeUnchecked(txiter it)
     mapLinks.erase(it);
     mapTx.erase(it);
     nTransactionsUpdated++;
-    minerPolicyEstimator->removeTx(hash);
 
     // insightexplorer
     if (fAddressIndex)
@@ -709,8 +704,8 @@ void CTxMemPool::removeWithAnchor(const uint256 &invalidRoot, ShieldedType type)
                 }
             break;
             case SAPLING:
-                for (const SpendDescription& spendDescription : tx.vShieldedSpend) {
-                    if (spendDescription.anchor == invalidRoot) {
+                for (const auto& spendDescription : tx.GetSaplingSpends()) {
+                    if (uint256::FromRawBytes(spendDescription.anchor()) == invalidRoot) {
                         transactionsToRemove.push_back(tx);
                         break;
                     }
@@ -763,8 +758,8 @@ void CTxMemPool::removeConflicts(const CTransaction &tx, std::list<CTransaction>
             }
         }
     }
-    for (const SpendDescription &spendDescription : tx.vShieldedSpend) {
-        std::map<uint256, const CTransaction*>::iterator it = mapSaplingNullifiers.find(spendDescription.nullifier);
+    for (const auto& spendDescription : tx.GetSaplingSpends()) {
+        auto it = mapSaplingNullifiers.find(spendDescription.nullifier());
         if (it != mapSaplingNullifiers.end()) {
             const CTransaction &txConflict = *it->second;
             if (txConflict != tx) {
@@ -806,10 +801,10 @@ std::vector<uint256> CTxMemPool::removeExpired(unsigned int nBlockHeight)
 }
 
 /**
- * Called when a block is connected. Removes from mempool and updates the miner fee estimator.
+ * Called when a block is connected. Removes from mempool.
  */
 void CTxMemPool::removeForBlock(const std::vector<CTransaction>& vtx, unsigned int nBlockHeight,
-                                std::list<CTransaction>& conflicts, bool fCurrentEstimate)
+                                std::list<CTransaction>& conflicts)
 {
     LOCK(cs);
     std::vector<CTxMemPoolEntry> entries;
@@ -828,8 +823,6 @@ void CTxMemPool::removeForBlock(const std::vector<CTransaction>& vtx, unsigned i
         removeConflicts(tx, conflicts);
         ClearPrioritisation(tx.GetHash());
     }
-    // After the txs in the new block have been removed from the mempool, update policy estimates
-    minerPolicyEstimator->processBlock(nBlockHeight, entries, fCurrentEstimate);
 }
 
 /**
@@ -981,31 +974,18 @@ void CTxMemPool::check(const CCoinsViewCache *pcoins) const
         assert(it->first == it->second.ptx->vin[it->second.n].prevout);
     }
 
-    checkNullifiers(SPROUT);
-    checkNullifiers(SAPLING);
-    checkNullifiers(ORCHARD);
+    checkNullifiers(mapSproutNullifiers);
+    checkNullifiers(mapSaplingNullifiers);
+    checkNullifiers(mapOrchardNullifiers);
 
     assert(totalTxSize == checkTotal);
     assert(innerUsage == cachedInnerUsage);
 }
 
-void CTxMemPool::checkNullifiers(ShieldedType type) const
+template<typename T>
+void CTxMemPool::checkNullifiers(const std::map<T, const CTransaction*>& mapToUse) const
 {
-    const std::map<uint256, const CTransaction*>* mapToUse;
-    switch (type) {
-        case SPROUT:
-            mapToUse = &mapSproutNullifiers;
-            break;
-        case SAPLING:
-            mapToUse = &mapSaplingNullifiers;
-            break;
-        case ORCHARD:
-            mapToUse = &mapOrchardNullifiers;
-            break;
-        default:
-            throw runtime_error("Unknown nullifier type");
-    }
-    for (const auto& entry : *mapToUse) {
+    for (const auto& entry : mapToUse) {
         uint256 hash = entry.second->GetHash();
         CTxMemPool::indexed_transaction_set::const_iterator findTx = mapTx.find(hash);
         const CTransaction& tx = findTx->GetTx();
@@ -1103,46 +1083,6 @@ TxMempoolInfo CTxMemPool::info(const uint256& hash) const
     return TxMempoolInfo{i->GetSharedTx(), i->GetTime(), CFeeRate(i->GetFee(), i->GetTxSize())};
 }
 
-CFeeRate CTxMemPool::estimateFee(int nBlocks) const
-{
-    LOCK(cs);
-    return minerPolicyEstimator->estimateFee(nBlocks);
-}
-
-bool
-CTxMemPool::WriteFeeEstimates(CAutoFile& fileout) const
-{
-    try {
-        LOCK(cs);
-        fileout << FEE_ESTIMATES_WITHOUT_PRIORITY_VERSION; // version required to read
-        fileout << std::max(FEE_ESTIMATES_WITHOUT_PRIORITY_VERSION, CLIENT_VERSION); // version that wrote the file
-        minerPolicyEstimator->Write(fileout);
-    }
-    catch (const std::exception&) {
-        LogPrintf("CTxMemPool::WriteFeeEstimates(): unable to write policy estimator data (non-fatal)\n");
-        return false;
-    }
-    return true;
-}
-
-bool
-CTxMemPool::ReadFeeEstimates(CAutoFile& filein)
-{
-    try {
-        int nVersionRequired, nVersionThatWrote;
-        filein >> nVersionRequired >> nVersionThatWrote;
-        if (nVersionRequired > std::max(FEE_ESTIMATES_WITHOUT_PRIORITY_VERSION, CLIENT_VERSION))
-            return error("CTxMemPool::ReadFeeEstimates(): up-version (%d) fee estimate file", nVersionRequired);
-        LOCK(cs);
-        minerPolicyEstimator->Read(filein, nVersionThatWrote);
-    }
-    catch (const std::exception&) {
-        LogPrintf("CTxMemPool::ReadFeeEstimates(): unable to read policy estimator data (non-fatal)\n");
-        return false;
-    }
-    return true;
-}
-
 void CTxMemPool::PrioritiseTransaction(const uint256 hash, const std::string strHash, const CAmount& nFeeDelta)
 {
     {
@@ -1195,7 +1135,7 @@ bool CTxMemPool::nullifierExists(const uint256& nullifier, ShieldedType type) co
         case SPROUT:
             return mapSproutNullifiers.count(nullifier);
         case SAPLING:
-            return mapSaplingNullifiers.count(nullifier);
+            return mapSaplingNullifiers.count(nullifier.GetRawBytes());
         case ORCHARD:
             return mapOrchardNullifiers.count(nullifier);
         default:
@@ -1324,14 +1264,14 @@ void CTxMemPool::RemoveStaged(setEntries &stage) {
     }
 }
 
-bool CTxMemPool::addUnchecked(const uint256&hash, const CTxMemPoolEntry &entry, bool fCurrentEstimate)
+bool CTxMemPool::addUnchecked(const uint256&hash, const CTxMemPoolEntry &entry)
 {
     LOCK(cs);
     setEntries setAncestors;
     uint64_t nNoLimit = std::numeric_limits<uint64_t>::max();
     std::string dummy;
     CalculateMemPoolAncestors(entry, setAncestors, nNoLimit, nNoLimit, nNoLimit, nNoLimit, dummy);
-    return addUnchecked(hash, entry, setAncestors, fCurrentEstimate);
+    return addUnchecked(hash, entry, setAncestors);
 }
 
 void CTxMemPool::UpdateChild(txiter entry, txiter child, bool add)

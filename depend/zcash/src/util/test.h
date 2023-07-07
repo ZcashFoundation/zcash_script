@@ -5,6 +5,7 @@
 #ifndef ZCASH_UTIL_TEST_H
 #define ZCASH_UTIL_TEST_H
 
+#include "chainparams.h"
 #include "coins.h"
 #include "key_io.h"
 #include "wallet/wallet.h"
@@ -50,6 +51,15 @@ public:
         throw std::runtime_error("`GetHistoryRoot` unimplemented for mock AssumeShieldedInputsExistAndAreSpendable");
     }
 
+    std::optional<libzcash::LatestSubtree> GetLatestSubtree(ShieldedType type) const {
+        throw std::runtime_error("`GetLatestSubtree` unimplemented for mock AssumeShieldedInputsExistAndAreSpendable");
+    };
+    std::optional<libzcash::SubtreeData> GetSubtreeData(
+            ShieldedType type,
+            libzcash::SubtreeIndex index) const {
+        throw std::runtime_error("`GetSubtreeData` unimplemented for mock AssumeShieldedInputsExistAndAreSpendable");
+    };
+
     bool BatchWrite(CCoinsMap &mapCoins,
                     const uint256 &hashBlock,
                     const uint256 &hashSproutAnchor,
@@ -61,7 +71,9 @@ public:
                     CNullifiersMap &mapSproutNullifiers,
                     CNullifiersMap &mapSaplingNullifiers,
                     CNullifiersMap &mapOrchardNullifiers,
-                    CHistoryCacheMap &historyCacheMap) {
+                    CHistoryCacheMap &historyCacheMap,
+                    SubtreeCache &cacheSaplingSubtrees,
+                    SubtreeCache &cacheOrchardSubtrees) {
         return false;
     }
     bool GetStats(CCoinsStats &stats) const { return false; }
@@ -122,15 +134,12 @@ libzcash::SaplingExtendedSpendingKey GetTestMasterSaplingSpendingKey();
 
 CKey AddTestCKeyToKeyStore(CBasicKeyStore& keyStore);
 
-SpendDescription RandomInvalidSpendDescription();
-OutputDescription RandomInvalidOutputDescription();
-
 /**
  * Generate a dummy SaplingNote and a SaplingMerkleTree with that note's commitment.
  */
 TestSaplingNote GetTestSaplingNote(const libzcash::SaplingPaymentAddress& pa, CAmount value);
 
-CWalletTx GetValidSaplingReceive(const Consensus::Params& consensusParams,
+CWalletTx GetValidSaplingReceive(const CChainParams& consensusParams,
                                  CBasicKeyStore& keyStore,
                                  const libzcash::SaplingExtendedSpendingKey &sk,
                                  CAmount value);

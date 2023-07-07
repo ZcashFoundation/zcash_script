@@ -81,7 +81,6 @@ extern void ThreadSendAlert();
 
 TracingHandle* pTracingHandle = nullptr;
 
-bool fFeeEstimatesInitialized = false;
 static const bool DEFAULT_PROXYRANDOMIZE = true;
 static const bool DEFAULT_REST_ENABLE = false;
 static const bool DEFAULT_DISABLE_SAFEMODE = false;
@@ -112,7 +111,6 @@ enum BindFlags {
     BF_WHITELIST    = (1U << 2),
 };
 
-static const char* FEE_ESTIMATES_FILENAME="fee_estimates.dat";
 CClientUIInterface uiInterface; // Declared but not defined in ui_interface.h
 
 //////////////////////////////////////////////////////////////////////////////
@@ -176,7 +174,6 @@ public:
 
 static CCoinsViewDB *pcoinsdbview = NULL;
 static CCoinsViewErrorCatcher *pcoinscatcher = NULL;
-static boost::scoped_ptr<ECCVerifyHandle> globalVerifyHandle;
 
 void Interrupt(boost::thread_group& threadGroup)
 {
@@ -220,17 +217,6 @@ void Shutdown()
     StopTorControl();
     UnregisterNodeSignals(GetNodeSignals());
 
-    if (fFeeEstimatesInitialized)
-    {
-        fs::path est_path = GetDataDir() / FEE_ESTIMATES_FILENAME;
-        CAutoFile est_fileout(fsbridge::fopen(est_path, "wb"), SER_DISK, CLIENT_VERSION);
-        if (!est_fileout.IsNull())
-            mempool.WriteFeeEstimates(est_fileout);
-        else
-            LogPrintf("%s: Failed to write fee estimates to %s\n", __func__, est_path.string());
-        fFeeEstimatesInitialized = false;
-    }
-
     {
         LOCK(cs_main);
         if (pcoinsTip != NULL) {
@@ -270,7 +256,6 @@ void Shutdown()
     delete pwalletMain;
     pwalletMain = NULL;
 #endif
-    globalVerifyHandle.reset();
     ECC_Stop();
     TracingInfo("main", "done");
     if (pTracingHandle) {
@@ -466,7 +451,7 @@ std::string HelpMessage(HelpMessageMode mode)
                 "-fundingstream=streamId:startHeight:endHeight:comma_delimited_addresses",
                 "Use given addresses for block subsidy share paid to the funding stream with id <streamId> (regtest-only)");
     }
-    std::string debugCategories = "addrman, alert, bench, coindb, db, estimatefee, http, libevent, lock, mempool, mempoolrej, net, partitioncheck, pow, proxy, prune, "
+    std::string debugCategories = "addrman, alert, bench, coindb, db, http, libevent, lock, mempool, mempoolrej, net, partitioncheck, pow, proxy, prune, "
                              "rand, receiveunsafe, reindex, rpc, selectcoins, tor, zmq, zrpc, zrpcunsafe (implies zrpc)"; // Don't translate these
     strUsage += HelpMessageOpt("-debug=<category>", strprintf(_("Output debugging information (default: %u, supplying <category> is optional)"), 0) + ". " +
         _("If <category> is not supplied or if <category> = 1, output all debugging information.") + " " + _("<category> can be:") + " " + debugCategories + ". " +
@@ -499,7 +484,8 @@ std::string HelpMessage(HelpMessageMode mode)
 
     strUsage += HelpMessageGroup(_("Node relay options:"));
     strUsage += HelpMessageOpt("-datacarrier", strprintf(_("Relay and mine data carrier transactions (default: %u)"), DEFAULT_ACCEPT_DATACARRIER));
-    strUsage += HelpMessageOpt("-datacarriersize", strprintf(_("Maximum size of data in data carrier transactions we relay and mine (default: %u)"), MAX_OP_RETURN_RELAY));
+    strUsage += HelpMessageOpt("-datacarriersize=<n>", strprintf(_("Maximum size of data in data carrier transactions we relay and mine (default: %u)"), MAX_OP_RETURN_RELAY));
+    strUsage += HelpMessageOpt("-txunpaidactionlimit=<n>", strprintf(_("Transactions with more than this number of unpaid actions will not be accepted to the mempool or relayed (default: %u)"), DEFAULT_TX_UNPAID_ACTION_LIMIT));
 
     strUsage += HelpMessageGroup(_("Block creation options:"));
     strUsage += HelpMessageOpt("-blockmaxsize=<n>", strprintf(_("Set maximum block size in bytes (default: %d)"), DEFAULT_BLOCK_MAX_SIZE));
@@ -1257,6 +1243,11 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     fAcceptDatacarrier = GetBoolArg("-datacarrier", DEFAULT_ACCEPT_DATACARRIER);
     nMaxDatacarrierBytes = GetArg("-datacarriersize", nMaxDatacarrierBytes);
 
+    if (GetArg("-txunpaidactionlimit", 0) < 0) {
+        return InitError(_("-txunpaidactionlimit cannot be configured with a negative value."));
+    }
+    nTxUnpaidActionLimit = GetArg("-txunpaidactionlimit", DEFAULT_TX_UNPAID_ACTION_LIMIT);
+
     fAlerts = GetBoolArg("-alerts", DEFAULT_ALERTS);
 
     // Option to startup with mocktime set (used for regression testing);
@@ -1280,20 +1271,6 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
 
     nMaxTipAge = GetArg("-maxtipage", DEFAULT_MAX_TIP_AGE);
 
-#ifdef ENABLE_MINING
-    if (mapArgs.count("-mineraddress")) {
-        KeyIO keyIO(chainparams);
-        auto addr = keyIO.DecodePaymentAddress(mapArgs["-mineraddress"]);
-        auto consensus = chainparams.GetConsensus();
-        int height = consensus.HeightOfLatestSettledUpgrade();
-        if (!(addr.has_value() && std::visit(ExtractMinerAddress(consensus, height), addr.value()).has_value())) {
-            return InitError(strprintf(
-                _("Invalid address for -mineraddress=<addr>: '%s' (must be a Sapling or transparent P2PKH address, or a Unified Address containing a valid receiver for the most recent settled network upgrade.)"),
-                mapArgs["-mineraddress"]));
-        }
-    }
-#endif
-
     if (GetArg("-blockminsize", 0) != 0) {
         InitWarning(_("The argument -blockminsize is no longer supported."));
     }
@@ -1306,6 +1283,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
         return InitError(_("-blockunpaidactionlimit cannot be configured with a negative value."));
     }
 
+    auto maxUpgradeHeight = Consensus::NetworkUpgrade::NO_ACTIVATION_HEIGHT;
     if (!mapMultiArgs["-nuparams"].empty()) {
         // Allow overriding network upgrade parameters for testing
         if (chainparams.NetworkIDString() != "regtest") {
@@ -1328,6 +1306,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
             {
                 if (vDeploymentParams[0].compare(HexInt(NetworkUpgradeInfo[i].nBranchId)) == 0) {
                     UpdateNetworkUpgradeParameters(Consensus::UpgradeIndex(i), nActivationHeight);
+                    maxUpgradeHeight = std::max(maxUpgradeHeight, nActivationHeight);
                     found = true;
                     LogPrintf("Setting network upgrade activation parameters for %s to height=%d\n", vDeploymentParams[0], nActivationHeight);
                     break;
@@ -1407,6 +1386,28 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
         }
     }
 
+#ifdef ENABLE_MINING
+    if (mapArgs.count("-mineraddress")) {
+        KeyIO keyIO(chainparams);
+        auto addr = keyIO.DecodePaymentAddress(mapArgs["-mineraddress"]);
+        auto consensus = chainparams.GetConsensus();
+        int height = consensus.HeightOfLatestSettledUpgrade();
+        if (chainparams.NetworkIDString() == "regtest") {
+            height = std::max(height, maxUpgradeHeight);
+        }
+        if (!addr.has_value()) {
+            return InitError(strprintf(
+                _("Invalid address for -mineraddress=<addr>: Unable to parse '%s' as a Zcash address.)"),
+                mapArgs["-mineraddress"]));
+        }
+        if (!std::visit(ExtractMinerAddress(consensus, height), addr.value()).has_value()) {
+            return InitError(strprintf(
+                _("Invalid address for -mineraddress=<addr>: '%s' (must be a Sapling or transparent P2PKH address, or a Unified Address containing a valid receiver for the most recent settled network upgrade.)"),
+                mapArgs["-mineraddress"]));
+        }
+    }
+#endif
+
     // ********************************************************* Step 4: application initialization: dir lock, daemonize, pidfile, debug log
 
     // Initialize libsodium
@@ -1418,7 +1419,6 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     std::string sha256_algo = SHA256AutoDetect();
     LogPrintf("Using the '%s' SHA256 implementation\n", sha256_algo);
     ECC_Start();
-    globalVerifyHandle.reset(new ECCVerifyHandle());
 
     // Sanity check
     if (!InitSanityCheck())
@@ -1818,6 +1818,45 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
                     strLoadError = _("Corrupted block database detected");
                     break;
                 }
+
+                if (fExperimentalLightWalletd) {
+                    LOCK(cs_main);
+
+                    SaplingMerkleTree sapling_tree;
+                    OrchardMerkleFrontier orchard_tree;
+                    assert(pcoinsdbview->GetSaplingAnchorAt(pcoinsdbview->GetBestAnchor(SAPLING), sapling_tree));
+                    assert(pcoinsdbview->GetOrchardAnchorAt(pcoinsdbview->GetBestAnchor(ORCHARD), orchard_tree));
+
+                    if (pcoinsdbview->CurrentSubtreeIndex(SAPLING) != sapling_tree.current_subtree_index()) {
+                        uiInterface.InitMessage(_("Regenerating subtrees for Sapling..."));
+                        LogPrintf("init: the complete subtree database for Sapling needs to be migrated. Starting RegenerateSubtrees...\n");
+                        struct timeval tv_start, tv_end;
+                        float elapsed;
+                        gettimeofday(&tv_start, 0);
+                        if (!RegenerateSubtrees(SAPLING, chainparams.GetConsensus())) {
+                            strLoadError = _("Error migrating subtree database for Sapling");
+                            break;
+                        }
+                        gettimeofday(&tv_end, 0);
+                        elapsed = float(tv_end.tv_sec-tv_start.tv_sec) + (tv_end.tv_usec-tv_start.tv_usec)/float(1000000);
+                        LogPrintf("init: Sapling subtree database migrated in %f seconds\n", elapsed);
+                    }
+
+                    if (pcoinsdbview->CurrentSubtreeIndex(ORCHARD) != orchard_tree.current_subtree_index()) {
+                        uiInterface.InitMessage(_("Regenerating subtrees for Orchard..."));
+                        LogPrintf("init: the complete subtree database for Orchard needs to be migrated. Starting RegenerateSubtrees...\n");
+                        struct timeval tv_start, tv_end;
+                        float elapsed;
+                        gettimeofday(&tv_start, 0);
+                        if (!RegenerateSubtrees(ORCHARD, chainparams.GetConsensus())) {
+                            strLoadError = _("Error migrating subtree database for Orchard");
+                            break;
+                        }
+                        gettimeofday(&tv_end, 0);
+                        elapsed = float(tv_end.tv_sec-tv_start.tv_sec) + (tv_end.tv_usec-tv_start.tv_usec)/float(1000000);
+                        LogPrintf("init: Orchard subtree database migrated in %f seconds\n", elapsed);
+                    }
+                }
             } catch (const std::exception& e) {
                 if (fDebug) LogPrintf("%s\n", e.what());
                 strLoadError = _("Error opening block database");
@@ -1859,14 +1898,6 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     }
     LogPrintf(" block index %15dms\n", GetTimeMillis() - nStart);
 
-    fs::path est_path = GetDataDir() / FEE_ESTIMATES_FILENAME;
-    CAutoFile est_filein(fsbridge::fopen(est_path, "rb"), SER_DISK, CLIENT_VERSION);
-    // Allowed to fail as this file IS missing on first startup.
-    if (!est_filein.IsNull())
-        mempool.ReadFeeEstimates(est_filein);
-    fFeeEstimatesInitialized = true;
-
-
     // ********************************************************* Step 8: load wallet
 #ifdef ENABLE_WALLET
     if (fDisableWallet) {
@@ -1904,7 +1935,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
                     zaddr.value(),
                     true,
                     TransparentCoinbasePolicy::Allow,
-                    false);
+                    std::nullopt);
             minerAddressInLocalWallet = ztxoSelector.has_value();
         }
         if (GetBoolArg("-minetolocalwallet", true) && !minerAddressInLocalWallet) {

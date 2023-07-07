@@ -428,7 +428,7 @@ Debugging/Testing options:
        Output debugging information (default: 0, supplying <category> is
        optional). If <category> is not supplied or if <category> = 1, output
        all debugging information. <category> can be: addrman, alert, bench,
-       coindb, db, estimatefee, http, libevent, lock, mempool, mempoolrej, net,
+       coindb, db, http, libevent, lock, mempool, mempoolrej, net,
        partitioncheck, pow, proxy, prune, rand, receiveunsafe, reindex, rpc,
        selectcoins, tor, zmq, zrpc, zrpcunsafe (implies zrpc). For multiple
        specific categories use -debug=<category> multiple times.
@@ -496,9 +496,13 @@ Node relay options:
   -datacarrier
        Relay and mine data carrier transactions (default: 1)
 
-  -datacarriersize
+  -datacarriersize=<n>
        Maximum size of data in data carrier transactions we relay and mine
        (default: 83)
+
+  -txunpaidactionlimit=<n>
+       Transactions with more than this number of unpaid actions will not be
+       accepted to the mempool or relayed (default: 50)
 
 Block creation options:
 

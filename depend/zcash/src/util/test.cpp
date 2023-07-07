@@ -11,7 +11,6 @@
 #include <optional>
 
 #include <rust/ed25519.h>
-#include <rust/test_harness.h>
 
 // Sprout
 CMutableTransaction GetValidSproutReceiveTransaction(
@@ -65,7 +64,7 @@ CMutableTransaction GetValidSproutReceiveTransaction(
     // depend on this happening.
     if (version >= 4) {
         // Shielded Output
-        mtx.vShieldedOutput.push_back(RandomInvalidOutputDescription());
+        mtx.saplingBundle = sapling::test_only_invalid_bundle(0, 1, 0);
     }
 
     // Empty output script.
@@ -334,27 +333,6 @@ CKey AddTestCKeyToKeyStore(CBasicKeyStore& keyStore) {
     return tsk;
 }
 
-SpendDescription RandomInvalidSpendDescription() {
-    SpendDescription sdesc;
-    zcash_test_harness_random_jubjub_point(sdesc.cv.begin());
-    zcash_test_harness_random_jubjub_base(sdesc.anchor.begin());
-    sdesc.nullifier = GetRandHash();
-    zcash_test_harness_random_jubjub_point(sdesc.rk.begin());
-    GetRandBytes(sdesc.zkproof.begin(), sdesc.zkproof.size());
-    return sdesc;
-}
-
-OutputDescription RandomInvalidOutputDescription() {
-    OutputDescription odesc;
-    zcash_test_harness_random_jubjub_point(odesc.cv.begin());
-    zcash_test_harness_random_jubjub_base(odesc.cmu.begin());
-    zcash_test_harness_random_jubjub_point(odesc.ephemeralKey.begin());
-    GetRandBytes(odesc.encCiphertext.begin(), odesc.encCiphertext.size());
-    GetRandBytes(odesc.outCiphertext.begin(), odesc.outCiphertext.size());
-    GetRandBytes(odesc.zkproof.begin(), odesc.zkproof.size());
-    return odesc;
-}
-
 TestSaplingNote GetTestSaplingNote(const libzcash::SaplingPaymentAddress& pa, CAmount value) {
     // Generate dummy Sapling note
     libzcash::SaplingNote note(pa, value, libzcash::Zip212Enabled::BeforeZip212);
@@ -364,7 +342,7 @@ TestSaplingNote GetTestSaplingNote(const libzcash::SaplingPaymentAddress& pa, CA
     return { note, tree };
 }
 
-CWalletTx GetValidSaplingReceive(const Consensus::Params& consensusParams,
+CWalletTx GetValidSaplingReceive(const CChainParams& params,
                                  CBasicKeyStore& keyStore,
                                  const libzcash::SaplingExtendedSpendingKey &sk,
                                  CAmount value) {
@@ -375,7 +353,7 @@ CWalletTx GetValidSaplingReceive(const Consensus::Params& consensusParams,
     auto fvk = sk.expsk.full_viewing_key();
     auto pa = sk.ToXFVK().DefaultAddress();
 
-    auto builder = TransactionBuilder(consensusParams, 1, std::nullopt, &keyStore);
+    auto builder = TransactionBuilder(params, 1, std::nullopt, &keyStore);
     builder.SetFee(0);
     builder.AddTransparentInput(COutPoint(), scriptPubKey, value);
     builder.AddSaplingOutput(fvk.ovk, pa, value, {});

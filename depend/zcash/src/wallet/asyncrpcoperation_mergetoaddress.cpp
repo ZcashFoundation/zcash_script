@@ -183,11 +183,12 @@ main_impl(
         LogPrint("zrpc", "%s: fee: %s\n", id, FormatMoney(effects.GetFee()));
 
         auto buildResult = effects.ApproveAndBuild(
-                chainparams.GetConsensus(),
+                chainparams,
                 wallet,
                 chainActive,
                 strategy);
         auto tx = buildResult.GetTxOrThrow();
+        LogPrint("zrpc", "%s, conventional fee: %s\n", id, FormatMoney(tx.GetConventionalFee()));
 
         UniValue sendResult = SendTransaction(tx, payments.GetResolvedPayments(), std::nullopt, testmode);
 

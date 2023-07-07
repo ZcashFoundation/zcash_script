@@ -5,7 +5,7 @@
 
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
-    DEFAULT_FEE,
+    LEGACY_DEFAULT_FEE,
     NU5_BRANCH_ID,
     assert_equal,
     assert_greater_than,
@@ -107,14 +107,14 @@ class WalletZSendmanyTest(BitcoinTestFramework):
         # send node 2 taddr to zaddr
         recipients = []
         recipients.append({"address":myzaddr, "amount":7})
-        opid = self.nodes[2].z_sendmany(mytaddr, recipients, 1, DEFAULT_FEE, 'AllowFullyTransparent')
+        opid = self.nodes[2].z_sendmany(mytaddr, recipients, 1, LEGACY_DEFAULT_FEE, 'AllowFullyTransparent')
         mytxid = wait_and_assert_operationid_status(self.nodes[2], opid)
 
         self.sync_all()
 
         # check balances
         zsendmanynotevalue = Decimal('7.0')
-        zsendmanyfee = DEFAULT_FEE
+        zsendmanyfee = LEGACY_DEFAULT_FEE
         node2sproutbalance = Decimal('50.00000000')
         node2utxobalance = Decimal('210.00000000') - zsendmanynotevalue - zsendmanyfee
 
@@ -160,14 +160,14 @@ class WalletZSendmanyTest(BitcoinTestFramework):
 
         # try sending with a memo to a taddr, which should fail
         recipients = [{"address":self.nodes[0].getnewaddress(), "amount":1, "memo":"DEADBEEF"}]
-        opid = self.nodes[2].z_sendmany(myzaddr, recipients, 1, DEFAULT_FEE, 'AllowRevealedRecipients')
+        opid = self.nodes[2].z_sendmany(myzaddr, recipients, 1, LEGACY_DEFAULT_FEE, 'AllowRevealedRecipients')
         wait_and_assert_operationid_status(self.nodes[2], opid, 'failed', 'Failed to build transaction: Memos cannot be sent to transparent addresses.')
 
         recipients = []
         recipients.append({"address":self.nodes[0].getnewaddress(), "amount":1})
         recipients.append({"address":self.nodes[2].getnewaddress(), "amount":1.0})
 
-        opid = self.nodes[2].z_sendmany(myzaddr, recipients, 1, DEFAULT_FEE, 'AllowRevealedRecipients')
+        opid = self.nodes[2].z_sendmany(myzaddr, recipients, 1, LEGACY_DEFAULT_FEE, 'AllowRevealedRecipients')
         wait_and_assert_operationid_status(self.nodes[2], opid)
         zbalance -= Decimal('2.0') + zsendmanyfee
 
@@ -333,8 +333,8 @@ class WalletZSendmanyTest(BitcoinTestFramework):
 
         # If we try to send 3 ZEC from n1ua0, it will fail with too-few funds.
         recipients = [{"address":n0ua0, "amount":3}]
-        linked_addrs_with_coinbase_note_msg = 'Insufficient funds: have 2.00, need 3.00; note that coinbase outputs will not be selected if you specify ANY_TADDR, any transparent recipients are included, or if the `privacyPolicy` parameter is not set to `AllowRevealedSenders` or weaker. (This transaction may require selecting transparent coins that were sent to multiple Unified Addresses, which is not enabled by default because it would create a public link between the transparent receivers of these addresses. THIS MAY AFFECT YOUR PRIVACY. Resubmit with the `privacyPolicy` parameter set to `AllowLinkingAccountAddresses` or weaker if you wish to allow this transaction to proceed anyway.)'
-        linked_addrs_without_coinbase_note_msg = 'Insufficient funds: have 2.00, need 3.00. (This transaction may require selecting transparent coins that were sent to multiple Unified Addresses, which is not enabled by default because it would create a public link between the transparent receivers of these addresses. THIS MAY AFFECT YOUR PRIVACY. Resubmit with the `privacyPolicy` parameter set to `AllowLinkingAccountAddresses` or weaker if you wish to allow this transaction to proceed anyway.)'
+        linked_addrs_with_coinbase_note_msg = 'Insufficient funds: have 0.00, need 3.00; note that coinbase outputs will not be selected if you specify ANY_TADDR, any transparent recipients are included, or if the `privacyPolicy` parameter is not set to `AllowRevealedSenders` or weaker. (This transaction may require selecting transparent coins that were sent to multiple addresses, which is not enabled by default because it would create a public link between those addresses. THIS MAY AFFECT YOUR PRIVACY. Resubmit with the `privacyPolicy` parameter set to `AllowLinkingAccountAddresses` or weaker if you wish to allow this transaction to proceed anyway.)'
+        linked_addrs_without_coinbase_note_msg = 'Insufficient funds: have 2.00, need 3.00. (This transaction may require selecting transparent coins that were sent to multiple addresses, which is not enabled by default because it would create a public link between those addresses. THIS MAY AFFECT YOUR PRIVACY. Resubmit with the `privacyPolicy` parameter set to `AllowLinkingAccountAddresses` or weaker if you wish to allow this transaction to proceed anyway.)'
         revealed_amounts_msg = 'Could not send to a shielded receiver of a unified address without spending funds from a different pool, which would reveal transaction amounts. THIS MAY AFFECT YOUR PRIVACY. Resubmit with the `privacyPolicy` parameter set to `AllowRevealedAmounts` or weaker if you wish to allow this transaction to proceed anyway.'
         opid = self.nodes[1].z_sendmany(n1ua0, recipients, 1, 0)
         wait_and_assert_operationid_status(self.nodes[1], opid, 'failed', revealed_amounts_msg)

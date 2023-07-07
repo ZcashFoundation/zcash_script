@@ -37,8 +37,8 @@ TEST(NoteEncryption, NotePlaintext)
     auto ivk = fvk.in_viewing_key();
     SaplingPaymentAddress addr = *ivk.address({0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0});
 
-    std::array<unsigned char, ZC_MEMO_SIZE> memo;
-    for (size_t i = 0; i < ZC_MEMO_SIZE; i++) {
+    Memo::Bytes memo;
+    for (size_t i = 0; i < Memo::SIZE; i++) {
         // Fill the message with dummy data
         memo[i] = (unsigned char) i;
     }
@@ -46,56 +46,42 @@ TEST(NoteEncryption, NotePlaintext)
     for (int ver = 0; ver < zip_212_enabled.size(); ver++){
         auto params = (*activations[ver])();
 
-        SaplingNote note(addr, 39393, zip_212_enabled[ver]);
-        auto cmu_opt = note.cmu();
-        if (!cmu_opt) {
-            FAIL();
-        }
-        uint256 cmu = cmu_opt.value();
-        SaplingNotePlaintext pt(note, memo);
-
-        auto res = pt.encrypt(addr.pk_d);
-        if (!res) {
-            FAIL();
-        }
-
-        auto enc = res.value();
-
-        auto ct = enc.first;
-        auto encryptor = enc.second;
-        auto epk = encryptor.get_epk();
-
-        SaplingOutgoingPlaintext out_pt;
-        out_pt.pk_d = note.pk_d;
-        out_pt.esk = encryptor.get_esk();
-
         auto ovk = random_uint256();
-        auto cv = random_uint256();
-        auto cm = random_uint256();
+        auto value = 39393;
 
-        auto out_ct = out_pt.encrypt(
-            ovk,
-            cv,
-            cm,
-            encryptor
-        );
+        auto builder = sapling::new_builder(*Params().RustNetwork(), 10);
+        builder->add_recipient(
+            ovk.GetRawBytes(),
+            addr.GetRawBytes(),
+            value,
+            memo);
+        auto bundle = sapling::apply_bundle_signatures(sapling::build_bundle(std::move(builder), 10), {});
+        auto outputs = bundle->outputs();
 
-        auto decrypted_out_ct = out_pt.decrypt(
-            out_ct,
-            ovk,
-            cv,
-            cm,
-            encryptor.get_epk()
-        );
-
-        if (!decrypted_out_ct) {
-            FAIL();
+        std::optional<SaplingOutgoingPlaintext> decrypted_out_ct;
+        uint256 cmu;
+        uint256 epk;
+        libzcash::SaplingEncCiphertext ct;
+        for (auto& output : outputs) {
+            decrypted_out_ct = SaplingOutgoingPlaintext::decrypt(
+                output.out_ciphertext(),
+                ovk,
+                uint256::FromRawBytes(output.cv()),
+                uint256::FromRawBytes(output.cmu()),
+                uint256::FromRawBytes(output.ephemeral_key()));
+            if (decrypted_out_ct) {
+                cmu = uint256::FromRawBytes(output.cmu());
+                epk = uint256::FromRawBytes(output.ephemeral_key());
+                ct = output.enc_ciphertext();
+                break;
+            }
         }
+
+        ASSERT_TRUE(decrypted_out_ct.has_value());
 
         auto decrypted_out_ct_unwrapped = decrypted_out_ct.value();
 
-        ASSERT_TRUE(decrypted_out_ct_unwrapped.pk_d == out_pt.pk_d);
-        ASSERT_TRUE(decrypted_out_ct_unwrapped.esk == out_pt.esk);
+        ASSERT_TRUE(decrypted_out_ct_unwrapped.pk_d == addr.pk_d);
 
         // Test sender won't accept invalid commitments
         ASSERT_FALSE(
@@ -127,10 +113,9 @@ TEST(NoteEncryption, NotePlaintext)
 
         auto bar = foo.value();
 
-        ASSERT_TRUE(bar.value() == pt.value());
-        ASSERT_TRUE(bar.memo() == pt.memo());
-        ASSERT_TRUE(bar.d == pt.d);
-        ASSERT_TRUE(bar.rcm() == pt.rcm());
+        ASSERT_TRUE(bar.value() == value);
+        ASSERT_TRUE(bar.memo() == Memo::FromBytes(memo));
+        ASSERT_TRUE(bar.d == addr.d);
 
         (*deactivations[ver])();
     }
@@ -148,14 +133,14 @@ TEST(NoteEncryption, SaplingApi)
     SaplingPaymentAddress pk_2 = *ivk.address({4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0});
 
     // Blob of stuff we're encrypting
-    std::array<unsigned char, ZC_SAPLING_ENCPLAINTEXT_SIZE> message;
-    for (size_t i = 0; i < ZC_SAPLING_ENCPLAINTEXT_SIZE; i++) {
+    std::array<unsigned char, SAPLING_ENCPLAINTEXT_SIZE> message;
+    for (size_t i = 0; i < SAPLING_ENCPLAINTEXT_SIZE; i++) {
         // Fill the message with dummy data
         message[i] = (unsigned char) i;
     }
 
-    std::array<unsigned char, ZC_SAPLING_OUTPLAINTEXT_SIZE> small_message;
-    for (size_t i = 0; i < ZC_SAPLING_OUTPLAINTEXT_SIZE; i++) {
+    std::array<unsigned char, SAPLING_OUTPLAINTEXT_SIZE> small_message;
+    for (size_t i = 0; i < SAPLING_OUTPLAINTEXT_SIZE; i++) {
         // Fill the message with dummy data
         small_message[i] = (unsigned char) i;
     }
@@ -208,7 +193,7 @@ TEST(NoteEncryption, SaplingApi)
     // Test nonce-reuse resistance of API
     {
         auto tmp_enc = *SaplingNoteEncryption::FromDiversifier(pk_1.d, esk);
-        
+
         tmp_enc.encrypt_to_recipient(
             pk_1.pk_d,
             message
@@ -335,8 +320,8 @@ TEST(NoteEncryption, api)
         ASSERT_TRUE(b.get_epk() != c.get_epk());
     }
 
-    std::array<unsigned char, ZC_NOTEPLAINTEXT_SIZE> message;
-    for (size_t i = 0; i < ZC_NOTEPLAINTEXT_SIZE; i++) {
+    std::array<unsigned char, libzcash::NOTEPLAINTEXT_SIZE> message;
+    for (size_t i = 0; i < libzcash::NOTEPLAINTEXT_SIZE; i++) {
         // Fill the message with dummy data
         message[i] = (unsigned char) i;
     }
@@ -354,7 +339,7 @@ TEST(NoteEncryption, api)
             // Test wrong nonce
             ASSERT_THROW(decrypter.decrypt(ciphertext, b.get_epk(), uint256(), (i == 0) ? 1 : (i - 1)),
                          libzcash::note_decryption_failed);
-        
+
             // Test wrong ephemeral key
             {
                 ZCNoteEncryption c = ZCNoteEncryption(uint256());
@@ -362,11 +347,11 @@ TEST(NoteEncryption, api)
                 ASSERT_THROW(decrypter.decrypt(ciphertext, c.get_epk(), uint256(), i),
                              libzcash::note_decryption_failed);
             }
-        
+
             // Test wrong seed
             ASSERT_THROW(decrypter.decrypt(ciphertext, b.get_epk(), uint256S("11035d60bc1983e37950ce4803418a8fb33ea68d5b937ca382ecbae7564d6a77"), i),
                          libzcash::note_decryption_failed);
-        
+
             // Test corrupted ciphertext
             ciphertext[10] ^= 0xff;
             ASSERT_THROW(decrypter.decrypt(ciphertext, b.get_epk(), uint256(), i),

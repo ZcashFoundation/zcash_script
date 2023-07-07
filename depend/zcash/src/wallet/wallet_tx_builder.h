@@ -5,10 +5,10 @@
 #ifndef ZCASH_WALLET_WALLET_TX_BUILDER_H
 #define ZCASH_WALLET_WALLET_TX_BUILDER_H
 
-#include "consensus/params.h"
+#include "chainparams.h"
 #include "transaction_builder.h"
-#include "wallet/memo.h"
 #include "wallet/wallet.h"
+#include "zcash/memo.h"
 
 using namespace libzcash;
 
@@ -220,7 +220,7 @@ public:
     bool InvolvesOrchard() const;
 
     TransactionBuilderResult ApproveAndBuild(
-            const Consensus::Params& consensus,
+            const CChainParams& params,
             const CWallet& wallet,
             const CChain& chain,
             const TransactionStrategy& strategy) const;
@@ -402,7 +402,8 @@ private:
             CAmount dustThreshold,
             const SpendableInputs& spendable,
             Payments& resolved,
-            bool afterNU5) const;
+            bool afterNU5,
+            uint32_t consensusBranchId) const;
 
     /**
      * Select inputs sufficient to fulfill the specified requested payments,
@@ -415,10 +416,10 @@ private:
             const ZTXOSelector& selector,
             const SpendableInputs& spendable,
             const std::vector<Payment>& payments,
-            const CChain& chain,
             const TransactionStrategy& strategy,
             const std::optional<CAmount>& fee,
-            bool afterNU5) const;
+            bool afterNU5,
+            uint32_t consensusBranchId) const;
     /**
      * Compute the internal and external OVKs to use in transaction construction, given
      * the spendable inputs.

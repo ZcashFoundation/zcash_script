@@ -10,6 +10,7 @@
 #include "init.h"
 #include "key_io.h"
 #include "random.h"
+#include "rpc/common.h"
 #include "sync.h"
 #include "ui_interface.h"
 #include "util/system.h"
@@ -49,7 +50,6 @@ static struct CRPCSignals
     boost::signals2::signal<void ()> Started;
     boost::signals2::signal<void ()> Stopped;
     boost::signals2::signal<void (const CRPCCommand&)> PreCommand;
-    boost::signals2::signal<void (const CRPCCommand&)> PostCommand;
 } g_rpcSignals;
 
 void RPCServer::OnStarted(std::function<void ()> slot)
@@ -65,11 +65,6 @@ void RPCServer::OnStopped(std::function<void ()> slot)
 void RPCServer::OnPreCommand(std::function<void (const CRPCCommand&)> slot)
 {
     g_rpcSignals.PreCommand.connect(boost::bind(slot, _1));
-}
-
-void RPCServer::OnPostCommand(std::function<void (const CRPCCommand&)> slot)
-{
-    g_rpcSignals.PostCommand.connect(boost::bind(slot, _1));
 }
 
 void RPCTypeCheck(const UniValue& params,
@@ -490,14 +485,47 @@ UniValue CRPCTable::execute(const std::string &strMethod, const UniValue &params
     try
     {
         // Execute
-        return pcmd->actor(params, false);
+        auto paramRange = rpcCvtTable.find(strMethod);
+        if (paramRange != rpcCvtTable.end()) {
+            auto numRequired = paramRange->second.first.size();
+            auto numOptional = paramRange->second.second.size();
+            if (params.size() < numRequired || numRequired + numOptional < params.size()) {
+                std::string helpMsg;
+                try {
+                    // help gets thrown – if it doesn’t throw, then no help message
+                    pcmd->actor(params, true);
+                } catch (const std::runtime_error& err) {
+                    helpMsg = std::string("\n\n") + err.what();
+                }
+                throw JSONRPCError(
+                    RPC_INVALID_PARAMS,
+                    strprintf(
+                            "%s for method `%s`. Needed %s, but received %u%s",
+                            params.size() < numRequired
+                            ? "Not enough parameters"
+                            : "Too many parameters",
+                            strMethod,
+                            numOptional == 0
+                            ? strprintf("exactly %u", numRequired)
+                            : strprintf("at least %u and at most %u", numRequired, numRequired + numOptional),
+                            params.size(),
+                            helpMsg));
+            } else {
+                return pcmd->actor(params, false);
+            }
+        } else {
+            throw JSONRPCError(
+                    RPC_INTERNAL_ERROR,
+                    "Parameters for "
+                    + strMethod
+                    + " not found – this is an internal error, please report it.");
+        }
+
     }
     catch (const std::exception& e)
     {
         throw JSONRPCError(RPC_MISC_ERROR, e.what());
     }
-
-    g_rpcSignals.PostCommand(*pcmd);
 }
 
 std::vector<std::string> CRPCTable::listCommands() const
@@ -627,4 +655,20 @@ CRPCTable tableRPC;
 std::shared_ptr<AsyncRPCQueue> getAsyncRPCQueue()
 {
     return AsyncRPCQueue::sharedInstance();
+}
+
+void AddMemo(UniValue &obj, const std::optional<libzcash::Memo> &memo)
+{
+    obj.pushKV("memo", HexStr(libzcash::Memo::ToBytes(memo)));
+
+    if (memo.has_value()) {
+        auto interpMemo = memo.value().Interpret();
+        // TODO: Indicate when the memo should have been valid UTF8, but wasn’t.
+        if (interpMemo.has_value()) {
+            examine(interpMemo.value(), match {
+                [&](const std::string& memoStr) { obj.pushKV("memoStr", memoStr); },
+                [](const auto&) {},
+            });
+        }
+    }
 }

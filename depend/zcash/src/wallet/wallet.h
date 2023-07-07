@@ -371,7 +371,7 @@ struct SproutNoteEntry
     JSOutPoint jsop;
     libzcash::SproutPaymentAddress address;
     libzcash::SproutNote note;
-    std::array<unsigned char, ZC_MEMO_SIZE> memo;
+    std::optional<libzcash::Memo> memo;
     int confirmations;
 };
 
@@ -381,7 +381,7 @@ struct SaplingNoteEntry
     SaplingOutPoint op;
     libzcash::SaplingPaymentAddress address;
     libzcash::SaplingNote note;
-    std::array<unsigned char, ZC_MEMO_SIZE> memo;
+    std::optional<libzcash::Memo> memo;
     int confirmations;
 };
 
@@ -750,15 +750,28 @@ class COutput
 public:
     const CWalletTx *tx;
     int i;
+    std::optional<CTxDestination> destination;
     int nDepth;
     bool fSpendable;
     bool fIsCoinbase;
 
-    COutput(const CWalletTx *txIn, int iIn, int nDepthIn, bool fSpendableIn, bool fIsCoinbaseIn = false) :
-            tx(txIn), i(iIn), nDepth(nDepthIn), fSpendable(fSpendableIn), fIsCoinbase(fIsCoinbaseIn){ }
+    COutput(const CWalletTx *txIn, int iIn, std::optional<CTxDestination> destination, int nDepthIn, bool fSpendableIn, bool fIsCoinbaseIn = false) :
+        tx(txIn), i(iIn), destination(destination), nDepth(nDepthIn), fSpendable(fSpendableIn), fIsCoinbase(fIsCoinbaseIn){ }
 
     CAmount Value() const { return tx->vout[i].nValue; }
     std::string ToString() const;
+};
+
+/**
+ * Indicates which addresses can be used when selecting notes to spend from a unified account.
+ */
+enum UnifiedAccountSpendingPolicy {
+    /// Can only send from non-transparent receivers in the account.
+    ShieldedOnly,
+    /// Can send from a single transparent address in the account.
+    ShieldedWithSingleTransparentAddress,
+    /// Can send from any combination of receivers in the account.
+    AnyAddresses,
 };
 
 /**
@@ -825,6 +838,11 @@ public:
      * is not allowed by `AllowLinkingAccountAddresses`.
      */
     bool IsCompatibleWith(PrivacyPolicy policy) const;
+
+    /**
+     * This lets us know which combinations of notes we can select from a unified account.
+     */
+    UnifiedAccountSpendingPolicy PermittedAccountSpendingPolicy() const;
 };
 
 /**
@@ -1188,6 +1206,12 @@ public:
         const int nHeight);
 };
 
+enum class AccountChangeAddressFailure {
+    DisjointReceivers,
+    TransparentChangeNotPermitted,
+    NoSuchAccount,
+};
+
 /**
  * A CWallet is an extension of a keystore, which also maintains a set of transactions and balances,
  * and provides the ability to create new transactions.
@@ -1492,7 +1516,7 @@ public:
      */
     std::map<uint256, JSOutPoint> mapSproutNullifiersToNotes;
 
-    std::map<uint256, SaplingOutPoint> mapSaplingNullifiersToNotes;
+    std::map<libzcash::nullifier_t, SaplingOutPoint> mapSaplingNullifiersToNotes;
 
     std::map<uint256, CWalletTx> mapWallet;
 
@@ -1566,7 +1590,10 @@ public:
             const libzcash::PaymentAddress& addr,
             bool requireSpendingKey,
             TransparentCoinbasePolicy transparentCoinbasePolicy,
-            bool allowAddressLinkability) const;
+            /// This determines if and how we treat a UA `addr` as a proxy for an account. It should
+            /// be `std::nullopt` when it’s not desirable to use the UA as a proxy (e.g., getting a
+            /// balance for a specific UA).
+            std::optional<UnifiedAccountSpendingPolicy> spendingPolicy) const;
 
     /**
      * Returns the ZTXO selector for the specified viewing key, if that key
@@ -1607,7 +1634,8 @@ public:
      * Returns `std::nullopt` if the account does not have an internal spending
      * key matching the requested `OutputPool`.
      */
-    std::optional<libzcash::RecipientAddress> GenerateChangeAddressForAccount(
+    tl::expected<libzcash::RecipientAddress, AccountChangeAddressFailure>
+    GenerateChangeAddressForAccount(
             libzcash::AccountId accountId,
             std::set<libzcash::OutputPool> changeOptions);
 
@@ -1951,7 +1979,7 @@ public:
     static CAmount ConstrainFee(CAmount requestedFee, unsigned int nTxBytes);
 
     /**
-     * Estimate the minimum fee considering user set parameters
+     * Decide on the minimum fee considering user set parameters
      * and the required fee.
      */
     static CAmount GetMinimumFee(const CTransaction& tx, unsigned int nTxBytes);
@@ -1987,7 +2015,7 @@ public:
         const CTransaction& tx,
         int height) const;
     bool IsSproutNullifierFromMe(const uint256& nullifier) const;
-    bool IsSaplingNullifierFromMe(const uint256& nullifier) const;
+    bool IsSaplingNullifierFromMe(const libzcash::nullifier_t& nullifier) const;
 
     bool GetSproutNoteWitnesses(
          const std::vector<JSOutPoint>& notes,
@@ -1999,9 +2027,20 @@ public:
          unsigned int confirmations,
          std::vector<std::optional<SaplingWitness>>& witnesses,
          uint256 &final_anchor) const;
+    /**
+     * Return the witness and other information required to spend a given
+     * Orchard note. `anchorConfirmations` must be a value in the range
+     * `1..=100`; it is not possible to spend shielded notes with 0
+     * confirmations.
+     *
+     * This method checks the root of the wallet's note commitment tree having
+     * the specified `anchorConfirmations` to ensure that it corresponds to the
+     * specified anchor and will panic if this check fails.
+     */
     std::vector<std::pair<libzcash::OrchardSpendingKey, orchard::SpendInfo>> GetOrchardSpendInfo(
         const std::vector<OrchardNoteMetadata>& orchardNoteMetadata,
-        uint256 anchor) const;
+        unsigned int confirmations,
+        const uint256& anchor) const;
 
     isminetype IsMine(const CTxIn& txin) const;
     CAmount GetDebit(const CTxIn& txin, const isminefilter& filter) const;
@@ -2042,10 +2081,10 @@ public:
             const libzcash::SproutPaymentAddress& address,
             const JSOutPoint & entry);
 
-    std::set<std::pair<libzcash::SaplingPaymentAddress, uint256>> GetSaplingNullifiers(
+    std::set<std::pair<libzcash::SaplingPaymentAddress, libzcash::nullifier_t>> GetSaplingNullifiers(
             const std::set<libzcash::SaplingPaymentAddress>& addresses);
     bool IsNoteSaplingChange(
-            const std::set<std::pair<libzcash::SaplingPaymentAddress, uint256>> & nullifierSet,
+            const std::set<std::pair<libzcash::SaplingPaymentAddress, libzcash::nullifier_t>> & nullifierSet,
             const libzcash::SaplingPaymentAddress& address,
             const SaplingOutPoint & entry);
 

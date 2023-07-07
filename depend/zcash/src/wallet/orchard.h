@@ -25,14 +25,14 @@ private:
     OrchardOutPoint op;
     libzcash::OrchardRawAddress address;
     CAmount noteValue;
-    std::array<uint8_t, ZC_MEMO_SIZE> memo;
+    std::optional<libzcash::Memo> memo;
     int confirmations;
 public:
     OrchardNoteMetadata(
         OrchardOutPoint op,
         const libzcash::OrchardRawAddress& address,
         CAmount noteValue,
-        const std::array<unsigned char, ZC_MEMO_SIZE>& memo):
+        const std::optional<libzcash::Memo>& memo):
         op(op), address(address), noteValue(noteValue), memo(memo), confirmations(0) {}
 
     const OrchardOutPoint& GetOutPoint() const {
@@ -55,7 +55,7 @@ public:
         return noteValue;
     }
 
-    const std::array<uint8_t, ZC_MEMO_SIZE>& GetMemo() const {
+    const std::optional<libzcash::Memo>& GetMemo() const {
         return memo;
     }
 };
@@ -137,11 +137,14 @@ class OrchardActionOutput {
 private:
     libzcash::OrchardRawAddress recipient;
     CAmount noteValue;
-    std::array<unsigned char, 512> memo;
+    std::optional<libzcash::Memo> memo;
     bool isOutgoing;
 public:
     OrchardActionOutput(
-            libzcash::OrchardRawAddress recipient, CAmount noteValue, std::array<unsigned char, 512> memo, bool isOutgoing):
+            libzcash::OrchardRawAddress recipient,
+            CAmount noteValue,
+            std::optional<libzcash::Memo> memo,
+            bool isOutgoing):
             recipient(recipient), noteValue(noteValue), memo(memo), isOutgoing(isOutgoing) { }
 
     const libzcash::OrchardRawAddress& GetRecipient() const {
@@ -152,7 +155,7 @@ public:
         return noteValue;
     }
 
-    const std::array<unsigned char, 512>& GetMemo() const {
+    const std::optional<libzcash::Memo>& GetMemo() const {
         return memo;
     }
 
@@ -343,8 +346,25 @@ public:
 
     uint256 GetLatestAnchor() const {
         uint256 value;
-        orchard_wallet_commitment_tree_root(inner.get(), value.begin());
+        // there is always a valid note commitment tree root at depth 0
+        assert(orchard_wallet_commitment_tree_root(inner.get(), 0, value.begin()));
         return value;
+    }
+
+    /**
+     * Return the root of the Orchard note commitment tree having the specified number
+     * of confirmations. `confirmations` must be a value in the range `1..=100`; it is
+     * not possible to spend shielded notes with 0 confirmations.
+     */
+    std::optional<uint256> GetAnchorWithConfirmations(unsigned int confirmations) const {
+        // the checkpoint depth is equal to the number of confirmations - 1
+        assert(confirmations > 0);
+        uint256 value;
+        if (orchard_wallet_commitment_tree_root(inner.get(), (size_t) confirmations - 1, value.begin())) {
+            return value;
+        } else {
+            return std::nullopt;
+        }
     }
 
     bool TxInvolvesMyNotes(const uint256& txid) {
@@ -386,13 +406,11 @@ public:
         uint256 txid;
         std::move(std::begin(rawNoteMeta.txid), std::end(rawNoteMeta.txid), txid.begin());
         OrchardOutPoint op(txid, rawNoteMeta.actionIdx);
-        std::array<uint8_t, ZC_MEMO_SIZE> memo;
-        std::move(std::begin(rawNoteMeta.memo), std::end(rawNoteMeta.memo), memo.begin());
         OrchardNoteMetadata noteMeta(
                 op,
                 libzcash::OrchardRawAddress(rawNoteMeta.addr),
                 rawNoteMeta.noteValue,
-                memo);
+                libzcash::Memo::FromBytes(rawNoteMeta.memo));
 
         reinterpret_cast<std::vector<OrchardNoteMetadata>*>(orchardNotesRet)->push_back(noteMeta);
     }
@@ -442,9 +460,19 @@ public:
         return result;
     }
 
+    /**
+     * Return the witness and other information required to spend a given note.
+     * `anchorConfirmations` must be a value in the range `1..=100`; it is not
+     * possible to spend shielded notes with 0 confirmations.
+     *
+     * This method checks the root of the wallet's note commitment tree having
+     * the specified `anchorConfirmations` to ensure that it corresponds to the
+     * specified anchor and will panic if this check fails.
+     */
     std::vector<std::pair<libzcash::OrchardSpendingKey, orchard::SpendInfo>> GetSpendInfo(
         const std::vector<OrchardNoteMetadata>& noteMetadata,
-        uint256 anchor) const;
+        unsigned int anchorConfirmations,
+        const uint256& anchor) const;
 
     void GarbageCollect() {
         orchard_wallet_gc_note_commitment_tree(inner.get());
@@ -461,12 +489,10 @@ public:
     }
 
     static void PushOutputAction(void* receiver, RawOrchardActionOutput rawOutput) {
-        std::array<unsigned char, 512> memo;
-        std::move(std::begin(rawOutput.memo), std::end(rawOutput.memo), memo.begin());
         auto output = OrchardActionOutput(
                 libzcash::OrchardRawAddress(rawOutput.recipient),
                 rawOutput.noteValue,
-                memo,
+                libzcash::Memo::FromBytes(rawOutput.memo),
                 rawOutput.isOutgoing);
 
         reinterpret_cast<OrchardActions*>(receiver)->AddOutput(rawOutput.outputActionIdx, output);
@@ -483,6 +509,10 @@ public:
                 PushSpendAction,
                 PushOutputAction);
         return result;
+    }
+
+    bool UnspentNotesAreSpendable() const {
+        return orchard_wallet_unspent_notes_are_spendable(inner.get());
     }
 };
 

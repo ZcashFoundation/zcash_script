@@ -22,6 +22,7 @@
 #include "spentindex.h"
 #include "util/time.h"
 #include "weighted_map.h"
+#include "zcash/Note.hpp"
 
 #undef foreach
 #include "boost/multi_index_container.hpp"
@@ -29,9 +30,6 @@
 #include "boost/multi_index/hashed_index.hpp"
 
 class CAutoFile;
-
-/** Version from which we write `fee_estimates.dat` without priority information: 5.5.0-beta1 or later */
-static const int FEE_ESTIMATES_WITHOUT_PRIORITY_VERSION = 5050000;
 
 /** Fake height value used in CCoins to signify they are only in the memory pool (since 0.8) */
 static const unsigned int MEMPOOL_HEIGHT = 0x7FFFFFFF;
@@ -237,8 +235,6 @@ public:
 struct descendant_score {};
 struct mining_score {};
 
-class CBlockPolicyEstimator;
-
 /** An inpoint - a combination of a transaction and an index n into its vin */
 class CInPoint
 {
@@ -349,7 +345,6 @@ class CTxMemPool
 private:
     uint32_t nCheckFrequency; //!< Value n means that n times in 2^32 we check.
     unsigned int nTransactionsUpdated;
-    CBlockPolicyEstimator* minerPolicyEstimator;
 
     uint64_t totalTxSize = 0;  //!< sum of all mempool tx' byte sizes
     uint64_t cachedInnerUsage; //!< sum of dynamic memory usage of all the map elements (NOT the maps themselves)
@@ -359,12 +354,13 @@ private:
     uint64_t nNotifiedSequence = 0;
 
     std::map<uint256, const CTransaction*> mapSproutNullifiers;
-    std::map<uint256, const CTransaction*> mapSaplingNullifiers;
+    std::map<libzcash::nullifier_t, const CTransaction*> mapSaplingNullifiers;
     std::map<uint256, const CTransaction*> mapOrchardNullifiers;
     RecentlyEvictedList* recentlyEvicted = new RecentlyEvictedList(GetNodeClock(), DEFAULT_MEMPOOL_EVICTION_MEMORY_MINUTES * 60);
     MempoolLimitTxSet* limitSet = new MempoolLimitTxSet(DEFAULT_MEMPOOL_TOTAL_COST_LIMIT);
 
-    void checkNullifiers(ShieldedType type) const;
+    template<typename T>
+    void checkNullifiers(const std::map<T, const CTransaction*>& mapToUse) const;
 
     CFeeRate minReasonableRelayFee;
 
@@ -487,8 +483,8 @@ public:
     // to track size/count of descendant transactions.  First version of
     // addUnchecked can be used to have it call CalculateMemPoolAncestors(), and
     // then invoke the second version.
-    bool addUnchecked(const uint256& hash, const CTxMemPoolEntry &entry, bool fCurrentEstimate = true);
-    bool addUnchecked(const uint256& hash, const CTxMemPoolEntry &entry, setEntries &setAncestors, bool fCurrentEstimate = true);
+    bool addUnchecked(const uint256& hash, const CTxMemPoolEntry &entry);
+    bool addUnchecked(const uint256& hash, const CTxMemPoolEntry &entry, setEntries &setAncestors);
 
     // START insightexplorer
     void addAddressIndex(const CTxMemPoolEntry &entry, const CCoinsViewCache &view);
@@ -507,7 +503,7 @@ public:
     void removeConflicts(const CTransaction &tx, std::list<CTransaction>& removed);
     std::vector<uint256> removeExpired(unsigned int nBlockHeight);
     void removeForBlock(const std::vector<CTransaction>& vtx, unsigned int nBlockHeight,
-                        std::list<CTransaction>& conflicts, bool fCurrentEstimate = true);
+                        std::list<CTransaction>& conflicts);
     void removeWithoutBranchId(uint32_t nMemPoolBranchId);
     void clear();
     void _clear(); // unlocked
@@ -583,13 +579,6 @@ public:
     std::shared_ptr<const CTransaction> get(const uint256& hash) const;
     TxMempoolInfo info(const uint256& hash) const;
     std::vector<TxMempoolInfo> infoAll() const;
-
-    /** Estimate fee rate needed to get into the next nBlocks */
-    CFeeRate estimateFee(int nBlocks) const;
-
-    /** Write/Read estimates to disk */
-    bool WriteFeeEstimates(CAutoFile& fileout) const;
-    bool ReadFeeEstimates(CAutoFile& filein);
 
     size_t DynamicMemoryUsage() const;
 

@@ -37,6 +37,7 @@
 #include "wallet/asyncrpcoperation_sendmany.h"
 #include "wallet/asyncrpcoperation_shieldcoinbase.h"
 #include "warnings.h"
+#include "zip317.h"
 
 #include <algorithm>
 #include <atomic>
@@ -45,6 +46,8 @@
 
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/math/distributions/poisson.hpp>
+#include <boost/range/algorithm/lower_bound.hpp>
+#include <boost/range/irange.hpp>
 #include <boost/thread.hpp>
 
 #include <rust/ed25519.h>
@@ -107,6 +110,7 @@ std::optional<unsigned int> expiryDeltaArg = std::nullopt;
 
 CFeeRate minRelayTxFee = CFeeRate(DEFAULT_MIN_RELAY_TX_FEE);
 CAmount maxTxFee = DEFAULT_TRANSACTION_MAXFEE;
+CAmount nTxUnpaidActionLimit = DEFAULT_TX_UNPAID_ACTION_LIMIT;
 
 CTxMemPool mempool(::minRelayTxFee);
 
@@ -980,7 +984,7 @@ bool ContextualCheckTransaction(
             // when recovered using a 32-byte array of zeroes as the outgoing viewing key.
             // https://zips.z.cash/zip-0213#specification
             uint256 ovk;
-            for (const OutputDescription &output : tx.vShieldedOutput) {
+            for (const auto& output : tx.GetSaplingOutputs()) {
               bool zip_212_enabled;
               libzcash::SaplingPaymentAddress zaddr;
               CAmount value;
@@ -994,11 +998,11 @@ bool ContextualCheckTransaction(
                         nHeight,
                         ovk.GetRawBytes(),
                         {
-                            output.cv.GetRawBytes(),
-                            output.cmu.GetRawBytes(),
-                            output.ephemeralKey.GetRawBytes(),
-                            output.encCiphertext,
-                            output.outCiphertext,
+                            output.cv(),
+                            output.cmu(),
+                            output.ephemeral_key(),
+                            output.enc_ciphertext(),
+                            output.out_ciphertext(),
                         });
                     zip_212_enabled = decrypted->zip_212_enabled();
 
@@ -1013,7 +1017,11 @@ bool ContextualCheckTransaction(
                 }
               } else {
                 auto outPlaintext = SaplingOutgoingPlaintext::decrypt(
-                    output.outCiphertext, ovk, output.cv, output.cmu, output.ephemeralKey);
+                    output.out_ciphertext(),
+                    ovk,
+                    uint256::FromRawBytes(output.cv()),
+                    uint256::FromRawBytes(output.cmu()),
+                    uint256::FromRawBytes(output.ephemeral_key()));
                 if (!outPlaintext) {
                     return state.DoS(
                         DOS_LEVEL_BLOCK,
@@ -1025,11 +1033,11 @@ bool ContextualCheckTransaction(
                 auto encPlaintext = SaplingNotePlaintext::decrypt(
                     consensus,
                     nHeight,
-                    output.encCiphertext,
-                    output.ephemeralKey,
+                    output.enc_ciphertext(),
+                    uint256::FromRawBytes(output.ephemeral_key()),
                     outPlaintext->esk,
                     outPlaintext->pk_d,
-                    output.cmu);
+                    uint256::FromRawBytes(output.cmu()));
 
                 if (!encPlaintext) {
                     return state.DoS(
@@ -1080,7 +1088,7 @@ bool ContextualCheckTransaction(
 
         if (tx.IsCoinBase()) {
             // A coinbase transaction cannot have shielded outputs
-            if (tx.vShieldedOutput.size() > 0)
+            if (tx.GetSaplingOutputsCount() > 0)
                 return state.DoS(
                     dosLevelPotentiallyRelaxing,
                     error("ContextualCheckTransaction(): coinbase has output descriptions"),
@@ -1314,8 +1322,7 @@ bool ContextualCheckShieldedInputs(
 
     // Create signature hashes for shielded components.
     if (!tx.vJoinSplit.empty() ||
-        !tx.vShieldedSpend.empty() ||
-        !tx.vShieldedOutput.empty() ||
+        tx.GetSaplingBundle().IsPresent() ||
         tx.GetOrchardBundle().IsPresent())
     {
         // Empty output script.
@@ -1355,57 +1362,13 @@ bool ContextualCheckShieldedInputs(
         }
     }
 
-    if (!tx.vShieldedSpend.empty() ||
-        !tx.vShieldedOutput.empty())
-    {
-        auto assembler = sapling::new_bundle_assembler();
-
-        for (const SpendDescription &spend : tx.vShieldedSpend) {
-            if (!assembler->add_spend(
-                spend.cv.GetRawBytes(),
-                spend.anchor.GetRawBytes(),
-                spend.nullifier.GetRawBytes(),
-                spend.rk.GetRawBytes(),
-                spend.zkproof,
-                spend.spendAuthSig
-            )) {
-                return state.DoS(
-                    dosLevelPotentiallyRelaxing,
-                    error("ContextualCheckShieldedInputs(): Sapling spend description invalid"),
-                    REJECT_INVALID, "bad-txns-sapling-spend-description-invalid");
-            }
-        }
-
-        for (const OutputDescription &output : tx.vShieldedOutput) {
-            if (!assembler->add_output(
-                output.cv.GetRawBytes(),
-                output.cmu.GetRawBytes(),
-                output.ephemeralKey.GetRawBytes(),
-                output.encCiphertext,
-                output.outCiphertext,
-                output.zkproof
-            )) {
-                // This should be a non-contextual check, but we check it here
-                // as we need to pass over the outputs anyway in order to then
-                // call ctx->final_check().
-                return state.DoS(100, error("ContextualCheckShieldedInputs(): Sapling output description invalid"),
-                                      REJECT_INVALID, "bad-txns-sapling-output-description-invalid");
-            }
-        }
-
-        auto bundle = sapling::finish_bundle_assembly(
-            std::move(assembler),
-            tx.GetValueBalanceSapling(),
-            tx.bindingSig);
-
-        // Queue Sapling bundle to be batch-validated. This also checks some consensus rules.
-        if (saplingAuth.has_value()) {
-            if (!saplingAuth.value()->check_bundle(std::move(bundle), dataToBeSigned.GetRawBytes())) {
-                return state.DoS(
-                    dosLevelPotentiallyRelaxing,
-                    error("ContextualCheckShieldedInputs(): Sapling bundle invalid"),
-                    REJECT_INVALID, "bad-txns-sapling-bundle-invalid");
-            }
+    // Queue Sapling bundle to be batch-validated. This also checks some consensus rules.
+    if (saplingAuth.has_value()) {
+        if (!tx.GetSaplingBundle().QueueAuthValidation(*saplingAuth.value(), dataToBeSigned)) {
+            return state.DoS(
+                dosLevelPotentiallyRelaxing,
+                error("ContextualCheckShieldedInputs(): Sapling bundle invalid"),
+                REJECT_INVALID, "bad-txns-sapling-bundle-invalid");
         }
     }
 
@@ -1507,7 +1470,7 @@ bool CheckTransactionWithoutProofVerification(const CTransaction& tx, CValidatio
     // Orchard bundle is present, i.e. when nActionsOrchard == 0.
     if (tx.vin.empty() &&
         tx.vJoinSplit.empty() &&
-        tx.vShieldedSpend.empty() &&
+        tx.GetSaplingSpendsCount() == 0 &&
         !orchard_bundle.SpendsEnabled())
     {
         return state.DoS(10, false, REJECT_INVALID, "bad-txns-no-source-of-funds");
@@ -1522,7 +1485,7 @@ bool CheckTransactionWithoutProofVerification(const CTransaction& tx, CValidatio
     // Orchard bundle is present, i.e. when nActionsOrchard == 0.
     if (tx.vout.empty() &&
         tx.vJoinSplit.empty() &&
-        tx.vShieldedOutput.empty() &&
+        tx.GetSaplingOutputsCount() == 0 &&
         !orchard_bundle.OutputsEnabled())
     {
         return state.DoS(10, false, REJECT_INVALID, "bad-txns-no-sink-of-funds");
@@ -1548,7 +1511,8 @@ bool CheckTransactionWithoutProofVerification(const CTransaction& tx, CValidatio
     }
 
     // Check for non-zero valueBalanceSapling when there are no Sapling inputs or outputs
-    if (tx.vShieldedSpend.empty() && tx.vShieldedOutput.empty() && tx.GetValueBalanceSapling() != 0) {
+    if (tx.GetSaplingSpendsCount() == 0 && tx.GetSaplingOutputsCount() == 0 && tx.GetValueBalanceSapling() != 0)
+    {
         return state.DoS(100, error("CheckTransaction(): tx.valueBalanceSapling has no sources or sinks"),
                             REJECT_INVALID, "bad-txns-valuebalance-nonzero");
     }
@@ -1571,13 +1535,13 @@ bool CheckTransactionWithoutProofVerification(const CTransaction& tx, CValidatio
 
     // nSpendsSapling, nOutputsSapling, and nActionsOrchard MUST all be less than 2^16
     size_t max_elements = (1 << 16) - 1;
-    if (tx.vShieldedSpend.size() > max_elements) {
+    if (tx.GetSaplingSpendsCount() > max_elements) {
         return state.DoS(
             100,
             error("CheckTransaction(): 2^16 or more Sapling spends"),
             REJECT_INVALID, "bad-tx-too-many-sapling-spends");
     }
-    if (tx.vShieldedOutput.size() > max_elements) {
+    if (tx.GetSaplingOutputsCount() > max_elements) {
         return state.DoS(
             100,
             error("CheckTransaction(): 2^16 or more Sapling outputs"),
@@ -1719,14 +1683,14 @@ bool CheckTransactionWithoutProofVerification(const CTransaction& tx, CValidatio
 
     // Check for duplicate sapling nullifiers in this transaction
     {
-        set<uint256> vSaplingNullifiers;
-        for (const SpendDescription& spend_desc : tx.vShieldedSpend)
+        std::set<libzcash::nullifier_t> vSaplingNullifiers;
+        for (const auto& spend_desc : tx.GetSaplingSpends())
         {
-            if (vSaplingNullifiers.count(spend_desc.nullifier))
+            if (vSaplingNullifiers.count(spend_desc.nullifier()))
                 return state.DoS(100, error("CheckTransaction(): duplicate nullifiers"),
                             REJECT_INVALID, "bad-spend-description-nullifiers-duplicate");
 
-            vSaplingNullifiers.insert(spend_desc.nullifier);
+            vSaplingNullifiers.insert(spend_desc.nullifier());
         }
     }
 
@@ -1751,7 +1715,7 @@ bool CheckTransactionWithoutProofVerification(const CTransaction& tx, CValidatio
                              REJECT_INVALID, "bad-cb-has-joinsplits");
 
         // A coinbase transaction cannot have spend descriptions
-        if (tx.vShieldedSpend.size() > 0)
+        if (tx.GetSaplingSpendsCount() > 0)
             return state.DoS(100, error("CheckTransaction(): coinbase has spend descriptions"),
                              REJECT_INVALID, "bad-cb-has-spend-description");
         // See ContextualCheckTransaction for consensus rules on coinbase output descriptions.
@@ -1937,7 +1901,7 @@ bool AcceptToMemoryPool(
 
         // No transactions are allowed with modified fee below the minimum relay fee,
         // except from disconnected blocks. The minimum relay fee will never be more
-        // than DEFAULT_FEE zatoshis.
+        // than LEGACY_DEFAULT_FEE zatoshis.
         CAmount minRelayFee = ::minRelayTxFee.GetFeeForRelay(nSize);
         if (fLimitFree && nModifiedFees < minRelayFee) {
             LogPrint("mempool",
@@ -1946,6 +1910,20 @@ bool AcceptToMemoryPool(
                     " The minimum acceptance/relay fee for this transaction is %d " + MINOR_CURRENCY_UNIT,
                     tx.GetHash().ToString(), nSize, nModifiedFees, nModifiedFees - nFees, minRelayFee);
             return state.DoS(0, false, REJECT_INSUFFICIENTFEE, "min relay fee not met");
+        }
+
+        // Transactions with more than `-txunpaidactionlimit` unpaid actions (calculated
+        // using the modified fee) are not accepted to the mempool or relayed.
+        // <https://zips.z.cash/zip-0317#transaction-relaying>
+        size_t nUnpaidActionCount = entry.GetUnpaidActionCount();
+        if (nUnpaidActionCount > nTxUnpaidActionLimit) {
+            LogPrint("mempool",
+                    "Not accepting transaction with txid %s, size %d bytes, effective fee %d " + MINOR_CURRENCY_UNIT +
+                    ", and fee delta %d " + MINOR_CURRENCY_UNIT + " to the mempool because it has %d unpaid actions"
+                    ", which is over the limit of %d. The conventional fee for this transaction is %d " + MINOR_CURRENCY_UNIT,
+                    tx.GetHash().ToString(), nSize, nModifiedFees, nModifiedFees - nFees, nUnpaidActionCount,
+                    nTxUnpaidActionLimit, tx.GetConventionalFee());
+            return state.DoS(0, false, REJECT_INSUFFICIENTFEE, "tx unpaid action limit exceeded");
         }
 
         if (fRejectAbsurdFee && nFees > maxTxFee) {
@@ -2028,7 +2006,7 @@ bool AcceptToMemoryPool(
 
         {
             // Store transaction in memory
-            pool.addUnchecked(hash, entry, setAncestors, !IsInitialBlockDownload(chainparams.GetConsensus()));
+            pool.addUnchecked(hash, entry, setAncestors);
 
             // Add memory address index
             if (fAddressIndex) {
@@ -2954,6 +2932,28 @@ static DisconnectResult DisconnectBlock(const CBlock& block, CValidationState& s
         }
     }
 
+    // Grab the latest subtree (according to the view) and use it
+    // to determine if the block being disconnected was responsible
+    // for completing a subtree. If so, we'll pop the subtree.
+    // (It is not possible for a block to complete more than one
+    // subtree, due to the maximum number of outputs/actions in
+    // a block being less than 2^16.)
+    //
+    // We do not store subtrees unless lightwalletd is enabled.
+    if (fExperimentalLightWalletd) {
+        auto maybeDisconnectSubtree = [&] (ShieldedType type) {
+            auto latestSubtree = view.GetLatestSubtree(type);
+            if (latestSubtree.has_value()) {
+                if (latestSubtree->nHeight == pindex->nHeight) {
+                    view.PopSubtree(type);
+                }
+            }
+        };
+
+        maybeDisconnectSubtree(SAPLING);
+        maybeDisconnectSubtree(ORCHARD);
+    }
+
     // set the old best Sprout anchor back
     view.PopAnchor(blockUndo.old_sprout_tree_root, SPROUT);
 
@@ -3244,6 +3244,16 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
         assert(view.GetOrchardAnchorAt(OrchardMerkleFrontier::empty_root(), orchard_tree));
     }
 
+    // Here we determine whether the CCoinsView view of our latest
+    // subtree matches that of the chain state. If it doesn't,
+    // the node had not been writing the latest subtrees to the
+    // view in the past and so later in this function we will
+    // not bother to add new subtrees.
+    //
+    // We do not store subtrees unless lightwalletd is enabled.
+    bool fUpdateSaplingSubtrees = fExperimentalLightWalletd && (view.CurrentSubtreeIndex(SAPLING) == sapling_tree.current_subtree_index());
+    bool fUpdateOrchardSubtrees = fExperimentalLightWalletd && (view.CurrentSubtreeIndex(ORCHARD) == orchard_tree.current_subtree_index());
+
     // Grab the consensus branch ID for this block and its parent
     auto consensusBranchId = CurrentEpochBranchId(pindex->nHeight, chainparams.GetConsensus());
     auto prevConsensusBranchId = CurrentEpochBranchId(pindex->nHeight - 1, chainparams.GetConsensus());
@@ -3410,21 +3420,52 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
             }
         }
 
-        for (const OutputDescription &outputDescription : tx.vShieldedOutput) {
-            sapling_tree.append(outputDescription.cmu);
+        for (const auto &outputDescription : tx.GetSaplingOutputs()) {
+            sapling_tree.append(uint256::FromRawBytes(outputDescription.cmu()));
+
+            if (fUpdateSaplingSubtrees) {
+                auto completeSubtreeRoot = sapling_tree.complete_subtree_root();
+                if (completeSubtreeRoot.has_value()) {
+                    libzcash::SubtreeData subtree(completeSubtreeRoot->ToRawBytes(), pindex->nHeight);
+                    view.PushSubtree(SAPLING, subtree);
+                    auto latest = view.GetLatestSubtree(SAPLING);
+
+                    // The latest subtree, according to the view, should now be one
+                    // less than the "current" subtree index according to the tree
+                    // itself, after the append takes place earlier in this loop.
+                    assert(latest.has_value());
+                    assert((latest->index + 1) == sapling_tree.current_subtree_index());
+                }
+            }
         }
 
-        if (!orchard_tree.AppendBundle(tx.GetOrchardBundle())) {
-            return state.DoS(100,
-                error("ConnectBlock(): block would overfill the Orchard commitment tree."),
-                REJECT_INVALID, "orchard-commitment-tree-full");
-        };
+        if (tx.GetOrchardBundle().IsPresent()) {
+            try {
+                auto appendResult = orchard_tree.AppendBundle(tx.GetOrchardBundle());
+                if (fUpdateOrchardSubtrees && appendResult.has_subtree_boundary) {
+                    libzcash::SubtreeData subtree(appendResult.completed_subtree_root, pindex->nHeight);
+
+                    view.PushSubtree(ORCHARD, subtree);
+                    auto latest = view.GetLatestSubtree(ORCHARD);
+
+                    // The latest subtree, according to the view, should now be one
+                    // less than the "current" subtree index according to the tree
+                    // itself, after the append takes place earlier in this loop.
+                    assert(latest.has_value());
+                    assert((latest->index + 1) == orchard_tree.current_subtree_index());
+                }
+            } catch (const rust::Error& e) {
+                return state.DoS(100,
+                    error("ConnectBlock(): block would overfill the Orchard commitment tree."),
+                    REJECT_INVALID, "orchard-commitment-tree-full");
+            }
+        }
 
         for (const auto& out : tx.vout) {
             transparentValueDelta += out.nValue;
         }
 
-        if (!(tx.vShieldedSpend.empty() && tx.vShieldedOutput.empty())) {
+        if (tx.GetSaplingBundle().IsPresent()) {
             total_sapling_tx += 1;
         }
 
@@ -4090,7 +4131,7 @@ bool static ConnectTip(CValidationState& state, const CChainParams& chainparams,
     LogPrint("bench", "  - Writing chainstate: %.2fms [%.2fs]\n", (nTime5 - nTime4) * 0.001, nTimeChainState * 0.000001);
     // Remove conflicting transactions from the mempool.
     std::list<CTransaction> txConflicted;
-    mempool.removeForBlock(pblock->vtx, pindexNew->nHeight, txConflicted, !IsInitialBlockDownload(chainparams.GetConsensus()));
+    mempool.removeForBlock(pblock->vtx, pindexNew->nHeight, txConflicted);
 
     // Remove transactions that expire at new block height from mempool
     auto ids = mempool.removeExpired(pindexNew->nHeight);
@@ -5771,6 +5812,223 @@ bool CVerifyDB::VerifyDB(const CChainParams& chainparams, CCoinsView *coinsview,
     return true;
 }
 
+bool RegenerateSubtrees(ShieldedType type, const Consensus::Params& consensusParams)
+{
+    AssertLockHeld(cs_main);
+
+    if (chainActive.Tip() == NULL || chainActive.Tip()->pprev == NULL) {
+        LogPrintf("RegenerateSubtrees: chain is at genesis currently; migration complete\n");
+        return true;
+    }
+
+    // Delete all subtrees in pcoinsTip.
+    pcoinsTip->ResetSubtrees(type);
+
+    Consensus::UpgradeIndex upgrade;
+    if (type == SAPLING) {
+        upgrade = Consensus::UPGRADE_SAPLING;
+    } else if (type == ORCHARD) {
+        upgrade = Consensus::UPGRADE_NU5;
+    } else {
+        throw std::runtime_error("RegenerateSubtrees: bad shielded pool type");
+    }
+
+    // The search space starts at the activation height of the shielded pool
+    auto currentHeightMaybe = consensusParams.GetActivationHeight(upgrade);
+    int currentHeight;
+    if (currentHeightMaybe.has_value()) {
+        currentHeight = *currentHeightMaybe;
+    } else {
+        LogPrintf("RegenerateSubtrees: shielded pool is not active; migration complete\n");
+        return true;
+    }
+
+    // The search space ends at the active chain tip.
+    int chainHeight = chainActive.Tip()->nHeight;
+
+    LogPrintf("RegenerateSubtrees: current chain height is %d, activation height is %d\n", chainHeight, currentHeight);
+
+    if (currentHeight > chainHeight) {
+        // We don't have any blocks to search through.
+        // The subtrees will be added naturally as the
+        // chain progresses.
+        LogPrintf("RegenerateSubtrees: activation takes place in the future; migration complete\n");
+        return true;
+    }
+
+    // Vector to accumulate the heights of discovered blocks
+    // that complete subtrees.
+    std::vector<int> vHeights;
+
+    libzcash::SubtreeIndex chainSubtreeIndex;
+    libzcash::SubtreeIndex loggingModulus;
+    size_t percentage = 0;
+
+    {
+        auto lookupCurrentSubtreeIndex = [&] (int nHeight) {
+            auto blockIndex = chainActive[nHeight];
+            assert(blockIndex != nullptr);
+
+            // Because these blocks are connected to the active chain
+            // tip, and because we are inspecting blocks where Sapling/Orchard
+            // are activated, hashFinalSaplingRoot and hashFinalOrchardRoot
+            // are guaranteed to be non-null.
+            if (type == SAPLING) {
+                SaplingMerkleTree latest_frontier;
+                assert(pcoinsTip->GetSaplingAnchorAt(blockIndex->hashFinalSaplingRoot, latest_frontier));
+                return latest_frontier.current_subtree_index();
+            } else if (type == ORCHARD) {
+                OrchardMerkleFrontier latest_frontier;
+                assert(pcoinsTip->GetOrchardAnchorAt(blockIndex->hashFinalOrchardRoot, latest_frontier));
+                return latest_frontier.current_subtree_index();
+            } else {
+                assert(false);
+            }
+        };
+
+        chainSubtreeIndex = lookupCurrentSubtreeIndex(chainHeight);
+
+        if (chainSubtreeIndex == 0) {
+            // There's nothing to do, because no complete subtrees
+            // exist on chain yet.
+            LogPrintf("RegenerateSubtrees: current subtree is index 0, nothing to do; migration complete\n");
+            return true;
+        }
+
+        // We'll report every ~10% of progress made.
+        loggingModulus = chainSubtreeIndex / 10;
+
+        if (loggingModulus == 0) {
+            loggingModulus = 1;
+        }
+
+        libzcash::SubtreeIndex subtreeIndex = 0;
+        while (currentHeight <= chainHeight) {
+            if ((subtreeIndex % loggingModulus) == 0) {
+                LogPrintf(
+                    "RegenerateSubtrees: Searching for complete subtrees... %d percent complete (%d / %d)\n",
+                    percentage,
+                    subtreeIndex,
+                    chainSubtreeIndex
+                );
+                percentage += 10;
+            }
+            // In this loop we're looking for the completed subtree
+            // with index subtreeIndex (if it exists) somewhere
+            // between currentHeight and chainHeight (inclusive).
+            // We'll first need to find the first block in this
+            // range that has a "current" subtree index one larger,
+            // which implies that block completed the subtree.
+
+            auto searchRange = boost::irange(currentHeight, chainHeight + 1);
+
+            auto result = boost::lower_bound(
+                searchRange,
+                subtreeIndex + 1,
+                [&](int a, libzcash::SubtreeIndex b) {
+                    return lookupCurrentSubtreeIndex(a) < b;
+                }
+            );
+
+            if (result != boost::end(searchRange)) {
+                vHeights.push_back(*result);
+
+                // Search for the next subtree, starting with the
+                // next block.
+                currentHeight = *result + 1;
+                subtreeIndex += 1;
+            } else {
+                break;
+            }
+        }
+    }
+
+    LogPrintf("RegenerateSubtrees: Found all complete subtrees.\n");
+
+    percentage = 0;
+
+    for (size_t subtreeIndex = 0; subtreeIndex < vHeights.size(); subtreeIndex++) {
+        if ((subtreeIndex % loggingModulus) == 0) {
+            LogPrintf(
+                "RegenerateSubtrees: Rebuilding complete subtrees... %d percent complete (%d / %d)\n",
+                percentage,
+                subtreeIndex,
+                chainSubtreeIndex
+            );
+            percentage += 10;
+        }
+
+        int nHeight = vHeights[subtreeIndex];
+
+        auto pindex = chainActive[nHeight];
+        CBlock block;
+        if (!ReadBlockFromDisk(block, pindex, consensusParams)) {
+            LogPrintf("Failed to read block\n");
+            return false;
+        }
+
+        // We'll grab the final frontier from the previous block (which
+        // should have a hashFinalSaplingRoot/hashFinalOrchardRoot
+        // because this block completed a 2^16 size subtree!) and append
+        // to it until we complete the subtree.
+        auto pushSapling = [&]() {
+            SaplingMerkleTree sapling_tree;
+            assert(pcoinsTip->GetSaplingAnchorAt(pindex->pprev->hashFinalSaplingRoot, sapling_tree));
+            for (const CTransaction &tx : block.vtx) {
+                for (const auto &outputDescription : tx.GetSaplingOutputs()) {
+                    sapling_tree.append(uint256::FromRawBytes(outputDescription.cmu()));
+
+                    auto completeSubtreeRoot = sapling_tree.complete_subtree_root();
+                    if (completeSubtreeRoot.has_value()) {
+                        libzcash::SubtreeData subtree(completeSubtreeRoot->ToRawBytes(), nHeight);
+                        pcoinsTip->PushSubtree(SAPLING, subtree);
+                        return;
+                    }
+                }
+            }
+
+            // We should not get here; this block should have completed the subtree
+            // and the return statement above should have executed.
+            assert(false);
+        };
+
+        auto pushOrchard = [&]() {
+            OrchardMerkleFrontier orchard_tree;
+            assert(pcoinsTip->GetOrchardAnchorAt(pindex->pprev->hashFinalOrchardRoot, orchard_tree));
+            for (const CTransaction &tx : block.vtx) {
+                if (tx.GetOrchardBundle().IsPresent()) {
+                    try {
+                        auto appendResult = orchard_tree.AppendBundle(tx.GetOrchardBundle());
+                        if (appendResult.has_subtree_boundary) {
+                            libzcash::SubtreeData subtree(appendResult.completed_subtree_root, nHeight);
+
+                            pcoinsTip->PushSubtree(ORCHARD, subtree);
+                            return true;
+                        }
+                    } catch (const rust::Error& e) {
+                        return false;
+                    }
+                }
+            }
+
+            // Similarly we should not get here.
+            assert(false);
+        };
+
+        if (type == SAPLING) {
+            pushSapling();
+        } else if (type == ORCHARD) {
+            if (!pushOrchard()) {
+                return false;
+            }
+        } else {
+            assert(false);
+        }
+    }
+
+    return true;
+}
+
 bool RewindBlockIndex(const CChainParams& chainparams, bool& clearWitnessCaches)
 {
     LOCK(cs_main);
@@ -7177,8 +7435,7 @@ bool static ProcessMessage(const CChainParams& chainparams, CNode* pfrom, string
         // TODO: currently, prohibit joinsplits and shielded spends/outputs/actions from entering mapOrphans
         else if (fMissingInputs &&
                  tx.vJoinSplit.empty() &&
-                 tx.vShieldedSpend.empty() &&
-                 tx.vShieldedOutput.empty() &&
+                 !tx.GetSaplingBundle().IsPresent() &&
                  !tx.GetOrchardBundle().IsPresent())
         {
             AddOrphanTx(tx, pfrom->GetId());

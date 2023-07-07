@@ -25,6 +25,7 @@
 #include "util/match.h"
 #include "util/moneystr.h"
 #include "util/strencodings.h"
+#include "util/string.h"
 #include "wallet.h"
 #include "walletdb.h"
 #include "primitives/transaction.h"
@@ -49,7 +50,6 @@
 
 #include <boost/assign/list_of.hpp>
 #include <boost/algorithm/string/trim.hpp>
-#include <utf8cpp/utf8.h>
 
 #include <univalue.h>
 
@@ -288,9 +288,16 @@ static void SendMoney(const CTxDestination &address, CAmount nValue, bool fSubtr
     CRecipient recipient = {scriptPubKey, nValue, fSubtractFeeFromAmount};
     vecSend.push_back(recipient);
     if (!pwalletMain->CreateTransaction(vecSend, wtxNew, reservekey, nFeeRequired, nChangePosRet, strError)) {
-        if (!fSubtractFeeFromAmount && nValue + nFeeRequired > pwalletMain->GetBalance(std::nullopt))
-            strError = strprintf("Error: This transaction requires a transaction fee of at least %s because of its amount, complexity, or use of recently received funds!", FormatMoney(nFeeRequired));
-        throw JSONRPCError(RPC_WALLET_ERROR, strError);
+        if (!fSubtractFeeFromAmount && nValue + nFeeRequired > curBalance) {
+            strError = strprintf("Error: Insufficient funds to pay the fee. This transaction needs to spend %s "
+                                 "plus a fee of at least %s, but only %s is available",
+                                 DisplayMoney(nValue),
+                                 DisplayMoney(nFeeRequired),
+                                 DisplayMoney(curBalance));
+            throw JSONRPCError(RPC_WALLET_INSUFFICIENT_FUNDS, strError);
+        } else {
+            throw JSONRPCError(RPC_WALLET_ERROR, strError);
+        }
     }
     CValidationState state;
     if (!pwalletMain->CommitTransaction(wtxNew, reservekey, state)) {
@@ -435,6 +442,65 @@ UniValue sendtoaddress(const UniValue& params, bool fHelp)
     SendMoney(dest, nAmount, fSubtractFeeFromAmount, wtx);
 
     return wtx.GetHash().GetHex();
+}
+
+static std::optional<ReceiverType> ReceiverTypeFromString(const std::string& p)
+{
+    if (p == "p2pkh") {
+        return ReceiverType::P2PKH;
+    } else if (p == "p2sh") {
+        return ReceiverType::P2SH;
+    } else if (p == "sapling") {
+        return ReceiverType::Sapling;
+    } else if (p == "orchard") {
+        return ReceiverType::Orchard;
+    } else {
+        return std::nullopt;
+    }
+}
+
+static std::string ReceiverTypeToString(ReceiverType t)
+{
+    switch(t) {
+        case ReceiverType::P2PKH: return "p2pkh";
+        case ReceiverType::P2SH: return "p2sh";
+        case ReceiverType::Sapling: return "sapling";
+        case ReceiverType::Orchard: return "orchard";
+    }
+}
+
+/// On failure, returns a non-empty set of the strings that don’t represent valid receiver types.
+static tl::expected<std::set<ReceiverType>, std::set<std::string>>
+ReceiverTypesFromJSON(const UniValue& json)
+{
+    assert(json.isArray());
+
+    std::set<ReceiverType> receiverTypes;
+    std::set<std::string> invalidReceivers;
+    for (size_t i = 0; i < json.size(); i++) {
+        const std::string& p = json[i].get_str();
+        auto t = ReceiverTypeFromString(p);
+        if (t.has_value()) {
+            receiverTypes.insert(t.value());
+        } else {
+            invalidReceivers.insert(p);
+        }
+    }
+
+    if (invalidReceivers.empty()) {
+        return {receiverTypes};
+    } else {
+        return tl::make_unexpected(invalidReceivers);
+    }
+}
+
+static UniValue ReceiverTypesToJSON(const std::set<ReceiverType>& receiverTypes)
+{
+    UniValue receiverTypesEntry(UniValue::VARR);
+    for (auto t : receiverTypes) {
+        receiverTypesEntry.push_back(ReceiverTypeToString(t));
+    }
+    return receiverTypesEntry;
 }
 
 UniValue listaddresses(const UniValue& params, bool fHelp)
@@ -862,29 +928,12 @@ UniValue listaddresses(const UniValue& params, bool fHelp)
                         auto addr = std::get<std::pair<libzcash::UnifiedAddress, diversifier_index_t>>(
                             ufvk.Address(j, receiverTypes)
                         );
-                        UniValue receiverTypesEntry(UniValue::VARR);
-                        for (auto t : receiverTypes) {
-                            switch(t) {
-                                case ReceiverType::P2PKH:
-                                    receiverTypesEntry.push_back("p2pkh");
-                                    break;
-                                case ReceiverType::P2SH:
-                                    receiverTypesEntry.push_back("p2sh");
-                                    break;
-                                case ReceiverType::Sapling:
-                                    receiverTypesEntry.push_back("sapling");
-                                    break;
-                                case ReceiverType::Orchard:
-                                    receiverTypesEntry.push_back("orchard");
-                                    break;
-                            }
-                        }
                         {
                             UniValue jVal;
                             jVal.setNumStr(ArbitraryIntStr(std::vector(j.begin(), j.end())));
                             addrEntry.pushKV("diversifier_index", jVal);
                         }
-                        addrEntry.pushKV("receiver_types", receiverTypesEntry);
+                        addrEntry.pushKV("receiver_types", ReceiverTypesToJSON(receiverTypes));
                         addrEntry.pushKV("address", keyIO.EncodePaymentAddress(addr.first));
                         unified_addrs.push_back(addrEntry);
                     }
@@ -2654,7 +2703,6 @@ UniValue listunspent(const UniValue& params, bool fHelp)
     return results;
 }
 
-
 UniValue z_listunspent(const UniValue& params, bool fHelp)
 {
     if (!EnsureWalletIsAvailable(fHelp))
@@ -2691,7 +2739,8 @@ UniValue z_listunspent(const UniValue& params, bool fHelp)
             "    \"account\" : n,                     (numeric, optional) the unified account ID, if applicable\n"
             "    \"address\" : \"address\",             (string, optional) the shielded address, omitted if this note was sent to an internal receiver\n"
             "    \"amount\": xxxxx,                   (numeric) the amount of value in the note\n"
-            "    \"memo\": xxxxx,                     (string) hexadecimal string representation of memo field\n"
+            "    \"memo\": \"hexmemo\",                 (string) hexadecimal string representation of memo field\n"
+            "    \"memoStr\": \"memo\",                 (string, optional) UTF-8 string representation of memo field (if it contains valid UTF-8).\n"
             "    \"change\": true|false,              (boolean) true if the address that received the note is also one of the sending addresses\n"
             "  }\n"
             "  ,...\n"
@@ -2726,7 +2775,7 @@ UniValue z_listunspent(const UniValue& params, bool fHelp)
 
     std::optional<NoteFilter> noteFilter = std::nullopt;
     std::set<std::pair<libzcash::SproutPaymentAddress, uint256>> sproutNullifiers;
-    std::set<std::pair<libzcash::SaplingPaymentAddress, uint256>> saplingNullifiers;
+    std::set<std::pair<libzcash::SaplingPaymentAddress, libzcash::nullifier_t>> saplingNullifiers;
 
     KeyIO keyIO(Params());
     // User has supplied zaddrs to filter on
@@ -2790,8 +2839,7 @@ UniValue z_listunspent(const UniValue& params, bool fHelp)
         obj.pushKV("spendable", hasSproutSpendingKey);
         obj.pushKV("address", keyIO.EncodePaymentAddress(entry.address));
         obj.pushKV("amount", ValueFromAmount(CAmount(entry.note.value())));
-        std::string data(entry.memo.begin(), entry.memo.end());
-        obj.pushKV("memo", HexStr(data));
+        AddMemo(obj, entry.memo);
         if (hasSproutSpendingKey) {
             obj.pushKV("change", pwalletMain->IsNoteSproutChange(sproutNullifiers, entry.address, entry.jsop));
         }
@@ -2818,7 +2866,7 @@ UniValue z_listunspent(const UniValue& params, bool fHelp)
             obj.pushKV("address", keyIO.EncodePaymentAddress(addr.first));
         }
         obj.pushKV("amount", ValueFromAmount(CAmount(entry.note.value()))); // note.value() is equivalent to plaintext.value()
-        obj.pushKV("memo", HexStr(entry.memo));
+        AddMemo(obj, entry.memo);
         if (hasSaplingSpendingKey) {
             obj.pushKV(
                     "change",
@@ -2851,7 +2899,7 @@ UniValue z_listunspent(const UniValue& params, bool fHelp)
             obj.pushKV("address", keyIO.EncodePaymentAddress(addr.first));
         }
         obj.pushKV("amount", ValueFromAmount(entry.GetNoteValue()));
-        obj.pushKV("memo", HexStr(entry.GetMemo()));
+        AddMemo(obj, entry.GetMemo());
         if (haveSpendingKey) {
             obj.pushKV("change", isInternal);
         }
@@ -3242,19 +3290,21 @@ UniValue z_getaddressforaccount(const UniValue& params, bool fHelp)
 
     std::set<libzcash::ReceiverType> receiverTypes;
     if (params.size() >= 2) {
-        const auto& parsed = params[1].get_array();
-        for (size_t i = 0; i < parsed.size(); i++) {
-            const std::string& p = parsed[i].get_str();
-            if (p == "p2pkh") {
-                receiverTypes.insert(ReceiverType::P2PKH);
-            } else if (p == "sapling") {
-                receiverTypes.insert(ReceiverType::Sapling);
-            } else if (p == "orchard") {
-                receiverTypes.insert(ReceiverType::Orchard);
-            } else {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, "receiver type arguments must be \"p2pkh\", \"sapling\", or \"orchard\"");
-            }
-        }
+        receiverTypes = ReceiverTypesFromJSON(params[1].get_array())
+            .map_error([](const std::set<std::string>& invalidReceivers) {
+                throw JSONRPCError(
+                        RPC_INVALID_PARAMETER,
+                        strprintf(
+                            "%s %s. Arguments must be “p2pkh”, “sapling”, or “orchard”",
+                            FormatList(
+                                    invalidReceivers,
+                                    "and",
+                                    [](const auto& receiver) { return "“" + receiver + "”"; }),
+                            invalidReceivers.size() == 1
+                            ? "is an invalid receiver type"
+                            : "are invalid receiver types"));
+            })
+            .value();
     }
     if (receiverTypes.empty()) {
         // Default is the best and second-best shielded receiver types, and the transparent (P2PKH) receiver type.
@@ -3271,11 +3321,11 @@ UniValue z_getaddressforaccount(const UniValue& params, bool fHelp)
             throw JSONRPCError(RPC_INVALID_PARAMETER, "diversifier index must be a decimal integer.");
         }
         auto parsed_diversifier_index = parsed_diversifier_index_opt.value();
-        if (parsed_diversifier_index.size() > ZC_DIVERSIFIER_SIZE) {
+        if (parsed_diversifier_index.size() > SAPLING_DIVERSIFIER_SIZE) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "diversifier index is too large.");
         }
         // Extend the byte array to the correct length for diversifier_index_t.
-        parsed_diversifier_index.resize(ZC_DIVERSIFIER_SIZE);
+        parsed_diversifier_index.resize(SAPLING_DIVERSIFIER_SIZE);
         j = libzcash::diversifier_index_t(parsed_diversifier_index);
     }
 
@@ -3333,6 +3383,10 @@ UniValue z_getaddressforaccount(const UniValue& params, bool fHelp)
                     strErr = tfm::format(
                         "Error: one or more of the requested receiver types does not have a corresponding spending key in this account.");
                     break;
+                case UnifiedAddressGenerationError::ReceiverTypeNotSupported:
+                    strErr = tfm::format(
+                        "Error: P2SH addresses can not be created using this RPC method.");
+                    break;
                 case UnifiedAddressGenerationError::DiversifierSpaceExhausted:
                     strErr = tfm::format(
                         "Error: ran out of diversifier indices. Generate a new account with z_getnewaccount");
@@ -3342,24 +3396,7 @@ UniValue z_getaddressforaccount(const UniValue& params, bool fHelp)
         },
     });
 
-    UniValue receiver_types(UniValue::VARR);
-    for (const auto& receiverType : receiverTypes) {
-        switch (receiverType) {
-            case ReceiverType::P2PKH:
-                receiver_types.push_back("p2pkh");
-                break;
-            case ReceiverType::Sapling:
-                receiver_types.push_back("sapling");
-                break;
-            case ReceiverType::Orchard:
-                receiver_types.push_back("orchard");
-                break;
-            default:
-                // Unreachable
-                assert(false);
-        }
-    }
-    result.pushKV("receiver_types", receiver_types);
+    result.pushKV("receiver_types", ReceiverTypesToJSON(receiverTypes));
 
     return result;
 }
@@ -3652,7 +3689,8 @@ UniValue z_listreceivedbyaddress(const UniValue& params, bool fHelp)
             "    \"txid\": \"txid\",               (string) the transaction id\n"
             "    \"amount\": xxxxx,              (numeric) the amount of value in the note\n"
             "    \"amountZat\" : xxxx            (numeric) The amount in " + MINOR_CURRENCY_UNIT + "\n"
-            "    \"memo\": xxxxx,                (string) hexadecimal string representation of memo field\n"
+            "    \"memo\": \"hexmemo\",            (string) hexadecimal string representation of memo field\n"
+            "    \"memoStr\": \"memo\",            (string, optional) UTF-8 string representation of memo field (if it contains valid UTF-8).\n"
             "    \"confirmations\" : n,          (numeric) the number of confirmations\n"
             "    \"blockheight\": n,             (numeric) The block height containing the transaction\n"
             "    \"blockindex\": n,              (numeric) The block index containing the transaction.\n"
@@ -3756,7 +3794,7 @@ UniValue z_listreceivedbyaddress(const UniValue& params, bool fHelp)
 
     auto push_sapling_result = [&](const libzcash::SaplingPaymentAddress& addr) -> void {
         bool hasSpendingKey = pwalletMain->HaveSaplingSpendingKeyForAddress(addr);
-        std::set<std::pair<libzcash::SaplingPaymentAddress, uint256>> nullifierSet;
+        std::set<std::pair<libzcash::SaplingPaymentAddress, libzcash::nullifier_t>> nullifierSet;
         if (hasSpendingKey) {
             nullifierSet = pwalletMain->GetSaplingNullifiers({addr});
         }
@@ -3766,7 +3804,7 @@ UniValue z_listreceivedbyaddress(const UniValue& params, bool fHelp)
             obj.pushKV("txid", entry.op.hash.ToString());
             obj.pushKV("amount", ValueFromAmount(CAmount(entry.note.value())));
             obj.pushKV("amountZat", CAmount(entry.note.value()));
-            obj.pushKV("memo", HexStr(entry.memo));
+            AddMemo(obj, entry.memo);
             obj.pushKV("outindex", (int)entry.op.n);
             obj.pushKV("confirmations", entry.confirmations);
 
@@ -3793,7 +3831,7 @@ UniValue z_listreceivedbyaddress(const UniValue& params, bool fHelp)
             obj.pushKV("txid", op.hash.ToString());
             obj.pushKV("amount", ValueFromAmount(entry.GetNoteValue()));
             obj.pushKV("amountZat", CAmount(entry.GetNoteValue()));
-            obj.pushKV("memo", HexStr(entry.GetMemo()));
+            AddMemo(obj, entry.GetMemo());
             obj.pushKV("outindex", (int)op.n);
             obj.pushKV("confirmations", entry.GetConfirmations());
 
@@ -3826,8 +3864,7 @@ UniValue z_listreceivedbyaddress(const UniValue& params, bool fHelp)
                 obj.pushKV("txid", entry.jsop.hash.ToString());
                 obj.pushKV("amount", ValueFromAmount(CAmount(entry.note.value())));
                 obj.pushKV("amountZat", CAmount(entry.note.value()));
-                std::string data(entry.memo.begin(), entry.memo.end());
-                obj.pushKV("memo", HexStr(data));
+                AddMemo(obj, entry.memo);
                 obj.pushKV("jsindex", entry.jsop.js);
                 obj.pushKV("jsoutindex", entry.jsop.n);
                 obj.pushKV("confirmations", entry.confirmations);
@@ -3939,7 +3976,11 @@ UniValue z_getbalance(const UniValue& params, bool fHelp)
             nBalance = getBalanceZaddr(addr, std::nullopt, nMinDepth, INT_MAX, false);
         },
         [&](const libzcash::UnifiedAddress& addr) {
-            auto selector = pwalletMain->ZTXOSelectorForAddress(addr, true, TransparentCoinbasePolicy::Allow, false);
+            auto selector = pwalletMain->ZTXOSelectorForAddress(
+                    addr,
+                    true,
+                    TransparentCoinbasePolicy::Allow,
+                    std::nullopt);
             if (!selector.has_value()) {
                 throw JSONRPCError(
                     RPC_INVALID_ADDRESS_OR_KEY,
@@ -4279,7 +4320,7 @@ UniValue z_viewtransaction(const UniValue& params, bool fHelp)
             "      \"value\" : x.xxx                 (numeric) The amount in " + CURRENCY_UNIT + "\n"
             "      \"valueZat\" : xxxx               (numeric) The amount in " + MINOR_CURRENCY_UNIT + "\n"
             "      \"memo\" : \"hexmemo\",             (string) hexadecimal string representation of the memo field\n"
-            "      \"memoStr\" : \"memo\",             (string) Only returned if memo contains valid UTF-8 text.\n"
+            "      \"memoStr\" : \"memo\",             (string, optional) UTF-8 string representation of memo field (if it contains valid UTF-8).\n"
             "    }\n"
             "    ,...\n"
             "  ],\n"
@@ -4304,24 +4345,6 @@ UniValue z_viewtransaction(const UniValue& params, bool fHelp)
 
     UniValue spends(UniValue::VARR);
     UniValue outputs(UniValue::VARR);
-
-    auto addMemo = [](UniValue &entry, std::array<unsigned char, ZC_MEMO_SIZE> &memo) {
-        entry.pushKV("memo", HexStr(memo));
-
-        // If the leading byte is 0xF4 or lower, the memo field should be interpreted as a
-        // UTF-8-encoded text string.
-        if (memo[0] <= 0xf4) {
-            // Trim off trailing zeroes
-            auto end = std::find_if(
-                memo.rbegin(),
-                memo.rend(),
-                [](unsigned char v) { return v != 0; });
-            std::string memoStr(memo.begin(), end.base());
-            if (utf8::is_valid(memoStr)) {
-                entry.pushKV("memoStr", memoStr);
-            }
-        }
-    };
 
     KeyIO keyIO(Params());
     // Sprout spends
@@ -4365,7 +4388,6 @@ UniValue z_viewtransaction(const UniValue& params, bool fHelp)
         auto decrypted = wtx.DecryptSproutNote(jsop);
         auto notePt = decrypted.first;
         auto pa = decrypted.second;
-        auto memo = notePt.memo();
 
         UniValue entry(UniValue::VOBJ);
         entry.pushKV("pool", ADDR_TYPE_SPROUT);
@@ -4377,7 +4399,7 @@ UniValue z_viewtransaction(const UniValue& params, bool fHelp)
         entry.pushKV("address", keyIO.EncodePaymentAddress(pa));
         entry.pushKV("value", ValueFromAmount(notePt.value()));
         entry.pushKV("valueZat", notePt.value());
-        addMemo(entry, memo);
+        AddMemo(entry, notePt.memo());
         outputs.push_back(entry);
     }
 
@@ -4420,11 +4442,10 @@ UniValue z_viewtransaction(const UniValue& params, bool fHelp)
     }
 
     // Sapling spends
-    for (size_t i = 0; i < wtx.vShieldedSpend.size(); ++i) {
-        auto spend = wtx.vShieldedSpend[i];
-
+    size_t i = 0;
+    for (const auto& spend : wtx.GetSaplingSpends()) {
         // Fetch the note that is being spent
-        auto res = pwalletMain->mapSaplingNullifiersToNotes.find(spend.nullifier);
+        auto res = pwalletMain->mapSaplingNullifiersToNotes.find(spend.nullifier());
         if (res == pwalletMain->mapSaplingNullifiersToNotes.end()) {
             continue;
         }
@@ -4468,10 +4489,11 @@ UniValue z_viewtransaction(const UniValue& params, bool fHelp)
         entry.pushKV("value", ValueFromAmount(notePt.value()));
         entry.pushKV("valueZat", notePt.value());
         spends.push_back(entry);
+        i++;
     }
 
     // Sapling outputs
-    for (uint32_t i = 0; i < wtx.vShieldedOutput.size(); ++i) {
+    for (uint32_t i = 0; i < wtx.GetSaplingOutputsCount(); ++i) {
         auto op = SaplingOutPoint(txid, i);
 
         SaplingNotePlaintext notePt;
@@ -4501,7 +4523,6 @@ UniValue z_viewtransaction(const UniValue& params, bool fHelp)
                 continue;
             }
         }
-        auto memo = notePt.memo();
 
         // Show the address that was cached at transaction construction as the
         // recipient.
@@ -4524,7 +4545,7 @@ UniValue z_viewtransaction(const UniValue& params, bool fHelp)
         }
         entry.pushKV("value", ValueFromAmount(notePt.value()));
         entry.pushKV("valueZat", notePt.value());
-        addMemo(entry, memo);
+        AddMemo(entry, notePt.memo());
         outputs.push_back(entry);
     }
 
@@ -4565,7 +4586,6 @@ UniValue z_viewtransaction(const UniValue& params, bool fHelp)
     for (const auto& [actionIdx, orchardActionOutput]  : orchardActions.GetOutputs()) {
         auto noteValue = orchardActionOutput.GetNoteValue();
         auto recipient = orchardActionOutput.GetRecipient();
-        auto memo = orchardActionOutput.GetMemo();
 
         // Show the address that was cached at transaction construction as the
         // recipient.
@@ -4588,7 +4608,7 @@ UniValue z_viewtransaction(const UniValue& params, bool fHelp)
         }
         entry.pushKV("value", ValueFromAmount(noteValue));
         entry.pushKV("valueZat", noteValue);
-        addMemo(entry, memo);
+        AddMemo(entry, orchardActionOutput.GetMemo());
         outputs.push_back(entry);
     }
 
@@ -4716,6 +4736,7 @@ size_t EstimateTxSize(
     // Depending on the input notes, the actual tx size may turn out to be larger and perhaps invalid.
     size_t txsize = 0;
     size_t taddrRecipientCount = 0;
+    size_t saplingRecipientCount = 0;
     size_t orchardRecipientCount = 0;
     for (const Payment& recipient : recipients) {
         examine(recipient.GetAddress(), match {
@@ -4726,7 +4747,7 @@ size_t EstimateTxSize(
                 taddrRecipientCount += 1;
             },
             [&](const libzcash::SaplingPaymentAddress& addr) {
-                mtx.vShieldedOutput.push_back(RandomInvalidOutputDescription());
+                saplingRecipientCount += 1;
             },
             [&](const libzcash::SproutPaymentAddress& addr) {
                 JSDescription jsdesc;
@@ -4737,7 +4758,7 @@ size_t EstimateTxSize(
                 if (addr.GetOrchardReceiver().has_value()) {
                     orchardRecipientCount += 1;
                 } else if (addr.GetSaplingReceiver().has_value()) {
-                    mtx.vShieldedOutput.push_back(RandomInvalidOutputDescription());
+                    saplingRecipientCount += 1;
                 } else if (addr.GetP2PKHReceiver().has_value()
                            || addr.GetP2SHReceiver().has_value()) {
                     taddrRecipientCount += 1;
@@ -4755,6 +4776,8 @@ size_t EstimateTxSize(
         mtx.nVersionGroupId = ZIP225_VERSION_GROUP_ID;
         mtx.nVersion = ZIP225_TX_VERSION;
     }
+    // Fine to call this because we are only testing that `mtx` is a valid size.
+    mtx.saplingBundle = sapling::test_only_invalid_bundle(0, saplingRecipientCount, 0);
 
     CTransaction tx(mtx);
     txsize += GetSerializeSize(tx, SER_NETWORK, tx.nVersion);
@@ -4773,34 +4796,35 @@ size_t EstimateTxSize(
     return txsize;
 }
 
-static std::optional<Memo> ParseMemo(const UniValue& memoValue)
+static std::optional<libzcash::Memo> ParseMemo(const UniValue& memoValue)
 {
     if (memoValue.isNull()) {
         return std::nullopt;
     } else {
-        return examine(Memo::FromHex(memoValue.get_str()), match {
-            [](MemoError err) -> std::optional<Memo> {
-                switch (err) {
-                    case MemoError::HexDecodeError:
-                        throw JSONRPCError(
-                                RPC_INVALID_PARAMETER,
-                                "Invalid parameter, expected memo data in hexadecimal format.");
-                    case MemoError::MemoTooLong:
-                        throw JSONRPCError(
-                                RPC_INVALID_PARAMETER,
-                                strprintf("Invalid parameter, size of memo is larger than maximum allowed %d", ZC_MEMO_SIZE ));
-                    default:
-                        assert(false);
-                }
-            },
-            [](Memo result) -> std::optional<Memo> {
-                if (result.ToBytes() == Memo::NoMemo().ToBytes()) {
-                    return std::nullopt;
-                } else {
-                    return result;
-                }
-            }
-        });
+        auto memoStr = memoValue.get_str();
+        auto rawMemo = ParseHex(memoStr);
+
+        // If ParseHex comes across a non-hex char, it will stop but still return results so far.
+        if (memoStr.size() != rawMemo.size() * 2) {
+            throw JSONRPCError(
+                    RPC_INVALID_PARAMETER,
+                    "Invalid parameter, expected memo data in hexadecimal format.");
+        } else {
+            return libzcash::Memo::FromBytes(rawMemo)
+                .map_error([](auto err) {
+                    switch (err) {
+                        case libzcash::Memo::ConversionError::MemoTooLong:
+                            throw JSONRPCError(
+                                    RPC_INVALID_PARAMETER,
+                                    strprintf(
+                                            "Invalid parameter, memo is longer than the maximum allowed %d bytes.",
+                                            libzcash::Memo::SIZE));
+                        default:
+                            assert(false);
+                    }
+                })
+                .value();
+        }
     }
 }
 
@@ -4976,7 +5000,7 @@ UniValue z_sendmany(const UniValue& params, bool fHelp)
                 strategy.AllowRevealedSenders() && !hasTransparentRecipient
                 ? TransparentCoinbasePolicy::Allow
                 : TransparentCoinbasePolicy::Disallow,
-                strategy.AllowLinkingAccountAddresses());
+                strategy.PermittedAccountSpendingPolicy());
             if (!ztxoSelectorOpt.has_value()) {
                 throw JSONRPCError(
                         RPC_INVALID_ADDRESS_OR_KEY,
@@ -5136,7 +5160,7 @@ UniValue z_getmigrationstatus(const UniValue& params, bool fHelp) {
         // * one or more Sprout JoinSplits with nonzero vpub_new field; and
         // * no Sapling Spends, and;
         // * one or more Sapling Outputs.
-        if (tx.vJoinSplit.size() > 0 && tx.vShieldedSpend.empty() && tx.vShieldedOutput.size() > 0) {
+        if (tx.vJoinSplit.size() > 0 && tx.GetSaplingSpendsCount() == 0 && tx.GetSaplingOutputsCount() > 0) {
             bool nonZeroVPubNew = false;
             for (const auto& js : tx.vJoinSplit) {
                 if (js.vpub_new > 0) {
@@ -5268,7 +5292,7 @@ UniValue z_shieldcoinbase(const UniValue& params, bool fHelp)
                 decoded.value(),
                 true,
                 TransparentCoinbasePolicy::Require,
-                strategy.AllowLinkingAccountAddresses());
+                strategy.PermittedAccountSpendingPolicy());
 
             if (!ztxoSelectorOpt.has_value()) {
                 throw JSONRPCError(
@@ -5567,7 +5591,7 @@ UniValue z_mergetoaddress(const UniValue& params, bool fHelp)
         saplingNoteLimit = nNoteLimit;
     }
 
-    std::optional<Memo> memo;
+    std::optional<libzcash::Memo> memo;
     if (params.size() > 5) {
         memo = ParseMemo(params[5]);
     }
@@ -5768,13 +5792,13 @@ UniValue z_mergetoaddress(const UniValue& params, bool fHelp)
                 allInputs.sproutNoteEntries[0].address,
                 true,
                 TransparentCoinbasePolicy::Disallow,
-                strategy.AllowLinkingAccountAddresses());
+                strategy.PermittedAccountSpendingPolicy());
     } else if (allInputs.saplingNoteEntries.size() > 0) {
         ztxoSelector = pwalletMain->ZTXOSelectorForAddress(
                 allInputs.saplingNoteEntries[0].address,
                 true,
                 TransparentCoinbasePolicy::Disallow,
-                strategy.AllowLinkingAccountAddresses());
+                strategy.PermittedAccountSpendingPolicy());
     } else {
         ztxoSelector = CWallet::LegacyTransparentZTXOSelector(true, TransparentCoinbasePolicy::Disallow);
     }

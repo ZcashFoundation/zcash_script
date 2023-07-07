@@ -214,6 +214,9 @@ extern size_t nCoinCacheUsage;
 extern CFeeRate minRelayTxFee;
 /** Absolute maximum transaction fee (in zatoshis) used by wallet and mempool (rejects high fee in sendrawtransaction). */
 extern CAmount maxTxFee;
+/** Limit on the number of unpaid actions a transaction can have to be accepted to the mempool. */
+extern CAmount nTxUnpaidActionLimit;
+/** Whether alert messages are processed. */
 extern bool fAlerts;
 /** If the tip is older than this (in seconds), the node is considered to be in initial block download. */
 extern int64_t nMaxTipAge;
@@ -598,6 +601,15 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
  */
 bool TestBlockValidity(CValidationState& state, const CChainParams& chainparams, const CBlock& block, CBlockIndex* pindexPrev, bool fIsBlockTemplate);
 
+/**
+ * This will clear the subtree database for a given shielded type from the
+ * current CCoinsView and regenerate the subtree database based on the current
+ * active chain.
+ *
+ * Only supports Sapling and Orchard. This does nothing in the event the chain
+ * is fresh or if the shielded protocol has not activated yet on chain.
+ */
+bool RegenerateSubtrees(ShieldedType type, const Consensus::Params& consensusParams);
 
 /**
  * When there are blocks in the active chain with missing data (e.g. if the
