@@ -58,7 +58,7 @@ byteorder = "1"
 crossbeam-channel = "0.5"
 cxx = { version = "=1.0.95", features = ["c++17"] }
 group = "0.13"
-incrementalmerkletree = "0.4"
+incrementalmerkletree = "0.5"
 jubjub = "0.10"
 libc = "0.2"
 memuse = "0.2"
@@ -98,7 +98,7 @@ syn = { version = "1.0.109", features = ["full", "printing"] }
 # Treat minor versions with a zero major version as compatible (cargo doesn't by default).
 hex = ">= 0.4.3"
 lazy_static = "1.4.0"
-incrementalmerkletree = { version = "0.4", features = ["test-dependencies"] }
+incrementalmerkletree = { version = "0.5", features = ["test-dependencies"] }
 zcash_primitives = { version = "0.12", features = ["temporary-zcashd", "transparent-inputs", "test-dependencies"] }
 
 [[package.metadata.release.pre-release-replacements]]

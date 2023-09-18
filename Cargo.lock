@@ -220,7 +220,7 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a813dadc684e4c78a4547757debd99666282545d90e4ccc3210913ed4337ad2"
 dependencies = [
- "incrementalmerkletree",
+ "incrementalmerkletree 0.4.0",
 ]
 
 [[package]]
@@ -679,6 +679,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2eb91780c91bfc79769006a55c49127b83e1c1a6cf2b3b149ce3f247cbe342f0"
 dependencies = [
  "either",
+]
+
+[[package]]
+name = "incrementalmerkletree"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "361c467824d4d9d4f284be4b2608800839419dccc4d4608f28345237fe354623"
+dependencies = [
+ "either",
  "proptest",
 ]
 
@@ -936,7 +945,7 @@ dependencies = [
  "halo2_gadgets",
  "halo2_proofs",
  "hex",
- "incrementalmerkletree",
+ "incrementalmerkletree 0.4.0",
  "lazy_static",
  "memuse",
  "nonempty",
@@ -1801,7 +1810,7 @@ dependencies = [
  "group",
  "hdwallet",
  "hex",
- "incrementalmerkletree",
+ "incrementalmerkletree 0.4.0",
  "jubjub",
  "lazy_static",
  "memuse",
@@ -1830,7 +1839,7 @@ dependencies = [
  "bls12_381",
  "group",
  "home",
- "incrementalmerkletree",
+ "incrementalmerkletree 0.4.0",
  "jubjub",
  "known-folders",
  "lazy_static",
@@ -1857,7 +1866,7 @@ dependencies = [
  "cxx-gen",
  "group",
  "hex",
- "incrementalmerkletree",
+ "incrementalmerkletree 0.5.0",
  "jubjub",
  "lazy_static",
  "libc",
