@@ -73,7 +73,7 @@ zcash_encoding = "0.2"
 zcash_note_encryption = "0.4"
 zcash_primitives = { version = "0.12", features = ["temporary-zcashd", "transparent-inputs"] }
 zcash_proofs = "0.12"
-bridgetree = "0.3"
+bridgetree = "0.4"
 rand = "0.8"
 
 [build-dependencies]
