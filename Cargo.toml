@@ -72,7 +72,7 @@ zcash_address = "0.3"
 zcash_encoding = "0.2"
 zcash_note_encryption = "0.4"
 zcash_primitives = { version = "0.12", features = ["temporary-zcashd", "transparent-inputs"] }
-zcash_proofs = "0.12"
+zcash_proofs = "0.13"
 bridgetree = "0.3"
 rand = "0.8"
 
