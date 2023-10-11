@@ -67,13 +67,34 @@ fn gen_cxxbridge() -> Result<()> {
     let out_path = PathBuf::from(out_path).join("gen");
     let src_out_path = PathBuf::from(&out_path).join("src");
     let header_out_path = PathBuf::from(&out_path).join("include").join("rust");
+    let header_out_path_sapling = header_out_path.join("sapling");
+
+    // Copy the files we need to generate the bindings
+    fs::copy(
+        "depend/zcash/src/rust/src/sapling/spec.rs",
+        "depend/zcash/src/rust/src/spec.rs",
+    )
+    .unwrap();
+    fs::copy(
+        "depend/zcash/src/rust/src/sapling/zip32.rs",
+        "depend/zcash/src/rust/src/zip32.rs",
+    )
+    .unwrap();
+
+    // Replace blake2s with blake2b
+    let spec = fs::read_to_string("depend/zcash/src/rust/src/spec.rs").unwrap();
+    let new_spec = spec.replace("blake2s_simd", "blake2b_simd");
+    fs::write("depend/zcash/src/rust/src/spec.rs", new_spec.as_bytes()).unwrap();
 
     // These must match `CXXBRIDGE_RS` in depend/zcash/src/Makefile.am
-    let filenames = ["blake2b", "ed25519", "equihash", "streams", "bridge"];
+    let filenames = [
+        "blake2b", "ed25519", "equihash", "streams", "bridge", "spec", "zip32",
+    ];
 
     // The output folder must exist
     fs::create_dir_all(&src_out_path).unwrap();
     fs::create_dir_all(&header_out_path).unwrap();
+    fs::create_dir_all(&header_out_path_sapling).unwrap();
 
     // Generate the generic header file
     fs::write(header_out_path.join("cxx.h"), cxx_gen::HEADER).unwrap();
@@ -103,11 +124,22 @@ fn gen_cxxbridge() -> Result<()> {
             )
         });
 
-        fs::write(
-            header_out_path.join(format!("{}.h", filename)),
-            output.header,
-        )
-        .unwrap();
+        // Write the generated header files for the sapling module to a subfolder
+        if filename == "spec" || filename == "zip32" {
+            fs::write(
+                header_out_path.join(format!("sapling/{}.h", filename)),
+                output.header,
+            )
+            .unwrap();
+        } else {
+            // Write the generated header files for the other modules to the root folder
+            fs::write(
+                header_out_path.join(format!("{}.h", filename)),
+                output.header,
+            )
+            .unwrap();
+        }
+        // Write the generated source files all to the same location
         fs::write(
             src_out_path.join(format!("{}.c", filename)),
             output.implementation,
@@ -135,6 +167,7 @@ fn main() -> Result<()> {
         .include("depend/zcash/src/secp256k1/include/")
         .include("depend/expected/include/")
         .include(&gen_path.join("include"))
+        .include(&gen_path.join("include/sapling/"))
         .flag_if_supported("-Wno-implicit-fallthrough")
         .flag_if_supported("-Wno-catch-value")
         .flag_if_supported("-Wno-reorder")
