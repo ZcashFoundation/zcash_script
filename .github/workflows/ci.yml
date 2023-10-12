@@ -155,3 +155,24 @@ jobs:
         with:
           command: clippy
           args: -- -D warnings
+
+  libraries-needed:
+    name: Windows libraries needed
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+
+    - name: Build and Check Rust Libraries
+      run: |
+        cargo clean
+        cargo build -vv 2>$null | Select-String 'rustc-link-lib'
+
+
