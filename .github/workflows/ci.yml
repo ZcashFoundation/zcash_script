@@ -74,7 +74,7 @@ jobs:
     strategy:
       matrix:
         # "windows-latest" was removed; see https://github.com/ZcashFoundation/zcash_script/issues/38
-        os: [ubuntu-latest, macOS-latest]
+        os: [ubuntu-latest, macOS-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
         with:
