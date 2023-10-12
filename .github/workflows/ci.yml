@@ -154,4 +154,5 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: -- -D warnings
+          # TODO: remove the allowed lint when zcashd fiexes the code in zcash/src/rust/src/wallet.rs:540:14
+          args: -- -D warnings -A clippy::unwrap_or_default
