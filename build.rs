@@ -69,7 +69,14 @@ fn gen_cxxbridge() -> Result<()> {
     let header_out_path = PathBuf::from(&out_path).join("include").join("rust");
 
     // These must match `CXXBRIDGE_RS` in depend/zcash/src/Makefile.am
-    let filenames = ["blake2b", "ed25519", "equihash", "streams", "bridge"];
+    let filenames = [
+        "blake2b",
+        "ed25519",
+        "equihash",
+        "streams",
+        "bridge",
+        "sapling/zip32",
+    ];
 
     // The output folder must exist
     fs::create_dir_all(&src_out_path).unwrap();
@@ -103,16 +110,15 @@ fn gen_cxxbridge() -> Result<()> {
             )
         });
 
-        fs::write(
-            header_out_path.join(format!("{}.h", filename)),
-            output.header,
-        )
-        .unwrap();
-        fs::write(
-            src_out_path.join(format!("{}.c", filename)),
-            output.implementation,
-        )
-        .unwrap();
+        let header_path = header_out_path.join(format!("{}.h", filename));
+        // Create output dir if does not exist (since `filename` can have a subdir)
+        fs::create_dir_all(header_path.parent().unwrap()).unwrap();
+        fs::write(header_path, output.header).unwrap();
+
+        let src_path = src_out_path.join(format!("{}.c", filename));
+        // Create output dir if does not exist (since `filename` can have a subdir)
+        fs::create_dir_all(src_path.parent().unwrap()).unwrap();
+        fs::write(src_path, output.implementation).unwrap();
     }
     Ok(())
 }
@@ -120,6 +126,43 @@ fn gen_cxxbridge() -> Result<()> {
 fn main() -> Result<()> {
     bindgen_headers()?;
     gen_cxxbridge()?;
+
+    let rust_path = env::var("OUT_DIR").map_err(Error::Env)?;
+    let rust_path = PathBuf::from(rust_path).join("rust");
+
+    // We want to compile `depend/zcash/src/rust/src/sapling.rs`, which we used
+    // to do in `src/sapling.rs` by just including it. However, now that it has
+    // submodules, that approach doesn't work because for some reason Rust
+    // searches for the submodules in `depend/zcash/src/rust/src/` instead of
+    // `depend/zcash/src/rust/src/sapling/` where they are located. This can
+    // be solved if `depend/zcash/src/rust/src/sapling.rs` is renamed to
+    // `depend/zcash/src/rust/src/sapling/mod.rs`. But we can't do that directly
+    // because we can't change the source tree inside `build.rs`. Therefore we
+    // copy the required files to OUT_DIR, with a renamed sapling.rs, and include
+    // the copied file instead (see src/sapling.rs).
+    // See also https://stackoverflow.com/questions/77310390/how-to-include-a-source-file-that-has-modules
+    fs::create_dir_all(rust_path.join("sapling")).unwrap();
+    for filename in &["sapling.rs", "sapling/spec.rs", "sapling/zip32.rs"] {
+        println!(
+            "cargo:rerun-if-changed=depend/zcash/src/rust/src/{}.rs",
+            filename
+        );
+    }
+    fs::copy(
+        "depend/zcash/src/rust/src/sapling.rs",
+        rust_path.join("sapling/mod.rs"),
+    )
+    .unwrap();
+    fs::copy(
+        "depend/zcash/src/rust/src/sapling/spec.rs",
+        rust_path.join("sapling/spec.rs"),
+    )
+    .unwrap();
+    fs::copy(
+        "depend/zcash/src/rust/src/sapling/zip32.rs",
+        rust_path.join("sapling/zip32.rs"),
+    )
+    .unwrap();
 
     let gen_path = env::var("OUT_DIR").map_err(Error::Env)?;
     let gen_path = PathBuf::from(gen_path).join("gen");

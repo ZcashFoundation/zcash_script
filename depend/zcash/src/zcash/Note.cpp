@@ -10,7 +10,8 @@
 #include "streams.h"
 
 #include "zcash/util.h"
-#include "librustzcash.h"
+
+#include <rust/sapling/spec.h>
 
 #include <boost/thread/exceptions.hpp>
 
@@ -58,7 +59,7 @@ SaplingNote::SaplingNote(
         // Per ZIP 212, the rseed field is 32 random bytes.
         rseed = random_uint256();
     } else {
-        librustzcash_sapling_generate_r(rseed.begin());
+        rseed = uint256::FromRawBytes(sapling::spec::generate_r());
     }
 }
 
@@ -69,14 +70,14 @@ std::optional<uint256> SaplingNote::cmu() const {
     // We consider ZIP 216 active all of the time because blocks prior to NU5
     // activation (on mainnet and testnet) did not contain Sapling transactions
     // that violated its canonicity rule.
-    if (!librustzcash_sapling_compute_cmu(
-            d.data(),
-            pk_d.begin(),
+    try {
+        result = uint256::FromRawBytes(sapling::spec::compute_cmu(
+            d,
+            pk_d.GetRawBytes(),
             value(),
-            rcm_tmp.begin(),
-            result.begin()
-        ))
-    {
+            rcm_tmp.GetRawBytes()
+        ));
+    } catch (rust::Error) {
         return std::nullopt;
     }
 
@@ -90,16 +91,16 @@ std::optional<uint256> SaplingNote::nullifier(const SaplingFullViewingKey& vk, c
 
     uint256 result;
     uint256 rcm_tmp = rcm();
-    if (!librustzcash_sapling_compute_nf(
-            d.data(),
-            pk_d.begin(),
+    try {
+        result = uint256::FromRawBytes(sapling::spec::compute_nf(
+            d,
+            pk_d.GetRawBytes(),
             value(),
-            rcm_tmp.begin(),
-            nk.begin(),
-            position,
-            result.begin()
-    ))
-    {
+            rcm_tmp.GetRawBytes(),
+            nk.GetRawBytes(),
+            position
+        ));
+    } catch (rust::Error) {
         return std::nullopt;
     }
 
@@ -205,140 +206,6 @@ std::pair<SaplingNotePlaintext, SaplingPaymentAddress> SaplingNotePlaintext::fro
     return std::make_pair(notePt, pa);
 }
 
-std::optional<SaplingOutgoingPlaintext> SaplingOutgoingPlaintext::decrypt(
-    const SaplingOutCiphertext &ciphertext,
-    const uint256& ovk,
-    const uint256& cv,
-    const uint256& cm,
-    const uint256& epk
-)
-{
-    auto pt = AttemptSaplingOutDecryption(ciphertext, ovk, cv, cm, epk);
-    if (!pt) {
-        return std::nullopt;
-    }
-
-    // Deserialize from the plaintext
-    try {
-        CDataStream ss(SER_NETWORK, PROTOCOL_VERSION);
-        ss << pt.value();
-        SaplingOutgoingPlaintext ret;
-        ss >> ret;
-        assert(ss.size() == 0);
-        return ret;
-    } catch (const boost::thread_interrupted&) {
-        throw;
-    } catch (...) {
-        return std::nullopt;
-    }
-}
-
-std::optional<SaplingNotePlaintext> SaplingNotePlaintext::decrypt(
-    const Consensus::Params& params,
-    int height,
-    const SaplingEncCiphertext &ciphertext,
-    const uint256 &epk,
-    const uint256 &esk,
-    const uint256 &pk_d,
-    const uint256 &cmu
-)
-{
-    // We consider ZIP 216 active all of the time because blocks prior to NU5
-    // activation (on mainnet and testnet) did not contain Sapling transactions
-    // that violated its canonicity rule.
-    auto ret = attempt_sapling_enc_decryption_deserialization(ciphertext, epk, esk, pk_d);
-
-    if (!ret) {
-        return std::nullopt;
-    } else {
-        SaplingNotePlaintext plaintext = *ret;
-
-        // Check leadbyte is allowed at block height
-        if (!plaintext_version_is_valid(params, height, plaintext.get_leadbyte())) {
-            LogPrint("receiveunsafe", "Received note plaintext with invalid lead byte %d at height %d",
-                     plaintext.get_leadbyte(), height);
-            return std::nullopt;
-        }
-
-        return plaintext_checks_without_height(plaintext, epk, esk, pk_d, cmu);
-    }
-}
-
-std::optional<SaplingNotePlaintext> SaplingNotePlaintext::attempt_sapling_enc_decryption_deserialization(
-    const SaplingEncCiphertext &ciphertext,
-    const uint256 &epk,
-    const uint256 &esk,
-    const uint256 &pk_d
-)
-{
-    auto encPlaintext = AttemptSaplingEncDecryption(ciphertext, epk, esk, pk_d);
-
-    if (!encPlaintext) {
-        return std::nullopt;
-    };
-
-    // Deserialize from the plaintext
-    SaplingNotePlaintext ret;
-    try {
-        CDataStream ss(SER_NETWORK, PROTOCOL_VERSION);
-        ss << encPlaintext.value();
-        ss >> ret;
-        assert(ss.size() == 0);
-        return ret;
-    } catch (const boost::thread_interrupted&) {
-        throw;
-    } catch (...) {
-        return std::nullopt;
-    }
-}
-
-std::optional<SaplingNotePlaintext> SaplingNotePlaintext::plaintext_checks_without_height(
-    const SaplingNotePlaintext &plaintext,
-    const uint256 &epk,
-    const uint256 &esk,
-    const uint256 &pk_d,
-    const uint256 &cmu
-)
-{
-    if (plaintext.get_leadbyte() != 0x01) {
-        assert(plaintext.get_leadbyte() == 0x02);
-        // ZIP 212: Additionally check that the esk provided to this function
-        // is consistent with the esk we can derive
-        if (esk != plaintext.generate_or_derive_esk()) {
-            return std::nullopt;
-        }
-    }
-
-    // ZIP 212: The recipient MUST derive esk and check that epk is consistent with it.
-    // https://zips.z.cash/zip-0212#changes-to-the-process-of-receiving-sapling-notes
-    uint256 expected_epk;
-    if (!librustzcash_sapling_ka_derivepublic(plaintext.d.data(), esk.begin(), expected_epk.begin())) {
-        return std::nullopt;
-    }
-    if (expected_epk != epk) {
-        return std::nullopt;
-    }
-
-    uint256 cmu_expected;
-    uint256 rcm = plaintext.rcm();
-    if (!librustzcash_sapling_compute_cmu(
-        plaintext.d.data(),
-        pk_d.begin(),
-        plaintext.value(),
-        rcm.begin(),
-        cmu_expected.begin()
-    ))
-    {
-        return std::nullopt;
-    }
-
-    if (cmu_expected != cmu) {
-        return std::nullopt;
-    }
-
-    return plaintext;
-}
-
 uint256 SaplingNotePlaintext::rcm() const {
     if (leadbyte != 0x01) {
         assert(leadbyte == 0x02);
@@ -353,17 +220,5 @@ uint256 SaplingNote::rcm() const {
         return PRF_rcm(rseed);
     } else {
         return rseed;
-    }
-}
-
-uint256 SaplingNotePlaintext::generate_or_derive_esk() const {
-    if (leadbyte != 0x01) {
-        assert(leadbyte == 0x02);
-        return PRF_esk(rseed);
-    } else {
-        uint256 esk;
-        // Pick random esk
-        librustzcash_sapling_generate_r(esk.begin());
-        return esk;
     }
 }

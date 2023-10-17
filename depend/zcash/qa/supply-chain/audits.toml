@@ -24,6 +24,23 @@ who = "Jack Grigg <jack@electriccoin.co>"
 criteria = ["safe-to-deploy", "crypto-reviewed"]
 delta = "0.5.1 -> 0.5.2"
 
+[[audits.allocator-api2]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.2.14 -> 0.2.15"
+notes = """
+- Some existing `unsafe` code is moved without being altered.
+- The new `SliceExt` extension trait uses `unsafe` methods `Vec::set_len` and
+  `core::ptr::copy_nonoverlapping` to initialize a `Vec` efficiently. The safety
+  requirements appear to be satisfied.
+"""
+
+[[audits.allocator-api2]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.2.15 -> 0.2.16"
+notes = "Change to `unsafe` block is to fix the `Drop` impl of `Box` to drop its value."
+
 [[audits.anyhow]]
 who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
@@ -46,10 +63,41 @@ who = "Sean Bowe <ewillbefull@gmail.com>"
 criteria = "safe-to-deploy"
 delta = "1.0.69 -> 1.0.70"
 
+[[audits.anyhow]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.71 -> 1.0.75"
+notes = """
+`unsafe` changes are migrating from `core::any::Demand` to `std::error::Request` when the
+nightly features are available.
+"""
+
 [[audits.arrayref]]
 who = "Sean Bowe <ewillbefull@gmail.com>"
 criteria = "safe-to-deploy"
 delta = "0.3.6 -> 0.3.7"
+
+[[audits.backtrace]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.3.67 -> 0.3.69"
+notes = """
+Changes to `unsafe` blocks:
+- New call to `GetCurrentProcessId` on Windows, to help generate a process-unique name to
+  use inside an existing `CreateMutexA` call.
+- Uses `libc::mmap64` on Linux instead of `libc::mmap`.
+- Alters `Stash` to allow caching more than one `Mmap`; the existing `unsafe` safety
+  condition continues to be applicable.
+
+There are also several more places where DWARF data is mmapped from a filesystem path and
+then loaded. These appear to all derive from existing paths that themselves were already
+being mmapped and loaded.
+"""
+
+[[audits.base64]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.21.3 -> 0.21.4"
 
 [[audits.bech32]]
 who = "Jack Grigg <jack@electriccoin.co>"
@@ -72,17 +120,34 @@ who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
 delta = "0.9.0 -> 0.10.1"
 
+[[audits.bitflags]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "2.3.3 -> 2.4.0"
+
 [[audits.blake2b_simd]]
 who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
 delta = "1.0.0 -> 1.0.1"
 notes = "Switches to `constant_time_eq 0.2.4`, which bumps its MSRV to 1.59."
 
+[[audits.blake2b_simd]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.1 -> 1.0.2"
+notes = "Switches to `constant_time_eq 0.3.0`, which bumps its MSRV to 1.66."
+
 [[audits.blake2s_simd]]
 who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
 delta = "1.0.0 -> 1.0.1"
 notes = "Switches to `constant_time_eq 0.2.4`, which bumps its MSRV to 1.59."
+
+[[audits.blake2s_simd]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.1 -> 1.0.2"
+notes = "Switches to `constant_time_eq 0.3.0`, which bumps its MSRV to 1.66."
 
 [[audits.block-buffer]]
 who = "Jack Grigg <jack@electriccoin.co>"
@@ -100,12 +165,6 @@ who = "Sean Bowe <ewillbefull@gmail.com>"
 criteria = "safe-to-deploy"
 delta = "0.7.1 -> 0.8.0"
 notes = "I previously reviewed the crypto-sensitive portions of these changes as well."
-
-[[audits.bridgetree]]
-who = "Kris Nuttycombe <kris@nutty.land>"
-criteria = "safe-to-deploy"
-version = "0.3.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
 
 [[audits.bumpalo]]
 who = "Jack Grigg <jack@z.cash>"
@@ -126,6 +185,17 @@ notes = """
 Adds a `mem::forget` as part of avoiding `Vec::into_boxed_slice` when it would reallocate.
 I checked that the required semantics of `mem::forget` are maintained, but it seems like
 `ManuallyDrop` should also work here and be compatible with their MSRV.
+"""
+
+[[audits.bytes]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.4.0 -> 1.5.0"
+notes = """
+- Introduces new `unsafe` blocks inside new `UninitSlice` constructors, but these replace
+  existing equivalent `unsafe` blocks that were directly constructing `UninitSlice`.
+- Adds `unsafe impl BufMut for &mut [core::mem::MaybeUninit<u8>]`, which is implemented
+  almost identically to the existing `unsafe impl BufMut for &mut [u8]`.
 """
 
 [[audits.chacha20]]
@@ -190,6 +260,17 @@ criteria = ["safe-to-deploy", "crypto-reviewed"]
 delta = "0.2.4 -> 0.2.5"
 notes = "No code changes."
 
+[[audits.constant_time_eq]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.2.5 -> 0.2.6"
+
+[[audits.constant_time_eq]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.2.6 -> 0.3.0"
+notes = "Replaces some `unsafe` code by bumping MSRV to 1.66 (to access `core::hint::black_box`)."
+
 [[audits.cpufeatures]]
 who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
@@ -200,6 +281,11 @@ notes = "Unsafe changes just introduce `#[inline(never)]` wrappers."
 who = "Sean Bowe <ewillbefull@gmail.com>"
 criteria = "safe-to-deploy"
 delta = "0.2.5 -> 0.2.6"
+
+[[audits.cpufeatures]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.2.8 -> 0.2.9"
 
 [[audits.crossbeam-channel]]
 who = "Jack Grigg <jack@electriccoin.co>"
@@ -219,6 +305,12 @@ criteria = "safe-to-deploy"
 delta = "0.9.13 -> 0.9.14"
 notes = "Bumps memoffset to 0.8, and marks some BPF and Sony Vita targets as not having atomics."
 
+[[audits.crossbeam-epoch]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.9.14 -> 0.9.15"
+notes = "Bumps memoffset to 0.9, and unmarks some ARMv7r and Sony Vita targets as not having 64-bit atomics."
+
 [[audits.crossbeam-utils]]
 who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
@@ -226,6 +318,16 @@ delta = "0.8.14 -> 0.8.15"
 notes = """
 - Fixes a wrapping overflow for large timeouts.
 - Marks some BPF and Sony Vita targets as not having atomics.
+"""
+
+[[audits.crossbeam-utils]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.8.15 -> 0.8.16"
+notes = """
+- Fixes cache line alignment for some targets.
+- Replaces `mem::replace` with `Option::take` inside `unsafe` blocks.
+- Unmarks some ARMv7r and Sony Vita targets as not having 64-bit atomics.
 """
 
 [[audits.crypto-common]]
@@ -284,6 +386,21 @@ who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
 delta = "1.0.92 -> 1.0.94"
 
+[[audits.cxx]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.95 -> 1.0.97"
+notes = "Adds some C++ static_casts to fix MSVC warnings."
+
+[[audits.cxx]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.97 -> 1.0.107"
+notes = """
+New `unsafe` blocks are to implement `CxxVector::new` (exposing `std::vector::new`). The
+remaining changes to `unsafe` code are removing uses of the wrapping `attr!` macro.
+"""
+
 [[audits.cxxbridge-flags]]
 who = "Daira Hopwood <daira@jacaranda.org>"
 criteria = "safe-to-deploy"
@@ -324,6 +441,16 @@ delta = "1.0.91 -> 1.0.92"
 who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
 delta = "1.0.92 -> 1.0.94"
+
+[[audits.cxxbridge-flags]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.95 -> 1.0.97"
+
+[[audits.cxxbridge-flags]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.97 -> 1.0.106"
 
 [[audits.cxxbridge-macro]]
 who = "Daira Hopwood <daira@jacaranda.org>"
@@ -376,6 +503,17 @@ and I didn't notice anything that seemed like it would adversely change the
 generated code.
 """
 
+[[audits.cxxbridge-macro]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.95 -> 1.0.97"
+
+[[audits.cxxbridge-macro]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.97 -> 1.0.107"
+notes = "New generated `unsafe` block exposes `std::vector::new` from C++."
+
 [[audits.directories]]
 who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
@@ -396,33 +534,71 @@ Changes to `unsafe` code are migrating from `winapi` to `windows-sys`. The APIs
 are equivalent, with the `windows-sys` ones being slightly more type-safe.
 """
 
+[[audits.ed25519]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "2.2.1 -> 2.2.2"
+
 [[audits.ed25519-zebra]]
 who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
 delta = "3.0.0 -> 3.1.0"
+
+[[audits.ed25519-zebra]]
+who = "Daira Emma Hopwood <daira@jacaranda.org>"
+criteria = "safe-to-deploy"
+delta = "3.1.0 -> 4.0.0"
+notes = """
+Changes are mainly in the pem and pkcs8 features and in Java or Scala code. These do not introduce unsafe code,
+but I cannot vouch for their cryptographic correctness or conformance to PEM or PKCS8 standards. I reviewed the
+remaining changes from 3.1.0 to 4.0.0 fully.
+"""
+
+[[audits.ed25519-zebra]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = ["safe-to-deploy", "crypto-reviewed"]
+delta = "4.0.0 -> 4.0.3"
+notes = """
+`SigningKey::from([u8; 32])` parsing now uses `Scalar::from_bytes_mod_order` instead of
+`Scalar::from_bits`. This means that the clamped scalar bits are now reduced before they
+are used, which removes the implicit mul-by-cofactor during scalar multiplication (as the
+last 3 bits of the scalar are no longer guaranteed to be zero). However, this happens to
+be fine in the context of this crate:
+
+- `SigningKey` does not expose its inner `Scalar` directly, so we only need to consider
+  how it is used within the crate.
+- For multiplication within a prime-order (sub)group, we get the same result whether we
+  reduce before or not. This means that the field-element multiplication during signing,
+  and the prime-order subgroup component of any group-element scalar multiplication, are
+  unaffected.
+- The only group element that the `Scalar` is multiplied by is the Ed25519 basepoint,
+  which is torsion free (so the implicit mul-by-cofactor is unnecessary).
+"""
 
 [[audits.either]]
 who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
 delta = "1.8.0 -> 1.8.1"
 
-[[audits.equihash]]
-who = "Jack Grigg <jack@z.cash>"
+[[audits.either]]
+who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
-version = "0.1.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
+delta = "1.8.1 -> 1.9.0"
 
-[[audits.equihash]]
-who = "Jack Grigg <jack@z.cash>"
+[[audits.equivalent]]
+who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
-delta = "0.1.0 -> 0.2.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
+delta = "1.0.0 -> 1.0.1"
 
-[[audits.f4jumble]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = ["crypto-reviewed", "safe-to-deploy"]
-version = "0.1.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
+[[audits.errno]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.3.1 -> 0.3.3"
+
+[[audits.fastrand]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.9.0 -> 2.0.0"
 
 [[audits.ff]]
 who = "Jack Grigg <jack@z.cash>"
@@ -585,6 +761,11 @@ who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
 delta = "0.27.0 -> 0.27.2"
 
+[[audits.gimli]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.27.2 -> 0.27.3"
+
 [[audits.group]]
 who = "Kris Nuttycombe <kris@nutty.land>"
 criteria = "safe-to-deploy"
@@ -595,55 +776,25 @@ who = "Sean Bowe <ewillbefull@gmail.com>"
 criteria = "safe-to-deploy"
 delta = "0.12.1 -> 0.13.0"
 
-[[audits.halo2_gadgets]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = ["crypto-reviewed", "safe-to-deploy"]
-version = "0.1.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.halo2_gadgets]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = ["crypto-reviewed", "safe-to-deploy"]
-delta = "0.1.0 -> 0.2.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.halo2_gadgets]]
-who = "Jack Grigg <jack@electriccoin.co>"
-criteria = ["safe-to-deploy", "crypto-reviewed"]
-delta = "0.2.0 -> 0.3.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.halo2_legacy_pdqsort]]
-who = "Sean Bowe <ewillbefull@gmail.com>"
+[[audits.hashbrown]]
+who = "Daira Emma Hopwood <daira@jacaranda.org>"
 criteria = "safe-to-deploy"
-version = "0.1.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.halo2_proofs]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = ["crypto-reviewed", "safe-to-deploy"]
-version = "0.1.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.halo2_proofs]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = ["crypto-reviewed", "safe-to-deploy"]
-delta = "0.1.0 -> 0.2.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.halo2_proofs]]
-who = "Jack Grigg <jack@electriccoin.co>"
-criteria = ["safe-to-deploy", "crypto-reviewed"]
-delta = "0.2.0 -> 0.3.0"
+delta = "0.13.2 -> 0.14.0"
 notes = """
-The ECC core team maintains this crate, and we have reviewed every line.
-The crate has `deny(unsafe_code)`.
+There is some additional use of unsafe code but the changes in this crate looked plausible.
+There is a new default dependency on the `allocator-api2` crate, which itself has quite a lot of unsafe code.
+Many previously undocumented safety requirements have been documented.
 """
 
 [[audits.hdwallet]]
 who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
 delta = "0.3.1 -> 0.4.1"
+
+[[audits.hermit-abi]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.3.1 -> 0.3.2"
 
 [[audits.http]]
 who = "Jack Grigg <jack@electriccoin.co>"
@@ -664,17 +815,10 @@ who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
 delta = "0.14.25 -> 0.14.26"
 
-[[audits.incrementalmerkletree]]
-who = "Jack Grigg <jack@electriccoin.co>"
+[[audits.hyper]]
+who = "Jack Grigg <thestr4d@gmail.com>"
 criteria = "safe-to-deploy"
-delta = "0.3.0 -> 0.3.1"
-notes = "Fixes bug in calculating altitudes from tree positions on 32-bit platforms."
-
-[[audits.incrementalmerkletree]]
-who = "Kris Nuttycombe <kris@nutty.land>"
-criteria = "safe-to-deploy"
-delta = "0.3.1 -> 0.4.0"
-notes = "Removes `bridgetree` to a separate crate & updates Frontier representation."
+delta = "0.14.26 -> 0.14.27"
 
 [[audits.indexmap]]
 who = "Jack Grigg <jack@z.cash>"
@@ -693,6 +837,11 @@ criteria = "safe-to-deploy"
 version = "0.1.3"
 notes = "Reviewed in full."
 
+[[audits.io-lifetimes]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.10 -> 1.0.11"
+
 [[audits.ipnet]]
 who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
@@ -702,6 +851,11 @@ delta = "2.5.0 -> 2.7.1"
 who = "Sean Bowe <ewillbefull@gmail.com>"
 criteria = "safe-to-deploy"
 delta = "2.7.1 -> 2.7.2"
+
+[[audits.ipnet]]
+who = "Jack Grigg <thestr4d@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "2.7.2 -> 2.8.0"
 
 [[audits.itoa]]
 who = "Jack Grigg <jack@z.cash>"
@@ -714,6 +868,11 @@ who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
 delta = "1.0.5 -> 1.0.6"
 
+[[audits.itoa]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.6 -> 1.0.9"
+
 [[audits.js-sys]]
 who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
@@ -724,11 +883,38 @@ notes = """
   MDN documentation.
 """
 
+[[audits.js-sys]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.3.61 -> 0.3.64"
+
 [[audits.jubjub]]
 who = "Sean Bowe <ewillbefull@gmail.com>"
 criteria = "safe-to-deploy"
 delta = "0.9.0 -> 0.10.0"
 notes = "I previously reviewed the crypto-sensitive portions of these changes as well."
+
+[[audits.known-folders]]
+who = "Jack Grigg <thestr4d@gmail.com>"
+criteria = "safe-to-deploy"
+version = "1.0.1"
+notes = """
+Uses `unsafe` blocks to interact with `windows-sys` crate.
+- `SHGetKnownFolderPath` safety requirements are met.
+- `CoTaskMemFree` has no effect if passed `NULL`, so there is no issue if some
+  future refactor created a pathway where `ffi::Guard` could be dropped before
+  `SHGetKnownFolderPath` is called.
+- Small nit: `ffi::Guard::as_pwstr` takes `&self` but returns `PWSTR` which is
+  the mutable type; it should instead return `PCWSTR` which is the const type
+  (and what `lstrlenW` takes) instead of implicitly const-casting the pointer,
+  as this would better reflect the intent to take an immutable reference.
+- The slice constructed from the `PWSTR` correctly goes out of scope before
+  `guard` is dropped.
+- A code comment says that `path_ptr` is valid for `len` bytes, but `PCWSTR` is
+  a `*const u16` and `lstrlenW` returns its length \"in characters\" (which the
+  Windows documentation confirms means the number of `WCHAR` values). This is
+  likely a typo; the code checks that `len * size_of::<u16>() <= isize::MAX`.
+"""
 
 [[audits.libm]]
 who = "Jack Grigg <jack@z.cash>"
@@ -762,10 +948,30 @@ criteria = "safe-to-deploy"
 delta = "0.4.16 -> 0.4.17"
 notes = "I confirmed that the unsafe transmutes are fine; NonZeroU128 and NonZeroI128 are `#[repr(transparent)]` wrappers around u128 and i128 respectively."
 
+[[audits.log]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.4.18 -> 0.4.19"
+
+[[audits.log]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.4.19 -> 0.4.20"
+
 [[audits.maybe-rayon]]
 who = "Sean Bowe <ewillbefull@gmail.com>"
 criteria = "safe-to-deploy"
 version = "0.1.1"
+
+[[audits.memoffset]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.8.0 -> 0.9.0"
+notes = """
+Refactors the `offset_of` macros to optionally replace their existing `unsafe`
+implementations with the unstable internal `core::mem::offset_of` macro. The
+existing `unsafe` implementations are unaltered.
+"""
 
 [[audits.memuse]]
 who = "Jack Grigg <jack@z.cash>"
@@ -777,6 +983,12 @@ notes = "Exposes an existing macro. Note that I am the author of the crate."
 who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
 delta = "0.19.0 -> 0.20.1"
+
+[[audits.metrics]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.21.0 -> 0.21.1"
+notes = "Removes an unused `unsafe` public API."
 
 [[audits.metrics-exporter-prometheus]]
 who = "Jack Grigg <jack@z.cash>"
@@ -792,6 +1004,11 @@ delta = "0.5.1 -> 0.6.0"
 who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
 delta = "0.13.0 -> 0.14.0"
+
+[[audits.metrics-util]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.15.0 -> 0.15.1"
 
 [[audits.mio]]
 who = "Jack Grigg <jack@z.cash>"
@@ -829,11 +1046,29 @@ New `unsafe` usages:
 - Additional `syscall!(close(socket))` calls before returning errors.
 """
 
+[[audits.mio]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.8.6 -> 0.8.8"
+
 [[audits.nix]]
 who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
 delta = "0.26.1 -> 0.26.2"
 notes = "Fixes `SockaddrIn6` endianness bug."
+
+[[audits.nix]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.26.2 -> 0.26.4"
+notes = """
+Most of the `unsafe` changes are cleaning up their usage:
+- Replacing `data.len() * std::mem::size_of::<$ty>()` with `std::mem::size_of_val(data)`.
+- Removing some `mem::transmute`s.
+- Using `*mut` instead of `*const` to convey intended semantics.
+
+A new unsafe trait method `SockaddrLike::set_length` is added; it's impls look fine.
+"""
 
 [[audits.num-integer]]
 who = "Jack Grigg <jack@z.cash>"
@@ -846,6 +1081,12 @@ who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
 delta = "1.14.0 -> 1.15.0"
 
+[[audits.num_cpus]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.15.0 -> 1.16.0"
+notes = "New unsafe code calls AIX `getsystemcfg` API exposed by `libc` to access the SMT mode."
+
 [[audits.object]]
 who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
@@ -856,6 +1097,16 @@ who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
 delta = "0.30.2 -> 0.30.3"
 
+[[audits.object]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.30.3 -> 0.30.4"
+
+[[audits.object]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.32.0 -> 0.32.1"
+
 [[audits.once_cell]]
 who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
@@ -864,35 +1115,6 @@ notes = """
 Small refactor that reduces the overall amount of `unsafe` code. The new strict provenance
 approach looks reasonable.
 """
-
-[[audits.orchard]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = ["crypto-reviewed", "safe-to-deploy"]
-version = "0.1.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.orchard]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = ["crypto-reviewed", "safe-to-deploy"]
-delta = "0.1.0 -> 0.2.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.orchard]]
-who = "Kris Nuttycombe <kris@nutty.land>"
-criteria = "safe-to-deploy"
-delta = "0.2.0 -> 0.3.0"
-
-[[audits.orchard]]
-who = "Jack Grigg <jack@electriccoin.co>"
-criteria = ["safe-to-deploy", "crypto-reviewed"]
-delta = "0.3.0 -> 0.4.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.orchard]]
-who = "Kris Nuttycombe <kris@nutty.land>"
-criteria = ["safe-to-deploy", "crypto-reviewed"]
-delta = "0.4.0 -> 0.5.0"
-notes = "Updated to use incrementalmerkletree version 0.4.0."
 
 [[audits.pairing]]
 who = "Sean Bowe <ewillbefull@gmail.com>"
@@ -905,6 +1127,11 @@ criteria = "safe-to-deploy"
 delta = "3.2.1 -> 3.4.0"
 notes = "No new code, just refactoring to remove the `full` feature flag."
 
+[[audits.parity-scale-codec]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "3.6.1 -> 3.6.5"
+
 [[audits.parity-scale-codec-derive]]
 who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
@@ -913,6 +1140,11 @@ notes = """
 - Bumps `syn` minimum version.
 - Fixes `max_encoded_len()` to pay attention to `#[codec(skip)]` attribute.
 """
+
+[[audits.parity-scale-codec-derive]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "3.1.4 -> 3.6.1"
 
 [[audits.parking_lot]]
 who = "Jack Grigg <jack@z.cash>"
@@ -959,17 +1191,32 @@ Mostly modernisation, migrating to `PhfBorrow`, and making more things `&'static
 No unsafe code in the new `OrderedMap` and `OrderedSet` types.
 """
 
+[[audits.phf]]
+who = "Jack Grigg <thestr4d@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.11.1 -> 0.11.2"
+
 [[audits.phf_codegen]]
 who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
 delta = "0.8.0 -> 0.11.1"
 notes = "New codegen and changes to existing codegen look fine."
 
+[[audits.phf_codegen]]
+who = "Jack Grigg <thestr4d@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.11.1 -> 0.11.2"
+
 [[audits.phf_generator]]
 who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
 delta = "0.8.0 -> 0.11.1"
 notes = "Just dependency and edition bumps and code formatting."
+
+[[audits.phf_generator]]
+who = "Jack Grigg <thestr4d@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.11.1 -> 0.11.2"
 
 [[audits.phf_shared]]
 who = "Jack Grigg <jack@z.cash>"
@@ -980,6 +1227,31 @@ Adds `uncased` dependency, and newly generates unsafe code to transmute `&'stati
 into `&'static UncasedStr`. I verified that `UncasedStr` is a `#[repr(transparent)]`
 newtype around `str`.
 """
+
+[[audits.phf_shared]]
+who = "Jack Grigg <thestr4d@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.11.1 -> 0.11.2"
+
+[[audits.pin-project-lite]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.2.9 -> 0.2.13"
+
+[[audits.platforms]]
+who = "Daira Emma Hopwood <daira@jacaranda.org>"
+criteria = "safe-to-deploy"
+version = "3.0.2"
+notes = """
+This crate uses `#![forbid(unsafe_code)]` and its build script is safe. It only \"provides programmatic access to
+information about valid Rust platforms, sourced from the Rust compiler\"; it does not attempt any detection that
+would require unsafety.
+"""
+
+[[audits.platforms]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "3.0.2 -> 3.1.2"
 
 [[audits.poly1305]]
 who = "Daira Hopwood <daira@jacaranda.org>"
@@ -1019,6 +1291,16 @@ who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
 delta = "1.0.54 -> 1.0.56"
 
+[[audits.proc-macro2]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.59 -> 1.0.60"
+
+[[audits.proc-macro2]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.66 -> 1.0.67"
+
 [[audits.quanta]]
 who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
@@ -1028,6 +1310,11 @@ delta = "0.9.3 -> 0.10.1"
 who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
 delta = "1.0.23 -> 1.0.26"
+
+[[audits.quote]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.31 -> 1.0.33"
 
 [[audits.rand_xorshift]]
 who = "Sean Bowe <ewillbefull@gmail.com>"
@@ -1052,6 +1339,11 @@ I did not verify that the change was move-only, but there is no unsafe code affe
 who = "Sean Bowe <ewillbefull@gmail.com>"
 criteria = "safe-to-deploy"
 delta = "0.3.0 -> 0.5.0"
+
+[[audits.reddsa]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.5.0 -> 0.5.1"
 
 [[audits.redjubjub]]
 who = "Daira Emma Hopwood <daira@jacaranda.org>"
@@ -1085,6 +1377,11 @@ who = "Sean Bowe <ewillbefull@gmail.com>"
 criteria = "safe-to-deploy"
 delta = "0.6.28 -> 0.6.29"
 
+[[audits.regex-syntax]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.7.2 -> 0.7.5"
+
 [[audits.rustc-demangle]]
 who = "Sean Bowe <ewillbefull@gmail.com>"
 criteria = "safe-to-deploy"
@@ -1095,10 +1392,40 @@ who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
 delta = "0.1.22 -> 0.1.23"
 
+[[audits.rustc_version]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+version = "0.4.0"
+notes = """
+Most of the crate is code to parse and validate the output of `rustc -vV`. The caller can
+choose which `rustc` to use, or can use `rustc_version::{version, version_meta}` which will
+try `$RUSTC` followed by `rustc`.
+
+If an adversary can arbitrarily set the `$RUSTC` environment variable then this crate will
+execute arbitrary code. But when this crate is used within a build script, `$RUSTC` should
+be set correctly by `cargo`.
+"""
+
 [[audits.ryu]]
 who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
 delta = "1.0.12 -> 1.0.13"
+
+[[audits.ryu]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.13 -> 1.0.15"
+
+[[audits.scopeguard]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.1.0 -> 1.2.0"
+notes = "Only change to an `unsafe` block is to replace a `mem::forget` with `ManuallyDrop`."
+
+[[audits.semver]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.17 -> 1.0.18"
 
 [[audits.serde]]
 who = "Jack Grigg <jack@z.cash>"
@@ -1121,6 +1448,17 @@ who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
 delta = "1.0.159 -> 1.0.160"
 
+[[audits.serde]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.163 -> 1.0.164"
+
+[[audits.serde]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.179 -> 1.0.188"
+notes = "Mostly a bunch of cleanups after bumping MSRV."
+
 [[audits.serde_derive]]
 who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
@@ -1142,10 +1480,65 @@ who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
 delta = "1.0.159 -> 1.0.160"
 
+[[audits.serde_derive]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.163 -> 1.0.164"
+
+[[audits.serde_derive]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.179 -> 1.0.188"
+
 [[audits.serde_json]]
 who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
 delta = "1.0.95 -> 1.0.96"
+
+[[audits.serde_json]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.96 -> 1.0.97"
+
+[[audits.serde_json]]
+who = "Jack Grigg <thestr4d@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "1.0.97 -> 1.0.99"
+
+[[audits.serde_json]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.99 -> 1.0.106"
+
+[[audits.serde_json]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.106 -> 1.0.107"
+
+[[audits.sha2]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.10.6 -> 0.10.7"
+notes = """
+The new `unsafe` assembly backend only uses aarch64 intrinsics, via their typed
+Rust APIs (aside from the SHA2-specific intrinsics that are not in Rust yet). I
+did not perform a cryptographic review, but the code to load from and store into
+the function arguments looks correct.
+"""
+
+[[audits.signature]]
+who = "Daira Emma Hopwood <daira@jacaranda.org>"
+criteria = "safe-to-deploy"
+version = "2.1.0"
+notes = """
+This crate uses `#![forbid(unsafe_code)]`, has no build script, and only provides traits with some trivial default implementations.
+I did not review whether implementing these APIs would present any undocumented cryptographic hazards.
+"""
+
+[[audits.siphasher]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.3.10 -> 0.3.11"
 
 [[audits.sketches-ddsketch]]
 who = "Jack Grigg <jack@z.cash>"
@@ -1189,6 +1582,27 @@ who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
 delta = "2.0.13 -> 2.0.15"
 
+[[audits.syn]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "2.0.15 -> 2.0.18"
+
+[[audits.syn]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "2.0.26 -> 2.0.33"
+
+[[audits.tempfile]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "3.5.0 -> 3.6.0"
+notes = "New `build.rs` file uses `autocfg` crate to conditionally enable new trait impls."
+
+[[audits.tempfile]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "3.6.0 -> 3.8.0"
+
 [[audits.terminfo]]
 who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
@@ -1207,6 +1621,11 @@ criteria = "safe-to-deploy"
 delta = "1.0.32 -> 1.0.37"
 notes = "The new build script invokes rustc to determine whether it supports the Provider API. The only side-effect is it overwrites `$OUT_DIR/probe.rs`, which is fine because it is unique to the thiserror package."
 
+[[audits.thiserror]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.43 -> 1.0.48"
+
 [[audits.thiserror-impl]]
 who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
@@ -1219,6 +1638,11 @@ criteria = "safe-to-deploy"
 delta = "1.0.32 -> 1.0.37"
 notes = "Proc macro changes migrating to the Provider API look fine."
 
+[[audits.thiserror-impl]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.43 -> 1.0.48"
+
 [[audits.thread_local]]
 who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
@@ -1228,6 +1652,21 @@ New `unsafe` usage:
 - An extra `deallocate_bucket`, to replace a `Mutex::lock` with a `compare_exchange`.
 - Setting and getting a `#[thread_local] static mut Option<Thread>` on nightly.
 """
+
+[[audits.time]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.3.20 -> 0.3.22"
+notes = """
+Fixes alignment (by using `#[repr(C)]`) of some `union`s that are used in
+`unsafe` blocks to const convert between `UtcOffset`, and a trait type that is
+either `UtcOffset` or `()`.
+"""
+
+[[audits.time-core]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.1.0 -> 0.1.1"
 
 [[audits.time-macros]]
 who = "Jack Grigg <jack@z.cash>"
@@ -1242,6 +1681,20 @@ notes = """
 - Only new `unsafe` code takes a `NonZeroU16` at proc-macro evaluation time and hard-codes
   its contents into a `NonZeroU16::new_unchecked` constructor, which is safe.
 - Bumps MSRV to 1.63.
+"""
+
+[[audits.time-macros]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.2.8 -> 0.2.9"
+
+[[audits.time-macros]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.2.9 -> 0.2.14"
+notes = """
+New `unsafe` blocks are because a previously-unsafe macro helper now declares its
+unsafety; no actual logic changes.
 """
 
 [[audits.tinyvec_macros]]
@@ -1262,16 +1715,56 @@ criteria = "safe-to-deploy"
 delta = "0.5.1 -> 0.6.1"
 notes = "Fixes a bug in parsing negative minutes in datetime string offsets."
 
+[[audits.toml_datetime]]
+who = "Jack Grigg <thestr4d@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.6.2 -> 0.6.3"
+
 [[audits.toml_edit]]
 who = "Sean Bowe <ewillbefull@gmail.com>"
 criteria = "safe-to-deploy"
 delta = "0.19.7 -> 0.19.8"
+
+[[audits.toml_edit]]
+who = "Jack Grigg <thestr4d@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.19.10 -> 0.19.11"
+
+[[audits.tracing-attributes]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.1.23 -> 0.1.25"
+
+[[audits.tracing-attributes]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.1.25 -> 0.1.26"
+
+[[audits.tracing-core]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.1.30 -> 0.1.31"
+notes = """
+The only new `unsafe` block is to intentionally leak a scoped subscriber onto
+the heap when setting it as the global default dispatcher. I checked that the
+global default can only be set once and is never dropped.
+"""
+
+[[audits.tracing-subscriber]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.3.16 -> 0.3.17"
 
 [[audits.try-lock]]
 who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
 delta = "0.2.3 -> 0.2.4"
 notes = "Fixes unsoundness."
+
+[[audits.typenum]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.16.0 -> 1.17.0"
 
 [[audits.uint]]
 who = "Jack Grigg <jack@z.cash>"
@@ -1288,11 +1781,60 @@ who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
 delta = "1.0.6 -> 1.0.8"
 
+[[audits.unicode-ident]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.9 -> 1.0.12"
+
 [[audits.universal-hash]]
 who = "Daira Hopwood <daira@jacaranda.org>"
 criteria = "safe-to-deploy"
 delta = "0.4.1 -> 0.5.0"
 notes = "I checked correctness of to_blocks which uses unsafe code in a safe function."
+
+[[audits.wagyu-zcash-parameters]]
+who = "Sean Bowe <ewillbefull@gmail.com>"
+criteria = ["safe-to-deploy", "crypto-reviewed"]
+version = "0.2.0"
+
+[[audits.wagyu-zcash-parameters-1]]
+who = "Sean Bowe <ewillbefull@gmail.com>"
+criteria = ["safe-to-deploy", "crypto-reviewed"]
+version = "0.2.0"
+
+[[audits.wagyu-zcash-parameters-2]]
+who = "Sean Bowe <ewillbefull@gmail.com>"
+criteria = ["safe-to-deploy", "crypto-reviewed"]
+version = "0.2.0"
+
+[[audits.wagyu-zcash-parameters-3]]
+who = "Sean Bowe <ewillbefull@gmail.com>"
+criteria = ["safe-to-deploy", "crypto-reviewed"]
+version = "0.2.0"
+
+[[audits.wagyu-zcash-parameters-4]]
+who = "Sean Bowe <ewillbefull@gmail.com>"
+criteria = ["safe-to-deploy", "crypto-reviewed"]
+version = "0.2.0"
+
+[[audits.wagyu-zcash-parameters-5]]
+who = "Sean Bowe <ewillbefull@gmail.com>"
+criteria = ["safe-to-deploy", "crypto-reviewed"]
+version = "0.2.0"
+
+[[audits.wagyu-zcash-parameters-6]]
+who = "Sean Bowe <ewillbefull@gmail.com>"
+criteria = ["safe-to-deploy", "crypto-reviewed"]
+version = "0.2.0"
+
+[[audits.want]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.3.0 -> 0.3.1"
+notes = """
+Migrates to `try-lock 0.2.4` to replace some unsafe APIs that were not marked
+`unsafe` (but that were being used safely).
+"""
 
 [[audits.wasm-bindgen-shared]]
 who = "Jack Grigg <jack@z.cash>"
@@ -1300,176 +1842,30 @@ criteria = "safe-to-deploy"
 delta = "0.2.83 -> 0.2.84"
 notes = "Bumps the schema version to add `linked_modules`."
 
+[[audits.wasm-bindgen-shared]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.2.84 -> 0.2.87"
+
 [[audits.which]]
 who = "Jack Grigg <jack@z.cash>"
 criteria = "safe-to-deploy"
 delta = "4.3.0 -> 4.4.0"
 notes = "New APIs are remixes of existing code."
 
-[[audits.windows-targets]]
+[[audits.which]]
 who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
-delta = "0.42.1 -> 0.42.2"
-
-[[audits.windows_aarch64_gnullvm]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = "safe-to-deploy"
-delta = "0.42.0 -> 0.42.1"
+delta = "4.4.0 -> 4.4.2"
 notes = """
-This is a Windows API bindings library maintained by Microsoft themselves.
-Changes are to a bundled binary library; it looks like these were accidentally left out of 0.42.0.
+Crate now has `#![forbid(unsafe_code)]`, replacing its last `unsafe` block with a
+dependency on the `rustix` crate.
 """
 
-[[audits.windows_aarch64_gnullvm]]
+[[audits.winnow]]
 who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
-delta = "0.42.1 -> 0.42.2"
-notes = "This is an opaque Windows API bindings library maintained by Microsoft."
-
-[[audits.windows_aarch64_msvc]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = "safe-to-run"
-version = "0.36.1"
-notes = """
-Adds a binary blob to the library search path, that contains a subset of
-the Windows SDK to avoid a direct dependency on the latter. See
-https://github.com/microsoft/windows-rs/pull/1217 for context. I did not
-audit the binary blob, but the build script looks fine.
-"""
-
-[[audits.windows_aarch64_msvc]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = "safe-to-deploy"
-delta = "0.42.0 -> 0.42.1"
-notes = """
-This is a Windows API bindings library maintained by Microsoft themselves.
-Changes are to a bundled binary library; it looks like these were accidentally left out of 0.42.0.
-"""
-
-[[audits.windows_aarch64_msvc]]
-who = "Jack Grigg <jack@electriccoin.co>"
-criteria = "safe-to-deploy"
-delta = "0.42.1 -> 0.42.2"
-notes = "This is an opaque Windows API bindings library maintained by Microsoft."
-
-[[audits.windows_i686_gnu]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = "safe-to-run"
-version = "0.36.1"
-notes = """
-Adds a binary blob to the library search path, that contains a subset of
-the Windows SDK to avoid a direct dependency on the latter. See
-https://github.com/microsoft/windows-rs/pull/1217 for context. I did not
-audit the binary blob, but the build script looks fine.
-"""
-
-[[audits.windows_i686_gnu]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = "safe-to-deploy"
-delta = "0.42.0 -> 0.42.1"
-notes = """
-This is a Windows API bindings library maintained by Microsoft themselves.
-Changes are to a bundled binary library; it looks like these were accidentally left out of 0.42.0.
-"""
-
-[[audits.windows_i686_gnu]]
-who = "Jack Grigg <jack@electriccoin.co>"
-criteria = "safe-to-deploy"
-delta = "0.42.1 -> 0.42.2"
-notes = "This is an opaque Windows API bindings library maintained by Microsoft."
-
-[[audits.windows_i686_msvc]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = "safe-to-run"
-version = "0.36.1"
-notes = """
-Adds a binary blob to the library search path, that contains a subset of
-the Windows SDK to avoid a direct dependency on the latter. See
-https://github.com/microsoft/windows-rs/pull/1217 for context. I did not
-audit the binary blob, but the build script looks fine.
-"""
-
-[[audits.windows_i686_msvc]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = "safe-to-deploy"
-delta = "0.42.0 -> 0.42.1"
-notes = """
-This is a Windows API bindings library maintained by Microsoft themselves.
-Changes are to a bundled binary library; it looks like these were accidentally left out of 0.42.0.
-"""
-
-[[audits.windows_i686_msvc]]
-who = "Jack Grigg <jack@electriccoin.co>"
-criteria = "safe-to-deploy"
-delta = "0.42.1 -> 0.42.2"
-notes = "This is an opaque Windows API bindings library maintained by Microsoft."
-
-[[audits.windows_x86_64_gnu]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = "safe-to-run"
-version = "0.36.1"
-notes = """
-Adds a binary blob to the library search path, that contains a subset of
-the Windows SDK to avoid a direct dependency on the latter. See
-https://github.com/microsoft/windows-rs/pull/1217 for context. I did not
-audit the binary blob, but the build script looks fine.
-"""
-
-[[audits.windows_x86_64_gnu]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = "safe-to-deploy"
-delta = "0.42.0 -> 0.42.1"
-notes = """
-This is a Windows API bindings library maintained by Microsoft themselves.
-Changes are to a bundled binary library; it looks like these were accidentally left out of 0.42.0.
-"""
-
-[[audits.windows_x86_64_gnu]]
-who = "Jack Grigg <jack@electriccoin.co>"
-criteria = "safe-to-deploy"
-delta = "0.42.1 -> 0.42.2"
-notes = "This is an opaque Windows API bindings library maintained by Microsoft."
-
-[[audits.windows_x86_64_gnullvm]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = "safe-to-deploy"
-delta = "0.42.0 -> 0.42.1"
-notes = """
-This is a Windows API bindings library maintained by Microsoft themselves.
-Changes are to a bundled binary library; it looks like these were accidentally left out of 0.42.0.
-"""
-
-[[audits.windows_x86_64_gnullvm]]
-who = "Jack Grigg <jack@electriccoin.co>"
-criteria = "safe-to-deploy"
-delta = "0.42.1 -> 0.42.2"
-notes = "This is an opaque Windows API bindings library maintained by Microsoft."
-
-[[audits.windows_x86_64_msvc]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = "safe-to-run"
-version = "0.36.1"
-notes = """
-Adds a binary blob to the library search path, that contains a subset of
-the Windows SDK to avoid a direct dependency on the latter. See
-https://github.com/microsoft/windows-rs/pull/1217 for context. I did not
-audit the binary blob, but the build script looks fine.
-"""
-
-[[audits.windows_x86_64_msvc]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = "safe-to-deploy"
-delta = "0.42.0 -> 0.42.1"
-notes = """
-This is a Windows API bindings library maintained by Microsoft themselves.
-Changes are to a bundled binary library; it looks like these were accidentally left out of 0.42.0.
-"""
-
-[[audits.windows_x86_64_msvc]]
-who = "Jack Grigg <jack@electriccoin.co>"
-criteria = "safe-to-deploy"
-delta = "0.42.1 -> 0.42.2"
-notes = "This is an opaque Windows API bindings library maintained by Microsoft."
+delta = "0.4.6 -> 0.4.7"
 
 [[audits.wyz]]
 who = "Jack Grigg <jack@z.cash>"
@@ -1477,173 +1873,10 @@ criteria = "safe-to-deploy"
 delta = "0.5.0 -> 0.5.1"
 notes = "Only change to unsafe code is to extract a drop impl into a method. I note however that most of the changes in the published 0.5.1 are not present in the v0.5.1 tag on the GitHub repository."
 
-[[audits.zcash_address]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = "safe-to-deploy"
-version = "0.1.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.zcash_address]]
-who = "Kris Nuttycombe <kris@nutty.land>"
-criteria = "safe-to-deploy"
-delta = "0.1.0 -> 0.2.0"
-
-[[audits.zcash_address]]
+[[audits.xdg]]
 who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
-delta = "0.2.0 -> 0.2.1"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.zcash_address]]
-who = "Kris Nuttycombe <kris@nutty.land>"
-criteria = "safe-to-deploy"
-delta = "0.2.1 -> 0.3.0"
-notes = "Updates the bs58 dependency to version 0.5."
-
-[[audits.zcash_encoding]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = "safe-to-deploy"
-version = "0.1.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.zcash_encoding]]
-who = "Kris Nuttycombe <kris@nutty.land>"
-criteria = "safe-to-deploy"
-delta = "0.1.0 -> 0.2.0"
-
-[[audits.zcash_history]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = "safe-to-deploy"
-version = "0.3.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.zcash_note_encryption]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = ["crypto-reviewed", "safe-to-deploy"]
-version = "0.1.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.zcash_note_encryption]]
-who = "Kris Nuttycombe <kris@nutty.land>"
-criteria = "safe-to-deploy"
-delta = "0.1.0 -> 0.2.0"
-
-[[audits.zcash_note_encryption]]
-who = "Jack Grigg <jack@electriccoin.co>"
-criteria = ["safe-to-deploy", "crypto-reviewed"]
-delta = "0.2.0 -> 0.3.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.zcash_note_encryption]]
-who = "Kris Nuttycombe <kris@nutty.land>"
-criteria = ["safe-to-deploy", "crypto-reviewed"]
-delta = "0.3.0 -> 0.4.0"
-notes = "A minor API change that removes some unused parameters."
-
-[[audits.zcash_primitives]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = ["crypto-reviewed", "safe-to-deploy"]
-version = "0.6.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.zcash_primitives]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = ["crypto-reviewed", "safe-to-deploy"]
-delta = "0.6.0 -> 0.7.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.zcash_primitives]]
-who = "Kris Nuttycombe <kris@nutty.land>"
-criteria = "safe-to-deploy"
-delta = "0.7.0 -> 0.8.1"
-
-[[audits.zcash_primitives]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = "safe-to-deploy"
-delta = "0.8.1 -> 0.9.1"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.zcash_primitives]]
-who = "Jack Grigg <jack@electriccoin.co>"
-criteria = ["safe-to-deploy", "crypto-reviewed"]
-delta = "0.9.1 -> 0.10.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.zcash_primitives]]
-who = "Jack Grigg <jack@electriccoin.co>"
-criteria = ["safe-to-deploy", "crypto-reviewed"]
-delta = "0.10.0 -> 0.10.1"
-notes = """
-The ECC core team maintains this crate, and we have reviewed every line.
-This point release temporarily re-exposes some constructors.
-"""
-
-[[audits.zcash_primitives]]
-who = "Jack Grigg <jack@electriccoin.co>"
-criteria = ["safe-to-deploy", "crypto-reviewed"]
-delta = "0.10.1 -> 0.10.2"
-notes = """
-The ECC core team maintains this crate, and we have reviewed every line.
-This point release temporarily re-exposes a constructor.
-"""
-
-[[audits.zcash_primitives]]
-who = "Jack Grigg <jack@electriccoin.co>"
-criteria = ["safe-to-deploy", "crypto-reviewed"]
-delta = "0.10.2 -> 0.11.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.zcash_primitives]]
-who = "Kris Nuttycombe <kris@nutty.land>"
-criteria = ["safe-to-deploy", "crypto-reviewed"]
-delta = "0.11.0 -> 0.12.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.zcash_proofs]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = ["crypto-reviewed", "safe-to-deploy"]
-version = "0.6.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.zcash_proofs]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = ["crypto-reviewed", "safe-to-deploy"]
-delta = "0.6.0 -> 0.7.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.zcash_proofs]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = ["crypto-reviewed", "safe-to-deploy"]
-delta = "0.7.0 -> 0.7.1"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.zcash_proofs]]
-who = "Kris Nuttycombe <kris@nutty.land>"
-criteria = "safe-to-deploy"
-delta = "0.7.1 -> 0.8.0"
-
-[[audits.zcash_proofs]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = "safe-to-deploy"
-delta = "0.8.0 -> 0.9.0"
-
-[[audits.zcash_proofs]]
-who = "Jack Grigg <jack@electriccoin.co>"
-criteria = ["safe-to-deploy", "crypto-reviewed"]
-delta = "0.9.0 -> 0.10.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.zcash_proofs]]
-who = "Jack Grigg <jack@electriccoin.co>"
-criteria = ["safe-to-deploy", "crypto-reviewed"]
-delta = "0.10.0 -> 0.11.0"
-notes = "The ECC core team maintains this crate, and we have reviewed every line."
-
-[[audits.zcash_proofs]]
-who = "Kris Nuttycombe <kris@nutty.land>"
-criteria = ["safe-to-deploy", "crypto-reviewed"]
-delta = "0.11.0 -> 0.12.0"
-notes = "The only change is that the zcash_primitives dependency has been updated to version 0.12."
+delta = "2.5.0 -> 2.5.2"
 
 [[audits.zeroize]]
 who = "Daira Hopwood <daira@jacaranda.org>"
@@ -1671,3 +1904,171 @@ delta = "1.3.3 -> 1.4.1"
 who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
 delta = "1.4.1 -> 1.4.2"
+
+[[trusted.bridgetree]]
+criteria = "safe-to-deploy"
+user-id = 6289 # str4d
+start = "2023-09-08"
+end = "2024-09-21"
+
+[[trusted.bridgetree]]
+criteria = "safe-to-deploy"
+user-id = 169181 # Kris Nuttycombe (nuttycom)
+start = "2022-07-22"
+end = "2024-09-21"
+
+[[trusted.equihash]]
+criteria = "safe-to-deploy"
+user-id = 6289 # str4d
+start = "2020-06-26"
+end = "2024-09-21"
+
+[[trusted.f4jumble]]
+criteria = ["safe-to-deploy", "crypto-reviewed"]
+user-id = 6289 # str4d
+start = "2021-09-22"
+end = "2024-09-21"
+
+[[trusted.halo2_gadgets]]
+criteria = ["safe-to-deploy", "crypto-reviewed"]
+user-id = 1244 # ebfull
+start = "2022-05-10"
+end = "2024-09-21"
+
+[[trusted.halo2_legacy_pdqsort]]
+criteria = ["safe-to-deploy", "crypto-reviewed"]
+user-id = 199950 # Daira Hopwood (daira)
+start = "2023-02-24"
+end = "2024-09-21"
+
+[[trusted.halo2_proofs]]
+criteria = ["safe-to-deploy", "crypto-reviewed"]
+user-id = 1244 # ebfull
+start = "2022-05-10"
+end = "2024-09-21"
+
+[[trusted.incrementalmerkletree]]
+criteria = "safe-to-deploy"
+user-id = 6289 # str4d
+start = "2021-12-17"
+end = "2024-09-21"
+
+[[trusted.incrementalmerkletree]]
+criteria = "safe-to-deploy"
+user-id = 1244 # ebfull
+start = "2021-06-24"
+end = "2024-09-21"
+
+[[trusted.incrementalmerkletree]]
+criteria = "safe-to-deploy"
+user-id = 169181 # Kris Nuttycombe (nuttycom)
+start = "2023-02-28"
+end = "2024-09-21"
+
+[[trusted.orchard]]
+criteria = ["safe-to-deploy", "crypto-reviewed", "license-reviewed"]
+user-id = 6289 # str4d
+start = "2021-01-07"
+end = "2024-09-21"
+
+[[trusted.orchard]]
+criteria = ["safe-to-deploy", "crypto-reviewed", "license-reviewed"]
+user-id = 1244 # ebfull
+start = "2022-10-19"
+end = "2024-09-21"
+
+[[trusted.windows-sys]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2021-11-15"
+end = "2024-06-21"
+
+[[trusted.windows-targets]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2022-09-09"
+end = "2024-06-21"
+
+[[trusted.windows_aarch64_gnullvm]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2022-09-01"
+end = "2024-06-21"
+
+[[trusted.windows_aarch64_msvc]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2021-11-05"
+end = "2024-06-21"
+
+[[trusted.windows_i686_gnu]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2021-10-28"
+end = "2024-06-21"
+
+[[trusted.windows_i686_msvc]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2021-10-27"
+end = "2024-06-21"
+
+[[trusted.windows_x86_64_gnu]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2021-10-28"
+end = "2024-06-21"
+
+[[trusted.windows_x86_64_gnullvm]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2022-09-01"
+end = "2024-06-21"
+
+[[trusted.windows_x86_64_msvc]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2021-10-27"
+end = "2024-06-21"
+
+[[trusted.zcash_address]]
+criteria = "safe-to-deploy"
+user-id = 1244 # ebfull
+start = "2022-10-19"
+end = "2024-09-21"
+
+[[trusted.zcash_encoding]]
+criteria = "safe-to-deploy"
+user-id = 1244 # ebfull
+start = "2022-10-19"
+end = "2024-09-21"
+
+[[trusted.zcash_history]]
+criteria = "safe-to-deploy"
+user-id = 1244 # ebfull
+start = "2020-03-04"
+end = "2024-09-21"
+
+[[trusted.zcash_note_encryption]]
+criteria = ["safe-to-deploy", "crypto-reviewed"]
+user-id = 169181 # Kris Nuttycombe (nuttycom)
+start = "2023-03-22"
+end = "2024-09-21"
+
+[[trusted.zcash_primitives]]
+criteria = ["safe-to-deploy", "crypto-reviewed", "license-reviewed"]
+user-id = 6289 # str4d
+start = "2021-03-26"
+end = "2024-09-21"
+
+[[trusted.zcash_primitives]]
+criteria = ["safe-to-deploy", "crypto-reviewed", "license-reviewed"]
+user-id = 1244 # ebfull
+start = "2019-10-08"
+end = "2024-09-21"
+
+[[trusted.zcash_proofs]]
+criteria = ["safe-to-deploy", "crypto-reviewed", "license-reviewed"]
+user-id = 6289 # str4d
+start = "2021-03-26"
+end = "2024-09-21"
