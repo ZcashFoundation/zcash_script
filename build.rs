@@ -148,9 +148,21 @@ fn main() -> Result<()> {
             filename
         );
     }
-    fs::copy("depend/zcash/src/rust/src/sapling.rs", rust_path.join("sapling/mod.rs")).unwrap();
-    fs::copy("depend/zcash/src/rust/src/sapling/spec.rs", rust_path.join("sapling/spec.rs")).unwrap();
-    fs::copy("depend/zcash/src/rust/src/sapling/zip32.rs", rust_path.join("sapling/zip32.rs")).unwrap();
+    fs::copy(
+        "depend/zcash/src/rust/src/sapling.rs",
+        rust_path.join("sapling/mod.rs"),
+    )
+    .unwrap();
+    fs::copy(
+        "depend/zcash/src/rust/src/sapling/spec.rs",
+        rust_path.join("sapling/spec.rs"),
+    )
+    .unwrap();
+    fs::copy(
+        "depend/zcash/src/rust/src/sapling/zip32.rs",
+        rust_path.join("sapling/zip32.rs"),
+    )
+    .unwrap();
 
     let gen_path = env::var("OUT_DIR").map_err(Error::Env)?;
     let gen_path = PathBuf::from(gen_path).join("gen");
