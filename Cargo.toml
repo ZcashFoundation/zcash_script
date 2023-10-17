@@ -53,6 +53,7 @@ external-secp = []
 # https://github.com/zcash/zcash/blob/<git subtree version>/Cargo.toml
 bellman = "0.14"
 blake2b_simd = "1"
+blake2s_simd = "1"
 bls12_381 = "0.8"
 byteorder = "1"
 crossbeam-channel = "0.5"

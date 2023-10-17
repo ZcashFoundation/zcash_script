@@ -1847,6 +1847,7 @@ dependencies = [
  "bellman",
  "bindgen",
  "blake2b_simd",
+ "blake2s_simd",
  "bls12_381",
  "bridgetree",
  "byteorder",
