@@ -9,6 +9,7 @@
 #![allow(non_snake_case)]
 #![allow(unsafe_code)]
 #![allow(unused_imports)]
+#![allow(clippy::unwrap_or_default)]
 
 // Use the generated C++ bindings
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
