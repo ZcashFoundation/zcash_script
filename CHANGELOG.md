@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.14] - 2023-10-18
 
+## [0.1.14] - 2023-10-18
+
 ### Changed
 - Update `depend/zcash` to version 5.7.0 which includes updated dependencies
 - Update other dependencies to match Zebra
@@ -95,6 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- next-url -->
 [Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.14...HEAD
+[0.1.14]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.14...v0.1.14
 [0.1.14]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.11...v0.1.12
