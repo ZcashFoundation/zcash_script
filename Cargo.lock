@@ -423,9 +423,9 @@ dependencies = [
 
 [[package]]
 name = "cxx-gen"
-version = "0.7.109"
+version = "0.7.110"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1318697052dbc5a12f8e5e603441413d6096350c29b8361eb45a9c531be61dda"
+checksum = "a3e0fc77e9f8d61724be90deb42a7e50ba3bf37c7c16dc91cdba821f69a5e0e9"
 dependencies = [
  "codespan-reporting",
  "proc-macro2",
