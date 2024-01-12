@@ -1749,9 +1749,9 @@ checksum = "213b7324336b53d2414b2db8537e56544d981803139155afa84f76eeebb7a546"
 
 [[package]]
 name = "zcash_address"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8944af5c206cf2e37020ad54618e1825501b98548d35a638b73e0ec5762df8d5"
+checksum = "bce173f1d9ed4f806e310bc3a873301531e7a6dc209928584d6404e3f8228ef4"
 dependencies = [
  "bech32",
  "bs58",
