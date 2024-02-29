@@ -47,6 +47,11 @@ work correctly. Since we don't allow those in our repository, we start over
 every time, basically using it as a glorified `git clone`. This issue is being
 tracked in https://github.com/ZcashFoundation/zcash_script/issues/35.
 
+We also need to patch the zcash source to enable Windows compatibility. This
+is done by applying a patch file as described below. If the patch application
+fails, check the patch file for reference on what needs to be changed (and
+update the patch file).
+
 If you need to update the zcash source, run:
 
 ```console
@@ -54,6 +59,7 @@ git rm -r depend/zcash
 (commit changes)
 git subtree add -P depend/zcash https://github.com/zcash/zcash.git <ref> --squash
 git rm depend/zcash/Cargo.toml
+git apply zcash.patch
 (commit changes)
 ```
 

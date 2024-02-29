@@ -1,0 +1,37 @@
+diff --git a/depend/zcash/src/zcash/cache.cpp b/depend/zcash/src/zcash/cache.cpp
+index c5cd6b173c..1da334b377 100644
+--- a/depend/zcash/src/zcash/cache.cpp
++++ b/depend/zcash/src/zcash/cache.cpp
+@@ -3,7 +3,7 @@
+ // file COPYING or http://www.opensource.org/licenses/mit-license.php.
+ 
+ #include "zcash/cache.h"
+-#include "util/system.h"
++// #include "util/system.h"
+ 
+ namespace libzcash
+ {
+@@ -11,8 +11,8 @@ std::unique_ptr<BundleValidityCache> NewBundleValidityCache(rust::Str kind, size
+ {
+     auto cache = std::unique_ptr<BundleValidityCache>(new BundleValidityCache());
+     size_t nElems = cache->setup_bytes(nMaxCacheSize);
+-    LogPrintf("Using %zu MiB out of %zu requested for %s bundle cache, able to store %zu elements\n",
+-              (nElems * sizeof(BundleCacheEntry)) >> 20, nMaxCacheSize >> 20, kind, nElems);
++    // LogPrintf("Using %zu MiB out of %zu requested for %s bundle cache, able to store %zu elements\n",
++    //           (nElems * sizeof(BundleCacheEntry)) >> 20, nMaxCacheSize >> 20, kind, nElems);
+     return cache;
+ }
+ } // namespace libzcash
+diff --git a/depend/zcash/src/zcash/cache.h b/depend/zcash/src/zcash/cache.h
+index 9bef1e43b5..283123bec9 100644
+--- a/depend/zcash/src/zcash/cache.h
++++ b/depend/zcash/src/zcash/cache.h
+@@ -31,7 +31,7 @@ public:
+     {
+         static_assert(hash_select < 8, "BundleCacheHasher only has 8 hashes available.");
+         uint32_t u;
+-        std::memcpy(&u, key.begin() + 4 * hash_select, 4);
++        std::memcpy(&u, &*(key.begin() + 4 * hash_select), 4);
+         return u;
+     }
+ };
