@@ -32,7 +32,7 @@ fn bindgen_headers() -> Result<()> {
         .header("depend/zcash/src/script/zcash_script.h")
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks))
+        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         // Finish the builder and generate the bindings.
         .generate()
         .map_err(|_| Error::GenerateBindings)?;
