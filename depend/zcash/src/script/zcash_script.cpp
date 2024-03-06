@@ -12,7 +12,8 @@
 #include "script/interpreter.h"
 #include "version.h"
 
-namespace {
+namespace
+{
 inline int set_error(zcash_script_error* ret, zcash_script_error serror)
 {
     if (ret)
@@ -25,17 +26,15 @@ inline int set_error(zcash_script_error* ret, zcash_script_error serror)
 unsigned int GetLegacySigOpCount(const CTransaction& tx)
 {
     unsigned int nSigOps = 0;
-    for (const CTxIn& txin : tx.vin)
-    {
+    for (const CTxIn& txin : tx.vin) {
         nSigOps += txin.scriptSig.GetSigOpCount(false);
     }
-    for (const CTxOut& txout : tx.vout)
-    {
+    for (const CTxOut& txout : tx.vout) {
         nSigOps += txout.scriptPubKey.GetSigOpCount(false);
     }
     return nSigOps;
 }
-}
+} // namespace
 
 struct PrecomputedTransaction {
     const CTransaction tx;
@@ -53,8 +52,8 @@ void* zcash_script_new_precomputed_tx(
     zcash_script_error* err)
 {
     try {
-        const char* txToEnd = (const char *)(txTo + txToLen);
-        RustDataStream stream((const char *)txTo, txToEnd, SER_NETWORK, PROTOCOL_VERSION);
+        const char* txToEnd = (const char*)(txTo + txToLen);
+        RustDataStream stream((const char*)txTo, txToEnd, SER_NETWORK, PROTOCOL_VERSION);
         CTransaction tx;
         stream >> tx;
         if (GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION) != txToLen) {
@@ -87,8 +86,8 @@ void* zcash_script_new_precomputed_tx_v5(
 {
     CTransaction tx;
     try {
-        const char* txToEnd = (const char *)(txTo + txToLen);
-        RustDataStream stream((const char *)txTo, txToEnd, SER_NETWORK, PROTOCOL_VERSION);
+        const char* txToEnd = (const char*)(txTo + txToLen);
+        RustDataStream stream((const char*)txTo, txToEnd, SER_NETWORK, PROTOCOL_VERSION);
         stream >> tx;
         if (GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION) != txToLen) {
             set_error(err, zcash_script_ERR_TX_SIZE_MISMATCH);
@@ -145,16 +144,19 @@ int zcash_script_verify_precomputed(
 }
 
 int zcash_script_verify(
-    const unsigned char *scriptPubKey, unsigned int scriptPubKeyLen,
+    const unsigned char* scriptPubKey,
+    unsigned int scriptPubKeyLen,
     int64_t amount,
-    const unsigned char *txTo, unsigned int txToLen,
-    unsigned int nIn, unsigned int flags,
+    const unsigned char* txTo,
+    unsigned int txToLen,
+    unsigned int nIn,
+    unsigned int flags,
     uint32_t consensusBranchId,
     zcash_script_error* err)
 {
     try {
-        const char* txToEnd = (const char *)(txTo + txToLen);
-        RustDataStream stream((const char *)txTo, txToEnd, SER_NETWORK, PROTOCOL_VERSION);
+        const char* txToEnd = (const char*)(txTo + txToLen);
+        RustDataStream stream((const char*)txTo, txToEnd, SER_NETWORK, PROTOCOL_VERSION);
         CTransaction tx;
         stream >> tx;
         if (nIn >= tx.vin.size())
@@ -165,7 +167,7 @@ int zcash_script_verify(
             return set_error(err, zcash_script_ERR_TX_VERSION);
         }
 
-         // Regardless of the verification result, the tx did not error.
+        // Regardless of the verification result, the tx did not error.
         set_error(err, zcash_script_ERR_OK);
         // This is a pre-v5 tx, so the PrecomputedTransactionData constructor
         // field `allPrevOutputs` is not used.
@@ -175,6 +177,35 @@ int zcash_script_verify(
             CScript(scriptPubKey, scriptPubKey + scriptPubKeyLen),
             flags,
             TransactionSignatureChecker(&tx, txdata, nIn, amount),
+            consensusBranchId,
+            NULL);
+    } catch (const std::exception&) {
+        return set_error(err, zcash_script_ERR_TX_DESERIALIZE); // Error deserializing
+    }
+}
+
+int zcash_script_verify_prehashed(
+    const unsigned char* sighash,
+    unsigned int sighashLen,
+    int64_t nLockTime,
+    uint8_t isFinal,
+    const unsigned char* scriptPubKey,
+    unsigned int scriptPubKeyLen,
+    const unsigned char* scriptSig,
+    unsigned int scriptSigLen,
+    int64_t amount,
+    unsigned int nIn,
+    unsigned int flags,
+    uint32_t consensusBranchId,
+    zcash_script_error* err)
+{
+    try {
+        CScriptNum nLockTimeNum = CScriptNum(nLockTime);
+        return VerifyScript(
+            CScript(scriptSig, scriptSig + scriptSigLen),
+            CScript(scriptPubKey, scriptPubKey + scriptPubKeyLen),
+            flags,
+            PrehashedTransactionSignatureChecker(sighash, sighashLen, nLockTimeNum, isFinal != 0, nIn, amount),
             consensusBranchId,
             NULL);
     } catch (const std::exception&) {
@@ -194,8 +225,8 @@ int zcash_script_verify_v5(
 {
     CTransaction tx;
     try {
-        const char* txToEnd = (const char *)(txTo + txToLen);
-        RustDataStream stream((const char *)txTo, txToEnd, SER_NETWORK, PROTOCOL_VERSION);
+        const char* txToEnd = (const char*)(txTo + txToLen);
+        RustDataStream stream((const char*)txTo, txToEnd, SER_NETWORK, PROTOCOL_VERSION);
         stream >> tx;
         if (nIn >= tx.vin.size())
             return set_error(err, zcash_script_ERR_TX_INDEX);
@@ -253,13 +284,13 @@ unsigned int zcash_script_legacy_sigop_count_precomputed(
 }
 
 unsigned int zcash_script_legacy_sigop_count(
-    const unsigned char *txTo,
+    const unsigned char* txTo,
     unsigned int txToLen,
     zcash_script_error* err)
 {
     try {
-        const char* txToEnd = (const char *)(txTo + txToLen);
-        RustDataStream stream((const char *)txTo, txToEnd, SER_NETWORK, PROTOCOL_VERSION);
+        const char* txToEnd = (const char*)(txTo + txToLen);
+        RustDataStream stream((const char*)txTo, txToEnd, SER_NETWORK, PROTOCOL_VERSION);
         CTransaction tx;
         stream >> tx;
         if (GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION) != txToLen) {
