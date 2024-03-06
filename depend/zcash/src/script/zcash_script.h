@@ -133,6 +133,21 @@ EXPORT_SYMBOL int zcash_script_verify(
     uint32_t consensusBranchId,
     zcash_script_error* err);
 
+EXPORT_SYMBOL int zcash_script_verify_prehashed(
+    const unsigned char* sighash,
+    unsigned int sighashLen,
+    int64_t nLockTime,
+    uint8_t isFinal,
+    const unsigned char* scriptPubKey,
+    unsigned int scriptPubKeyLen,
+    const unsigned char* scriptSig,
+    unsigned int scriptSigLen,
+    int64_t amount,
+    unsigned int nIn,
+    unsigned int flags,
+    uint32_t consensusBranchId,
+    zcash_script_error* err);
+
 /// Returns 1 if the input nIn of the serialized transaction pointed to by
 /// txTo correctly spends the matching output in allPrevOutputs under
 /// the additional constraints specified by flags. Must be used for V5 transactions;
