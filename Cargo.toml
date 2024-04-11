@@ -73,7 +73,7 @@ zcash_address = "0.3"
 zcash_encoding = "0.2"
 zcash_note_encryption = "0.4"
 zcash_primitives = { version = "=0.13.0-rc.1", features = ["temporary-zcashd", "transparent-inputs"] }
-zcash_proofs = { version = "=0.13.0-rc.1", features = ["directories"] }
+zcash_proofs = { version = "=0.14.0", features = ["directories"] }
 bridgetree = "0.4"
 rand = "0.8"
 
