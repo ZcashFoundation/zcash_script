@@ -57,7 +57,7 @@ blake2s_simd = "1"
 bls12_381 = "0.8"
 byteorder = "1"
 crossbeam-channel = "0.5"
-cxx = { version = "=1.0.107", features = ["c++17"] }
+cxx = { version = "=1.0.113", features = ["c++17"] }
 group = "0.13"
 incrementalmerkletree = "0.5"
 jubjub = "0.10"
@@ -72,8 +72,8 @@ tracing = "0.1"
 zcash_address = "0.3"
 zcash_encoding = "0.2"
 zcash_note_encryption = "0.4"
-zcash_primitives = { version = "=0.13.0-rc.1", features = ["temporary-zcashd", "transparent-inputs"] }
-zcash_proofs = { version = "=0.13.0-rc.1", features = ["directories"] }
+zcash_primitives = { version = "=0.13.0", features = ["temporary-zcashd", "transparent-inputs"] }
+zcash_proofs = { version = "=0.13.0", features = ["directories"] }
 bridgetree = "0.4"
 rand = "0.8"
 
@@ -100,7 +100,7 @@ syn = { version = "1.0.109", features = ["full", "printing"] }
 hex = ">= 0.4.3"
 lazy_static = "1.4.0"
 incrementalmerkletree = { version = "0.5", features = ["test-dependencies"] }
-zcash_primitives = { version = "=0.13.0-rc.1", features = ["temporary-zcashd", "transparent-inputs", "test-dependencies"] }
+zcash_primitives = { version = "=0.13.0", features = ["temporary-zcashd", "transparent-inputs", "test-dependencies"] }
 
 [[package.metadata.release.pre-release-replacements]]
 file = "CHANGELOG.md"
