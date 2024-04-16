@@ -14,61 +14,61 @@
 // Use the generated C++ bindings
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
-// Include the items from depend/zcash/src/rust/src/rustzcash.rs (librustzcash/lib.rs)
-// that we need
+// // Include the items from depend/zcash/src/rust/src/rustzcash.rs (librustzcash/lib.rs)
+// // that we need
 
 use ::sapling::circuit::{
     OutputParameters, OutputVerifyingKey, SpendParameters, SpendVerifyingKey,
 };
 
-/// The code that uses this constant is not called by zcash_script.
-static mut SAPLING_SPEND_VK: Option<SpendVerifyingKey> = None;
-/// The code that uses this constant is not called by zcash_script.
-static mut SAPLING_OUTPUT_VK: Option<OutputVerifyingKey> = None;
-/// The code that uses this constant is not called by zcash_script.
-static mut SAPLING_SPEND_PARAMS: Option<SpendParameters> = None;
-/// The code that uses this constant is not called by zcash_script.
-static mut SAPLING_OUTPUT_PARAMS: Option<OutputParameters> = None;
+// /// The code that uses this constant is not called by zcash_script.
+// static mut SAPLING_SPEND_VK: Option<SpendVerifyingKey> = None;
+// /// The code that uses this constant is not called by zcash_script.
+// static mut SAPLING_OUTPUT_VK: Option<OutputVerifyingKey> = None;
+// /// The code that uses this constant is not called by zcash_script.
+// static mut SAPLING_SPEND_PARAMS: Option<SpendParameters> = None;
+// /// The code that uses this constant is not called by zcash_script.
+// static mut SAPLING_OUTPUT_PARAMS: Option<OutputParameters> = None;
 
-/// The code that uses this constant is not called by zcash_script.
-static mut ORCHARD_PK: Option<orchard::circuit::ProvingKey> = None;
-/// The code that uses this constant is not called by zcash_script.
-static mut ORCHARD_VK: Option<orchard::circuit::VerifyingKey> = None;
+// /// The code that uses this constant is not called by zcash_script.
+// static mut ORCHARD_PK: Option<orchard::circuit::ProvingKey> = None;
+// /// The code that uses this constant is not called by zcash_script.
+// static mut ORCHARD_VK: Option<orchard::circuit::VerifyingKey> = None;
 
-/// Converts CtOption<t> into Option<T>
-fn de_ct<T>(ct: subtle::CtOption<T>) -> Option<T> {
-    if ct.is_some().into() {
-        Some(ct.unwrap())
-    } else {
-        None
-    }
-}
+// /// Converts CtOption<t> into Option<T>
+// fn de_ct<T>(ct: subtle::CtOption<T>) -> Option<T> {
+//     if ct.is_some().into() {
+//         Some(ct.unwrap())
+//     } else {
+//         None
+//     }
+// }
 
-/// The size of a Groth16 Sapling proof.
-const GROTH_PROOF_SIZE: usize = 48 // π_A
-    + 96 // π_B
-    + 48; // π_C
+// /// The size of a Groth16 Sapling proof.
+// const GROTH_PROOF_SIZE: usize = 48 // π_A
+//     + 96 // π_B
+//     + 48; // π_C
 
 // Include the modules from depend/zcash/src/rust (librustzcash) that we need
-mod blake2b;
-mod bridge;
-mod bundlecache;
-mod incremental_merkle_tree;
-mod merkle_frontier;
-mod note_encryption;
-mod orchard_bundle;
-mod params;
-mod sapling;
-mod streams;
-mod test_harness_ffi;
-mod wallet;
-mod wallet_scanner;
-mod zcashd_orchard;
+// mod blake2b;
+// mod bridge;
+// mod bundlecache;
+// mod incremental_merkle_tree;
+// mod merkle_frontier;
+// mod note_encryption;
+// mod orchard_bundle;
+// mod params;
+// mod sapling;
+// mod streams;
+// mod test_harness_ffi;
+// mod wallet;
+// mod wallet_scanner;
+// mod zcashd_orchard;
 
-mod builder_ffi;
-mod orchard_ffi;
-mod streams_ffi;
-mod transaction_ffi;
+// mod builder_ffi;
+// mod orchard_ffi;
+// mod streams_ffi;
+// mod transaction_ffi;
 
 #[cfg(test)]
 mod tests {

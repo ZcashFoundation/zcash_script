@@ -1515,6 +1515,82 @@ bool PrehashedTransactionSignatureChecker::CheckLockTime(const CScriptNum& nLock
     return true;
 }
 
+bool CallbackTransactionSignatureChecker::VerifySignature(
+    const std::vector<unsigned char>& vchSig,
+    const CPubKey& pubkey,
+    const uint256& sighash) const
+{
+    return pubkey.Verify(sighash, vchSig);
+}
+
+bool CallbackTransactionSignatureChecker::CheckSig(
+    const vector<unsigned char>& vchSigIn,
+    const vector<unsigned char>& vchPubKey,
+    const CScript& scriptCode,
+    uint32_t consensusBranchId) const
+{
+    CPubKey pubkey(vchPubKey);
+    if (!pubkey.IsValid())
+        return false;
+
+    // Hash type is one byte tacked on to the end of the signature
+    vector<unsigned char> vchSig(vchSigIn);
+    if (vchSig.empty())
+        return false;
+    int nHashType = vchSig.back();
+    vchSig.pop_back();
+
+    uint256 sighash;
+    try {
+        std::array<uint8_t, 32> sighashArray;
+        auto scriptBase = static_cast<const CScriptBase&>(scriptCode);
+        this->sighash(sighashArray.begin(), this->tx, &scriptBase[0], scriptBase.size(), nHashType);
+        sighash = uint256::FromRawBytes(sighashArray);
+    } catch (logic_error ex) {
+        return false;
+    }
+
+    if (!VerifySignature(vchSig, pubkey, sighash))
+        return false;
+
+    return true;
+}
+
+bool CallbackTransactionSignatureChecker::CheckLockTime(const CScriptNum& nLockTime) const
+{
+    // There are two times of nLockTime: lock-by-blockheight
+    // and lock-by-blocktime, distinguished by whether
+    // nLockTime < LOCKTIME_THRESHOLD.
+    //
+    // We want to compare apples to apples, so fail the script
+    // unless the type of nLockTime being tested is the same as
+    // the nLockTime in the transaction.
+    if (!(
+            (this->nLockTime < LOCKTIME_THRESHOLD && nLockTime < LOCKTIME_THRESHOLD) ||
+            (this->nLockTime >= LOCKTIME_THRESHOLD && nLockTime >= LOCKTIME_THRESHOLD)))
+        return false;
+
+    // Now that we know we're comparing apples-to-apples, the
+    // comparison is a simple numeric one.
+    if (nLockTime > this->nLockTime)
+        return false;
+
+    // Finally the nLockTime feature can be disabled and thus
+    // CHECKLOCKTIMEVERIFY bypassed if every txin has been
+    // finalized by setting nSequence to maxint. The
+    // transaction would be allowed into the blockchain, making
+    // the opcode ineffective.
+    //
+    // Testing if this vin is not final is sufficient to
+    // prevent this condition. Alternatively we could test all
+    // inputs, but testing just this input minimizes the data
+    // required to prove correct CHECKLOCKTIMEVERIFY execution.
+    if (this->isFinal)
+        return false;
+
+    return true;
+}
+
 bool VerifyScript(
     const CScript& scriptSig,
     const CScript& scriptPubKey,
@@ -1539,9 +1615,9 @@ bool VerifyScript(
         // serror is set
         return false;
     if (stack.empty())
-        return set_error(serror, SCRIPT_ERR_EVAL_FALSE);
+        return set_error(serror, (ScriptError_t)(SCRIPT_ERR_EVAL_FALSE + 101));
     if (CastToBool(stack.back()) == false)
-        return set_error(serror, SCRIPT_ERR_EVAL_FALSE);
+        return set_error(serror, (ScriptError_t)(SCRIPT_ERR_EVAL_FALSE + 102));
 
     // Additional validation for spend-to-script-hash transactions:
     if ((flags & SCRIPT_VERIFY_P2SH) && scriptPubKey.IsPayToScriptHash()) {
@@ -1565,9 +1641,9 @@ bool VerifyScript(
             // serror is set
             return false;
         if (stack.empty())
-            return set_error(serror, SCRIPT_ERR_EVAL_FALSE);
+            return set_error(serror, (ScriptError_t)(SCRIPT_ERR_EVAL_FALSE + 103));
         if (!CastToBool(stack.back()))
-            return set_error(serror, SCRIPT_ERR_EVAL_FALSE);
+            return set_error(serror, (ScriptError_t)(SCRIPT_ERR_EVAL_FALSE + 104));
     }
 
     // The CLEANSTACK check is only performed after potential P2SH evaluation,
