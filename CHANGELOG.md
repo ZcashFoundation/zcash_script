@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
-## [0.1.15] - 2024-04-11
+## [0.1.15] - 2024-04-19
 
 ### Changed
 - Update `depend/zcash` to version 5.8.0 which includes updated dependencies
