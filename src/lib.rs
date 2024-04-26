@@ -17,14 +17,18 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 // Include the items from depend/zcash/src/rust/src/rustzcash.rs (librustzcash/lib.rs)
 // that we need
 
+use ::sapling::circuit::{
+    OutputParameters, OutputVerifyingKey, SpendParameters, SpendVerifyingKey,
+};
+
 /// The code that uses this constant is not called by zcash_script.
-static mut SAPLING_SPEND_VK: Option<bellman::groth16::VerifyingKey<bls12_381::Bls12>> = None;
+static mut SAPLING_SPEND_VK: Option<SpendVerifyingKey> = None;
 /// The code that uses this constant is not called by zcash_script.
-static mut SAPLING_OUTPUT_VK: Option<bellman::groth16::VerifyingKey<bls12_381::Bls12>> = None;
+static mut SAPLING_OUTPUT_VK: Option<OutputVerifyingKey> = None;
 /// The code that uses this constant is not called by zcash_script.
-static mut SAPLING_SPEND_PARAMS: Option<bellman::groth16::Parameters<bls12_381::Bls12>> = None;
+static mut SAPLING_SPEND_PARAMS: Option<SpendParameters> = None;
 /// The code that uses this constant is not called by zcash_script.
-static mut SAPLING_OUTPUT_PARAMS: Option<bellman::groth16::Parameters<bls12_381::Bls12>> = None;
+static mut SAPLING_OUTPUT_PARAMS: Option<OutputParameters> = None;
 
 /// The code that uses this constant is not called by zcash_script.
 static mut ORCHARD_PK: Option<orchard::circuit::ProvingKey> = None;
