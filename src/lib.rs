@@ -1,7 +1,7 @@
 //! Rust bindings for Zcash transparent scripts.
 
 #![doc(html_logo_url = "https://www.zfnd.org/images/zebra-icon.png")]
-#![doc(html_root_url = "https://docs.rs/zcash_script/0.1.15")]
+#![doc(html_root_url = "https://docs.rs/zcash_script/0.1.16")]
 #![allow(missing_docs)]
 #![allow(clippy::needless_lifetimes)]
 #![allow(non_upper_case_globals)]
