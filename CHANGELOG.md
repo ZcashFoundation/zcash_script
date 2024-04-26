@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
-## [0.1.16] - 2024-04-24
+## [0.1.16] - 2024-04-26
 
 ### Changed
 - Update `depend/zcash` to version 5.9.0 which includes updated dependencies
@@ -106,7 +106,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated `bindgen` to a non yanked version
 
 <!-- next-url -->
-[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.15...HEAD
+[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.16...HEAD
+[0.1.16]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.15...v0.1.16
 [0.1.15]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.12...v0.1.13

@@ -1901,7 +1901,7 @@ dependencies = [
 
 [[package]]
 name = "zcash_script"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "bellman",
  "bindgen",

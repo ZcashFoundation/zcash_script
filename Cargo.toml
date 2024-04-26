@@ -1,6 +1,6 @@
 [package]
 name = "zcash_script"
-version = "0.1.15"
+version = "0.1.16"
 authors = ["Tamas Blummer <tamas.blummer@gmail.com>", "Zcash Foundation <zebra@zfnd.org>"]
 license = "Apache-2.0"
 readme = "README.md"
