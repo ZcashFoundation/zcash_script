@@ -89,7 +89,7 @@ bindgen = ">= 0.64.0"
 # These dependencies are shared with a lot of other Zebra dependencies,
 # so they are configured to automatically upgrade to match Zebra.
 # But we try to use the latest versions here, to catch any bugs in `zcash_script`'s CI.
-cc = { version = "1.0.94", features = ["parallel"] }
+cc = { version = "1.0.96", features = ["parallel"] }
 # Treat minor versions with a zero major version as compatible (cargo doesn't by default).
 cxx-gen = ">= 0.7.107"
 syn = { version = "1.0.109", features = ["full", "printing"] }
