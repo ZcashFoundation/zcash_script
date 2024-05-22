@@ -7,15 +7,15 @@
 #ifndef BITCOIN_SCRIPT_INTERPRETER_H
 #define BITCOIN_SCRIPT_INTERPRETER_H
 
-#include "primitives/transaction.h"
 #include "script_error.h"
+#include "primitives/transaction.h"
 
 #include <rust/transaction.h>
 
-#include <climits>
+#include <vector>
 #include <stdint.h>
 #include <string>
-#include <vector>
+#include <climits>
 
 class CPubKey;
 class CScript;
@@ -26,7 +26,8 @@ class uint256;
 const unsigned int NOT_AN_INPUT = UINT_MAX;
 
 /** Signature hash types/flags */
-enum {
+enum
+{
     SIGHASH_ALL = 1,
     SIGHASH_NONE = 2,
     SIGHASH_SINGLE = 3,
@@ -34,11 +35,12 @@ enum {
 };
 
 /** Script verification flags */
-enum {
-    SCRIPT_VERIFY_NONE = 0,
+enum
+{
+    SCRIPT_VERIFY_NONE      = 0,
 
     // Evaluate P2SH subscripts (softfork safe, BIP16).
-    SCRIPT_VERIFY_P2SH = (1U << 0),
+    SCRIPT_VERIFY_P2SH      = (1U << 0),
 
     // Passing a non-strict-DER signature or one with undefined hashtype to a checksig operation causes script failure.
     // Evaluating a pubkey that is not (0x04 + 64 bytes) or (0x02 or 0x03 + 32 bytes) by checksig causes script failure.
@@ -47,11 +49,11 @@ enum {
 
     // Passing a non-strict-DER signature to a checksig operation causes script failure (softfork safe, BIP62 rule 1)
     // In Zcash this is required, and validation of non-strict-DER signatures is not implemented.
-    // SCRIPT_VERIFY_DERSIG    = (1U << 2),
+    //SCRIPT_VERIFY_DERSIG    = (1U << 2),
 
     // Passing a non-strict-DER signature or one with S > order/2 to a checksig operation causes script failure
     // (softfork safe, BIP62 rule 5).
-    SCRIPT_VERIFY_LOW_S = (1U << 3),
+    SCRIPT_VERIFY_LOW_S     = (1U << 3),
 
     // verify dummy stack item consumed by CHECKMULTISIG is of zero-length (softfork safe, BIP62 rule 7).
     SCRIPT_VERIFY_NULLDUMMY = (1U << 4),
@@ -74,7 +76,7 @@ enum {
     // discouraged NOPs fails the script. This verification flag will never be
     // a mandatory flag applied to scripts in a block. NOPs that are not
     // executed, e.g.  within an unexecuted IF ENDIF block, are *not* rejected.
-    SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS = (1U << 7),
+    SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS  = (1U << 7),
 
     // Require that only a single stack element remains after evaluation. This changes the success criterion from
     // "At least one stack element must remain, and when interpreted as a boolean, it must be true" to
@@ -89,9 +91,10 @@ enum {
     SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY = (1U << 9),
 };
 
-bool CheckSignatureEncoding(const std::vector<unsigned char>& vchSig, unsigned int flags, ScriptError* serror);
+bool CheckSignatureEncoding(const std::vector<unsigned char> &vchSig, unsigned int flags, ScriptError* serror);
 
-struct PrecomputedTransactionData {
+struct PrecomputedTransactionData
+{
     uint256 hashPrevouts, hashSequence, hashOutputs, hashJoinSplits, hashShieldedSpends, hashShieldedOutputs;
     /** Precomputed transaction parts. */
     std::unique_ptr<PrecomputedTxParts, decltype(&zcash_transaction_precomputed_free)> preTx;
@@ -112,7 +115,8 @@ private:
         size_t allPrevOutputsLen);
 };
 
-enum SigVersion {
+enum SigVersion
+{
     SIGVERSION_SPROUT = 0,
     SIGVERSION_OVERWINTER = 1,
     SIGVERSION_SAPLING = 2,
@@ -120,7 +124,7 @@ enum SigVersion {
 };
 
 uint256 SignatureHash(
-    const CScript& scriptCode,
+    const CScript &scriptCode,
     const CTransaction& txTo,
     unsigned int nIn,
     int nHashType,
@@ -142,7 +146,7 @@ public:
 
     virtual bool CheckLockTime(const CScriptNum& nLockTime) const
     {
-        return false;
+         return false;
     }
 
     virtual ~BaseSignatureChecker() {}
@@ -214,7 +218,7 @@ public:
 
 
 bool EvalScript(
-    std::vector<std::vector<unsigned char>>& stack,
+    std::vector<std::vector<unsigned char> >& stack,
     const CScript& script,
     unsigned int flags,
     const BaseSignatureChecker& checker,
