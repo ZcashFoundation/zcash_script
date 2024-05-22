@@ -11,23 +11,23 @@
 
 #if defined(BUILD_BITCOIN_INTERNAL) && defined(HAVE_CONFIG_H)
 #include "config/bitcoin-config.h"
-#if defined(_WIN32)
-#if defined(DLL_EXPORT)
-#if defined(HAVE_FUNC_ATTRIBUTE_DLLEXPORT)
-#define EXPORT_SYMBOL __declspec(dllexport)
-#else
-#define EXPORT_SYMBOL
-#endif
-#endif
-#elif defined(HAVE_FUNC_ATTRIBUTE_VISIBILITY)
-#define EXPORT_SYMBOL __attribute__((visibility("default")))
-#endif
+  #if defined(_WIN32)
+    #if defined(DLL_EXPORT)
+      #if defined(HAVE_FUNC_ATTRIBUTE_DLLEXPORT)
+        #define EXPORT_SYMBOL __declspec(dllexport)
+      #else
+        #define EXPORT_SYMBOL
+      #endif
+    #endif
+  #elif defined(HAVE_FUNC_ATTRIBUTE_VISIBILITY)
+    #define EXPORT_SYMBOL __attribute__ ((visibility ("default")))
+  #endif
 #elif defined(MSC_VER) && !defined(STATIC_LIBZCASHCONSENSUS)
-#define EXPORT_SYMBOL __declspec(dllimport)
+  #define EXPORT_SYMBOL __declspec(dllimport)
 #endif
 
 #ifndef EXPORT_SYMBOL
-#define EXPORT_SYMBOL
+  #define EXPORT_SYMBOL
 #endif
 
 #ifdef __cplusplus
@@ -36,7 +36,8 @@ extern "C" {
 
 #define ZCASH_SCRIPT_API_VER 3
 
-typedef enum zcash_script_error_t {
+typedef enum zcash_script_error_t
+{
     zcash_script_ERR_OK = 0,
     zcash_script_ERR_TX_INDEX,
     zcash_script_ERR_TX_SIZE_MISMATCH,
@@ -49,9 +50,10 @@ typedef enum zcash_script_error_t {
 } zcash_script_error;
 
 /** Script verification flags */
-enum {
-    zcash_script_SCRIPT_FLAGS_VERIFY_NONE = 0,
-    zcash_script_SCRIPT_FLAGS_VERIFY_P2SH = (1U << 0),                // evaluate P2SH (BIP16) subscripts
+enum
+{
+    zcash_script_SCRIPT_FLAGS_VERIFY_NONE                = 0,
+    zcash_script_SCRIPT_FLAGS_VERIFY_P2SH                = (1U << 0), // evaluate P2SH (BIP16) subscripts
     zcash_script_SCRIPT_FLAGS_VERIFY_CHECKLOCKTIMEVERIFY = (1U << 9), // enable CHECKLOCKTIMEVERIFY (BIP65)
 };
 
@@ -133,22 +135,7 @@ enum {
 //     unsigned int flags,
 //     uint32_t consensusBranchId,
 //     zcash_script_error* err);
-
-EXPORT_SYMBOL int zcash_script_verify_callback(
-    const void* tx,
-    void (*sighash)(unsigned char* sighash, const void* tx, const unsigned char* scriptCode, unsigned int scriptCodeLen, int hashType),
-    int64_t nLockTime,
-    uint8_t isFinal,
-    const unsigned char* scriptPubKey,
-    unsigned int scriptPubKeyLen,
-    const unsigned char* scriptSig,
-    unsigned int scriptSigLen,
-    int64_t amount,
-    unsigned int nIn,
-    unsigned int flags,
-    uint32_t consensusBranchId,
-    zcash_script_error* err);
-
+// 
 /// Returns 1 if the input nIn of the serialized transaction pointed to by
 /// txTo correctly spends the matching output in allPrevOutputs under
 /// the additional constraints specified by flags. Must be used for V5 transactions;
@@ -194,12 +181,27 @@ EXPORT_SYMBOL int zcash_script_verify_callback(
 //     unsigned int txToLen,
 //     zcash_script_error* err);
 
+/// Returns the current version of the zcash_script library.
+EXPORT_SYMBOL unsigned int zcash_script_version();
+
 EXPORT_SYMBOL unsigned int zcash_script_legacy_sigop_count_script(
     const unsigned char* script,
     unsigned int scriptLen);
 
-/// Returns the current version of the zcash_script library.
-EXPORT_SYMBOL unsigned int zcash_script_version();
+EXPORT_SYMBOL int zcash_script_verify_callback(
+    const void* tx,
+    void (*sighash)(unsigned char* sighash, const void* tx, const unsigned char* scriptCode, unsigned int scriptCodeLen, int hashType),
+    int64_t nLockTime,
+    uint8_t isFinal,
+    const unsigned char* scriptPubKey,
+    unsigned int scriptPubKeyLen,
+    const unsigned char* scriptSig,
+    unsigned int scriptSigLen,
+    int64_t amount,
+    unsigned int nIn,
+    unsigned int flags,
+    uint32_t consensusBranchId,
+    zcash_script_error* err);
 
 #ifdef __cplusplus
 } // extern "C"
