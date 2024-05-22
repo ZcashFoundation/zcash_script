@@ -57,6 +57,7 @@ enum
     zcash_script_SCRIPT_FLAGS_VERIFY_CHECKLOCKTIMEVERIFY = (1U << 9), // enable CHECKLOCKTIMEVERIFY (BIP65)
 };
 
+#if 0
 /// Deserializes the given transaction and precomputes values to improve
 /// script verification performance.
 ///
@@ -69,10 +70,10 @@ enum
 /// after this function returns.
 ///
 /// If not NULL, err will contain an error/success code for the operation.
-// void* zcash_script_new_precomputed_tx(
-//     const unsigned char* txTo,
-//     unsigned int txToLen,
-//     zcash_script_error* err);
+void* zcash_script_new_precomputed_tx(
+    const unsigned char* txTo,
+    unsigned int txToLen,
+    zcash_script_error* err);
 
 /// Deserializes the given transaction and precomputes values to improve
 /// script verification performance. Must be used for V5 transactions;
@@ -88,16 +89,16 @@ enum
 /// zcash_script_free_precomputed_tx once you are done.
 ///
 /// If not NULL, err will contain an error/success code for the operation.
-// void* zcash_script_new_precomputed_tx_v5(
-//     const unsigned char* txTo,
-//     unsigned int txToLen,
-//     const unsigned char* allPrevOutputs,
-//     unsigned int allPrevOutputsLen,
-//     zcash_script_error* err);
+void* zcash_script_new_precomputed_tx_v5(
+    const unsigned char* txTo,
+    unsigned int txToLen,
+    const unsigned char* allPrevOutputs,
+    unsigned int allPrevOutputsLen,
+    zcash_script_error* err);
 
 /// Frees a precomputed transaction previously created with
 /// zcash_script_new_precomputed_tx.
-// void zcash_script_free_precomputed_tx(void* preTx);
+void zcash_script_free_precomputed_tx(void* preTx);
 
 /// Returns 1 if the input nIn of the precomputed transaction pointed to by
 /// preTx correctly spends the scriptPubKey pointed to by scriptPubKey under
@@ -106,15 +107,15 @@ enum
 /// If not NULL, err will contain an error/success code for the operation.
 /// Note that script verification failure is indicated by err being set to
 /// zcash_script_ERR_OK and a return value of 0.
-// EXPORT_SYMBOL int zcash_script_verify_precomputed(
-//     const void* preTx,
-//     unsigned int nIn,
-//     const unsigned char* scriptPubKey,
-//     unsigned int scriptPubKeyLen,
-//     int64_t amount,
-//     unsigned int flags,
-//     uint32_t consensusBranchId,
-//     zcash_script_error* err);
+EXPORT_SYMBOL int zcash_script_verify_precomputed(
+    const void* preTx,
+    unsigned int nIn,
+    const unsigned char* scriptPubKey,
+    unsigned int scriptPubKeyLen,
+    int64_t amount,
+    unsigned int flags,
+    uint32_t consensusBranchId,
+    zcash_script_error* err);
 
 /// Returns 1 if the input nIn of the serialized transaction pointed to by
 /// txTo correctly spends the scriptPubKey pointed to by scriptPubKey under
@@ -125,17 +126,14 @@ enum
 /// If not NULL, err will contain an error/success code for the operation.
 /// Note that script verification failure is indicated by err being set to
 /// zcash_script_ERR_OK and a return value of 0.
-// EXPORT_SYMBOL int zcash_script_verify(
-//     const unsigned char* scriptPubKey,
-//     unsigned int scriptPubKeyLen,
-//     int64_t amount,
-//     const unsigned char* txTo,
-//     unsigned int txToLen,
-//     unsigned int nIn,
-//     unsigned int flags,
-//     uint32_t consensusBranchId,
-//     zcash_script_error* err);
-// 
+EXPORT_SYMBOL int zcash_script_verify(
+    const unsigned char *scriptPubKey, unsigned int scriptPubKeyLen,
+    int64_t amount,
+    const unsigned char *txTo, unsigned int txToLen,
+    unsigned int nIn, unsigned int flags,
+    uint32_t consensusBranchId,
+    zcash_script_error* err);
+
 /// Returns 1 if the input nIn of the serialized transaction pointed to by
 /// txTo correctly spends the matching output in allPrevOutputs under
 /// the additional constraints specified by flags. Must be used for V5 transactions;
@@ -150,15 +148,15 @@ enum
 /// If not NULL, err will contain an error/success code for the operation.
 /// Note that script verification failure is indicated by err being set to
 /// zcash_script_ERR_OK and a return value of 0.
-// EXPORT_SYMBOL int zcash_script_verify_v5(
-//     const unsigned char* txTo,
-//     unsigned int txToLen,
-//     const unsigned char* allPrevOutputs,
-//     unsigned int allPrevOutputsLen,
-//     unsigned int nIn,
-//     unsigned int flags,
-//     uint32_t consensusBranchId,
-//     zcash_script_error* err);
+EXPORT_SYMBOL int zcash_script_verify_v5(
+    const unsigned char* txTo,
+    unsigned int txToLen,
+    const unsigned char* allPrevOutputs,
+    unsigned int allPrevOutputsLen,
+    unsigned int nIn,
+    unsigned int flags,
+    uint32_t consensusBranchId,
+    zcash_script_error* err);
 
 /// Returns the number of transparent signature operations in the
 /// transparent inputs and outputs of the precomputed transaction
@@ -166,9 +164,9 @@ enum
 ///
 /// Returns UINT_MAX on error, so that invalid transactions don't pass the Zcash consensus rules.
 /// If not NULL, err will contain an error/success code for the operation.
-// EXPORT_SYMBOL unsigned int zcash_script_legacy_sigop_count_precomputed(
-//     const void* preTx,
-//     zcash_script_error* err);
+EXPORT_SYMBOL unsigned int zcash_script_legacy_sigop_count_precomputed(
+    const void* preTx,
+    zcash_script_error* err);
 
 /// Returns the number of transparent signature operations in the
 /// transparent inputs and outputs of the serialized transaction
@@ -176,10 +174,11 @@ enum
 ///
 /// Returns UINT_MAX on error.
 /// If not NULL, err will contain an error/success code for the operation.
-// EXPORT_SYMBOL unsigned int zcash_script_legacy_sigop_count(
-//     const unsigned char* txTo,
-//     unsigned int txToLen,
-//     zcash_script_error* err);
+EXPORT_SYMBOL unsigned int zcash_script_legacy_sigop_count(
+    const unsigned char* txTo,
+    unsigned int txToLen,
+    zcash_script_error* err);
+#endif
 
 /// Returns the current version of the zcash_script library.
 EXPORT_SYMBOL unsigned int zcash_script_version();
