@@ -184,41 +184,6 @@ inline int set_error(zcash_script_error* ret, zcash_script_error serror)
 //     }
 // }
 
-int zcash_script_verify_prehashed(
-    const unsigned char* sighash,
-    unsigned int sighashLen,
-    int64_t nLockTime,
-    uint8_t isFinal,
-    const unsigned char* scriptPubKey,
-    unsigned int scriptPubKeyLen,
-    const unsigned char* scriptSig,
-    unsigned int scriptSigLen,
-    int64_t amount,
-    unsigned int nIn,
-    unsigned int flags,
-    uint32_t consensusBranchId,
-    zcash_script_error* err)
-{
-    try {
-        set_error(err, zcash_script_ERR_OK);
-        CScriptNum nLockTimeNum = CScriptNum(nLockTime);
-        ScriptError script_err = SCRIPT_ERR_OK;
-        bool r = VerifyScript(
-            CScript(scriptSig, scriptSig + scriptSigLen),
-            CScript(scriptPubKey, scriptPubKey + scriptPubKeyLen),
-            flags,
-            PrehashedTransactionSignatureChecker(sighash, sighashLen, nLockTimeNum, isFinal != 0, nIn, amount),
-            consensusBranchId,
-            &script_err);
-        if (!r) {
-            return set_error(err, (zcash_script_error_t)((zcash_script_error_t)1000 + (zcash_script_error_t)script_err));
-        }
-        return r;
-    } catch (const std::exception&) {
-        return set_error(err, zcash_script_ERR_VERIFY_SCRIPT); // Error deserializing
-    }
-}
-
 int zcash_script_verify_callback(
     const void* tx,
     void (*sighash)(unsigned char* sighash, const void* tx, const unsigned char* scriptCode, unsigned int scriptCodeLen, int hashType),

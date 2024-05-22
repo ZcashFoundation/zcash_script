@@ -178,25 +178,6 @@ public:
     MutableTransactionSignatureChecker(const CMutableTransaction* txToIn, const PrecomputedTransactionData& txdataIn, unsigned int nInIn, const CAmount& amount) : TransactionSignatureChecker(&txTo, txdataIn, nInIn, amount), txTo(*txToIn) {}
 };
 
-class PrehashedTransactionSignatureChecker : public BaseSignatureChecker
-{
-private:
-    const unsigned char* sighash;
-    unsigned int sighashLen;
-    const CScriptNum& nLockTime;
-    bool isFinal;
-    unsigned int nIn;
-    const CAmount amount;
-
-protected:
-    virtual bool VerifySignature(const std::vector<unsigned char>& vchSig, const CPubKey& vchPubKey, const uint256& sighash) const;
-
-public:
-    PrehashedTransactionSignatureChecker(const unsigned char* sighash, unsigned int sighashLen, const CScriptNum& nLockTime, bool isFinal, unsigned int nInIn, const CAmount& amountIn) : sighash(sighash), sighashLen(sighashLen), nLockTime(nLockTime), isFinal(isFinal), nIn(nInIn), amount(amountIn) {}
-    bool CheckSig(const std::vector<unsigned char>& scriptSig, const std::vector<unsigned char>& vchPubKey, const CScript& scriptCode, uint32_t consensusBranchId) const;
-    bool CheckLockTime(const CScriptNum& nLockTime) const;
-};
-
 class CallbackTransactionSignatureChecker : public BaseSignatureChecker
 {
 private:
