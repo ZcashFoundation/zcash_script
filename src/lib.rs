@@ -70,6 +70,9 @@ mod orchard_ffi;
 mod streams_ffi;
 mod transaction_ffi;
 
+#[cfg(feature = "rust-interpreter")]
+pub mod rust_interpreter;
+
 #[cfg(test)]
 mod tests {
     pub use super::zcash_script_error_t;

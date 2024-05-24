@@ -47,6 +47,7 @@ path = "src/lib.rs"
 
 [features]
 external-secp = []
+rust-interpreter = []
 
 [dependencies]
 # All these dependencies must match the versions in:
