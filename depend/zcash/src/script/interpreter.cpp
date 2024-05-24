@@ -23,8 +23,6 @@ using namespace std;
 
 typedef vector<unsigned char> valtype;
 
-static void dump(const void *p, size_t len) { const unsigned char *a = (const unsigned char*) p; size_t i; for (i = 0; i < len; i++) { printf("%02X", a[i]); } puts(""); }
-
 namespace {
 
 inline bool set_success(ScriptError* ret)
@@ -1404,14 +1402,7 @@ bool TransactionSignatureChecker::CheckSig(
 
     uint256 sighash;
     try {
-        puts("scriptCode:");
-        dump(&*scriptCode.begin(), scriptCode.size());
-        printf("nIn = %d\n", nIn);
-        printf("nHashType = %d\n", nHashType);
-        printf("amount = %ld\n", amount);
-        printf("consensusBranchId = %d\n", consensusBranchId);
         sighash = SignatureHash(scriptCode, *txTo, nIn, nHashType, amount, consensusBranchId, this->txdata);
-        printf("sighash = %s\n", sighash.GetHex().c_str());
     } catch (logic_error ex) {
         return false;
     }
@@ -1487,12 +1478,8 @@ bool CallbackTransactionSignatureChecker::CheckSig(
     try {
         std::array<uint8_t, 32> sighashArray;
         auto scriptBase = static_cast<const CScriptBase&>(scriptCode);
-        puts("scriptCode:");
-        dump(&scriptBase[0], scriptBase.size());
-        printf("nHashType = %d\n", nHashType);
         this->sighash(sighashArray.begin(), this->tx, &scriptBase[0], scriptBase.size(), nHashType);
         sighash = uint256::FromRawBytes(sighashArray);
-        printf("sighash = %s\n", sighash.GetHex().c_str());
     } catch (logic_error ex) {
         return false;
     }
@@ -1585,24 +1572,13 @@ bool VerifyScript(
         CScript pubKey2(pubKeySerialized.begin(), pubKeySerialized.end());
         popstack(stack);
 
-        printf("stack: %ld\n", stack.size());
-        for (int i = 0; i < stack.size(); i++) {
-            dump(&*stack[i].begin(), stack[i].size());
-        }
-        puts("pubKey2:");
-        dump(&*pubKey2.begin(), pubKey2.size());
-        printf("flags: %d\n", flags);
-        printf("consensusBranchId: %d\n", flags);
         if (!EvalScript(stack, pubKey2, flags, checker, consensusBranchId, serror))
             // serror is set
             return false;
         if (stack.empty())
             return set_error(serror, (ScriptError_t)(SCRIPT_ERR_EVAL_FALSE + 103));
-        if (!CastToBool(stack.back())) {
-            puts("CastToBool failed!");
+        if (!CastToBool(stack.back()))
             return set_error(serror, (ScriptError_t)(SCRIPT_ERR_EVAL_FALSE + 104));
-        }
-        puts("CastToBool worked!");
     }
 
     // The CLEANSTACK check is only performed after potential P2SH evaluation,
