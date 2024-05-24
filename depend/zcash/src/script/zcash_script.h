@@ -188,8 +188,8 @@ EXPORT_SYMBOL unsigned int zcash_script_legacy_sigop_count_script(
     unsigned int scriptLen);
 
 EXPORT_SYMBOL int zcash_script_verify_callback(
-    const void* tx,
-    void (*sighash)(unsigned char* sighash, const void* tx, const unsigned char* scriptCode, unsigned int scriptCodeLen, int hashType),
+    const void* ctx,
+    void (*sighash)(unsigned char* sighash, const void* ctx, const unsigned char* scriptCode, unsigned int scriptCodeLen, int hashType),
     int64_t nLockTime,
     uint8_t isFinal,
     const unsigned char* scriptPubKey,

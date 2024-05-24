@@ -1549,9 +1549,9 @@ bool VerifyScript(
         // serror is set
         return false;
     if (stack.empty())
-        return set_error(serror, (ScriptError_t)(SCRIPT_ERR_EVAL_FALSE + 101));
+        return set_error(serror, SCRIPT_ERR_EVAL_FALSE);
     if (CastToBool(stack.back()) == false)
-        return set_error(serror, (ScriptError_t)(SCRIPT_ERR_EVAL_FALSE + 102));
+        return set_error(serror, SCRIPT_ERR_EVAL_FALSE);
 
     // Additional validation for spend-to-script-hash transactions:
     if ((flags & SCRIPT_VERIFY_P2SH) && scriptPubKey.IsPayToScriptHash())
@@ -1576,9 +1576,9 @@ bool VerifyScript(
             // serror is set
             return false;
         if (stack.empty())
-            return set_error(serror, (ScriptError_t)(SCRIPT_ERR_EVAL_FALSE + 103));
+            return set_error(serror, SCRIPT_ERR_EVAL_FALSE);
         if (!CastToBool(stack.back()))
-            return set_error(serror, (ScriptError_t)(SCRIPT_ERR_EVAL_FALSE + 104));
+            return set_error(serror, SCRIPT_ERR_EVAL_FALSE);
     }
 
     // The CLEANSTACK check is only performed after potential P2SH evaluation,
