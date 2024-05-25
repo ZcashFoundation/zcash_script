@@ -1,8 +1,6 @@
 //! Build script for zcash_script.
 
-use std::{env, fmt, fs, io::Read, path::PathBuf};
-
-use syn::__private::ToTokens;
+use std::{env, fmt, path::PathBuf};
 
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -47,125 +45,8 @@ fn bindgen_headers() -> Result<()> {
     Ok(())
 }
 
-/// Use cxx_gen to generate headers and source files for FFI bindings,
-/// just like zcash does (see depend/zcash/src/Makefile.am).
-/// (Note that zcash uses the cxxbridge-cmd binary, while we use the
-/// cxx_gen library, but the result is the same.)
-///
-/// We could use [`cxx_build`](https://cxx.rs/tutorial.html#compiling-the-c-code-with-cargo)
-/// to do this automatically. But zcash uses the
-/// [manual approach](https://cxx.rs/tutorial.html#c-generated-code) which
-/// creates the headers with non-standard names and paths (e.g. "blake2b.h",
-/// instead of "blake2b.rs.h" which what cxx_build would create). This would
-/// requires us to rename/link files which is awkward.
-///
-/// Note that we must generate the files in the target dir (OUT_DIR) and not in
-/// any source folder, because `cargo package` does not allow that.
-/// (This is in contrast to zcash which generates in `depend/zcash/src/rust/gen/`)
-fn gen_cxxbridge() -> Result<()> {
-    let out_path = env::var("OUT_DIR").map_err(Error::Env)?;
-    let out_path = PathBuf::from(out_path).join("gen");
-    let src_out_path = PathBuf::from(&out_path).join("src");
-    let header_out_path = PathBuf::from(&out_path).join("include").join("rust");
-
-    // These must match `CXXBRIDGE_RS` in depend/zcash/src/Makefile.am
-    let filenames = [
-        "blake2b",
-        "ed25519",
-        "equihash",
-        "streams",
-        "bridge",
-        "sapling/zip32",
-    ];
-
-    // The output folder must exist
-    fs::create_dir_all(&src_out_path).unwrap();
-    fs::create_dir_all(&header_out_path).unwrap();
-
-    // Generate the generic header file
-    fs::write(header_out_path.join("cxx.h"), cxx_gen::HEADER).unwrap();
-
-    // Generate the source and header for each bridge file
-    for filename in filenames {
-        println!(
-            "cargo:rerun-if-changed=depend/zcash/src/rust/src/{}.rs",
-            filename
-        );
-
-        let mut file =
-            fs::File::open(format!("depend/zcash/src/rust/src/{}.rs", filename).as_str()).unwrap();
-        let mut content = String::new();
-        file.read_to_string(&mut content).unwrap();
-
-        let ast = syn::parse_file(&content).unwrap();
-        let token_stream = ast.to_token_stream();
-        let mut opt = cxx_gen::Opt::default();
-        opt.include.push(cxx_gen::Include {
-            path: "rust/cxx.h".to_string(),
-            kind: cxx_gen::IncludeKind::Quoted,
-        });
-        let output = cxx_gen::generate_header_and_cc(token_stream, &opt).unwrap_or_else(|err| {
-            panic!(
-                "invalid bridge file {filename}: {err}. Try updating `filenames` to match zcashd"
-            )
-        });
-
-        let header_path = header_out_path.join(format!("{}.h", filename));
-        // Create output dir if does not exist (since `filename` can have a subdir)
-        fs::create_dir_all(header_path.parent().unwrap()).unwrap();
-        fs::write(header_path, output.header).unwrap();
-
-        let src_path = src_out_path.join(format!("{}.cpp", filename));
-        // Create output dir if does not exist (since `filename` can have a subdir)
-        fs::create_dir_all(src_path.parent().unwrap()).unwrap();
-        fs::write(src_path, output.implementation).unwrap();
-    }
-    Ok(())
-}
-
 fn main() -> Result<()> {
     bindgen_headers()?;
-    gen_cxxbridge()?;
-
-    let rust_path = env::var("OUT_DIR").map_err(Error::Env)?;
-    let rust_path = PathBuf::from(rust_path).join("rust");
-
-    // We want to compile `depend/zcash/src/rust/src/sapling.rs`, which we used
-    // to do in `src/sapling.rs` by just including it. However, now that it has
-    // submodules, that approach doesn't work because for some reason Rust
-    // searches for the submodules in `depend/zcash/src/rust/src/` instead of
-    // `depend/zcash/src/rust/src/sapling/` where they are located. This can
-    // be solved if `depend/zcash/src/rust/src/sapling.rs` is renamed to
-    // `depend/zcash/src/rust/src/sapling/mod.rs`. But we can't do that directly
-    // because we can't change the source tree inside `build.rs`. Therefore we
-    // copy the required files to OUT_DIR, with a renamed sapling.rs, and include
-    // the copied file instead (see src/sapling.rs).
-    // See also https://stackoverflow.com/questions/77310390/how-to-include-a-source-file-that-has-modules
-    fs::create_dir_all(rust_path.join("sapling")).unwrap();
-    for filename in &["sapling.rs", "sapling/spec.rs", "sapling/zip32.rs"] {
-        println!(
-            "cargo:rerun-if-changed=depend/zcash/src/rust/src/{}.rs",
-            filename
-        );
-    }
-    fs::copy(
-        "depend/zcash/src/rust/src/sapling.rs",
-        rust_path.join("sapling/mod.rs"),
-    )
-    .unwrap();
-    fs::copy(
-        "depend/zcash/src/rust/src/sapling/spec.rs",
-        rust_path.join("sapling/spec.rs"),
-    )
-    .unwrap();
-    fs::copy(
-        "depend/zcash/src/rust/src/sapling/zip32.rs",
-        rust_path.join("sapling/zip32.rs"),
-    )
-    .unwrap();
-
-    let gen_path = env::var("OUT_DIR").map_err(Error::Env)?;
-    let gen_path = PathBuf::from(gen_path).join("gen");
 
     let target = env::var("TARGET").expect("TARGET was not set");
     let mut base_config = cc::Build::new();
@@ -177,7 +58,6 @@ fn main() -> Result<()> {
         .include("depend/zcash/src/rust/include/")
         .include("depend/zcash/src/secp256k1/include/")
         .include("depend/expected/include/")
-        .include(&gen_path.join("include"))
         .flag_if_supported("-Wno-implicit-fallthrough")
         .flag_if_supported("-Wno-catch-value")
         .flag_if_supported("-Wno-reorder")
@@ -201,17 +81,17 @@ fn main() -> Result<()> {
     }
 
     base_config
-        .file("depend/zcash/src/script/zcash_script.cpp")
-        .file("depend/zcash/src/util/strencodings.cpp")
         .file("depend/zcash/src/amount.cpp")
-        .file("depend/zcash/src/uint256.cpp")
-        .file("depend/zcash/src/pubkey.cpp")
         .file("depend/zcash/src/crypto/ripemd160.cpp")
         .file("depend/zcash/src/crypto/sha1.cpp")
         .file("depend/zcash/src/crypto/sha256.cpp")
+        .file("depend/zcash/src/pubkey.cpp")
         .file("depend/zcash/src/script/interpreter.cpp")
-        .file("depend/zcash/src/script/script.cpp")
         .file("depend/zcash/src/script/script_error.cpp")
+        .file("depend/zcash/src/script/script.cpp")
+        .file("depend/zcash/src/script/zcash_script.cpp")
+        .file("depend/zcash/src/uint256.cpp")
+        .file("depend/zcash/src/util/strencodings.cpp")
         .compile("libzcash_script.a");
 
     Ok(())

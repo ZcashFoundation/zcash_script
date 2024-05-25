@@ -16,29 +16,40 @@ include = [
     "build.rs",
     "src/*.rs",
     "/depend/check_uint128_t.c",
-    "/depend/zcash/src/script/zcash_script.h",
-    "/depend/zcash/src/script/zcash_script.cpp",
-    "/depend/zcash/src/utilstrencodings.cpp",
-    "/depend/zcash/src/uint256.cpp",
-    "/depend/zcash/src/pubkey.cpp",
-    "/depend/zcash/src/hash.cpp",
-    "/depend/zcash/src/primitives/transaction.cpp",
+    "/depend/zcash/src/amount.cpp",
+    "/depend/zcash/src/amount.h",
+    "/depend/zcash/src/compat/byteswap.h",
+    "/depend/zcash/src/compat/endian.h",
+    "/depend/zcash/src/consensus/consensus.h",
+    "/depend/zcash/src/crypto/common.h",
     "/depend/zcash/src/crypto/ripemd160.cpp",
+    "/depend/zcash/src/crypto/ripemd160.h",
     "/depend/zcash/src/crypto/sha1.cpp",
+    "/depend/zcash/src/crypto/sha1.h",
     "/depend/zcash/src/crypto/sha256.cpp",
-    "/depend/zcash/src/crypto/sha512.cpp",
-    "/depend/zcash/src/crypto/hmac_sha512.cpp",
+    "/depend/zcash/src/crypto/sha256.h",
+    "/depend/zcash/src/hash.h",
+    "/depend/zcash/src/key_constants.h",
+    "/depend/zcash/src/prevector.h",
+    "/depend/zcash/src/primitives/transaction.h",
+    "/depend/zcash/src/pubkey.cpp",
+    "/depend/zcash/src/pubkey.h",
     "/depend/zcash/src/script/interpreter.cpp",
-    "/depend/zcash/src/script/script.cpp",
+    "/depend/zcash/src/script/interpreter.h",
     "/depend/zcash/src/script/script_error.cpp",
-    "/depend/zcash/src/",
-    "/depend/zcash/src/rust/include/",
-    "/depend/zcash/src/secp256k1/include/",
+    "/depend/zcash/src/script/script_error.h",
+    "/depend/zcash/src/script/script.cpp",
+    "/depend/zcash/src/script/script.h",
+    "/depend/zcash/src/script/zcash_script.cpp",
+    "/depend/zcash/src/script/zcash_script.h",
     "/depend/zcash/src/secp256k1/",
-    "/depend/zcash/src/support/cleanse.cpp",
-    "/depend/zcash/src/support/cleanse.h",
-    "/depend/zcash/src/rust/gen/",
-    "/depend/expected/include/",
+    "/depend/zcash/src/serialize.h",
+    "/depend/zcash/src/tinyformat.h",
+    "/depend/zcash/src/uint256.cpp",
+    "/depend/zcash/src/uint256.h",
+    "/depend/zcash/src/util/strencodings.cpp",
+    "/depend/zcash/src/util/strencodings.h",
+    "/depend/zcash/src/version.h",
 ]
 
 [lib]
@@ -61,9 +72,6 @@ bindgen = ">= 0.64.0"
 # so they are configured to automatically upgrade to match Zebra.
 # But we try to use the latest versions here, to catch any bugs in `zcash_script`'s CI.
 cc = { version = "1.0.94", features = ["parallel"] }
-# Treat minor versions with a zero major version as compatible (cargo doesn't by default).
-cxx-gen = ">= 0.7.107"
-syn = { version = "1.0.109", features = ["full", "printing"] }
 
 [dev-dependencies]
 # These dependencies are shared with a lot of other Zebra dependencies.
