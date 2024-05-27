@@ -15,207 +15,111 @@
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 #[cfg(test)]
 mod tests {
+    use std::ffi::{c_int, c_uint, c_void};
+
     pub use super::zcash_script_error_t;
     use hex::FromHex;
 
     lazy_static::lazy_static! {
-        pub static ref SCRIPT_PUBKEY: Vec<u8> = <Vec<u8>>::from_hex("76a914f47cac1e6fec195c055994e8064ffccce0044dd788ac").unwrap();
-        pub static ref SCRIPT_TX: Vec<u8> = <Vec<u8>>::from_hex("0400008085202f8901fcaf44919d4a17f6181a02a7ebe0420be6f7dad1ef86755b81d5a9567456653c010000006a473044022035224ed7276e61affd53315eca059c92876bc2df61d84277cafd7af61d4dbf4002203ed72ea497a9f6b38eb29df08e830d99e32377edb8a574b8a289024f0241d7c40121031f54b095eae066d96b2557c1f99e40e967978a5fd117465dbec0986ca74201a6feffffff020050d6dc0100000017a9141b8a9bda4b62cd0d0582b55455d0778c86f8628f870d03c812030000001976a914e4ff5512ffafe9287992a1cd177ca6e408e0300388ac62070d0095070d000000000000000000000000").expect("Block bytes are in valid hex representation");
+        pub static ref SCRIPT_PUBKEY: Vec<u8> = <Vec<u8>>::from_hex("a914c117756dcbe144a12a7c33a77cfa81aa5aeeb38187").unwrap();
+        pub static ref SCRIPT_SIG: Vec<u8> = <Vec<u8>>::from_hex("00483045022100d2ab3e6258fe244fa442cfb38f6cef9ac9a18c54e70b2f508e83fa87e20d040502200eead947521de943831d07a350e45af8e36c2166984a8636f0a8811ff03ed09401473044022013e15d865010c257eef133064ef69a780b4bc7ebe6eda367504e806614f940c3022062fdbc8c2d049f91db2042d6c9771de6f1ef0b3b1fea76c1ab5542e44ed29ed8014c69522103b2cc71d23eb30020a4893982a1e2d352da0d20ee657fa02901c432758909ed8f21029d1e9a9354c0d2aee9ffd0f0cea6c39bbf98c4066cf143115ba2279d0ba7dabe2103e32096b63fd57f3308149d238dcbb24d8d28aad95c0e4e74e3e5e6a11b61bcc453ae").expect("Block bytes are in valid hex representation");
     }
 
-    /// Manually encode all previous outputs for a single output.
-    fn encode_all_prev_outputs(amount: i64, script_pub_key: &[u8]) -> (Vec<u8>, *const u8) {
-        // Number of transactions (CompactSize)
-        let mut all_prev_outputs = vec![1];
-        // Amount as 8 little-endian bytes
-        all_prev_outputs.extend(amount.to_le_bytes().iter().cloned());
-        // Length of the pub key script (CompactSize)
-        all_prev_outputs.push(script_pub_key.len() as u8);
-        // Pub key script
-        all_prev_outputs.extend(script_pub_key.iter().cloned());
-        let all_prev_outputs_ptr = all_prev_outputs.as_ptr();
-        (all_prev_outputs, all_prev_outputs_ptr)
-    }
-
-    pub fn verify_script(
-        script_pub_key: &[u8],
-        amount: i64,
-        tx_to: &[u8],
-        nIn: u32,
-        flags: u32,
-        consensus_branch_id: u32,
-    ) -> Result<(), zcash_script_error_t> {
-        let script_ptr = script_pub_key.as_ptr();
-        let script_len = script_pub_key.len();
-        let tx_to_ptr = tx_to.as_ptr();
-        let tx_to_len = tx_to.len();
-        let mut err = 0;
-
-        let ret = unsafe {
-            super::zcash_script_verify(
-                script_ptr,
-                script_len as u32,
-                amount,
-                tx_to_ptr,
-                tx_to_len as u32,
-                nIn,
-                flags,
-                consensus_branch_id,
-                &mut err,
-            )
-        };
-
-        if ret != 1 {
-            return Err(err);
-        }
-
-        // Also test with the V5 API
-
-        let (all_prev_outputs, all_prev_outputs_ptr) =
-            encode_all_prev_outputs(amount, script_pub_key);
-
-        let ret = unsafe {
-            super::zcash_script_verify_v5(
-                tx_to_ptr,
-                tx_to_len as u32,
-                all_prev_outputs_ptr,
-                all_prev_outputs.len() as _,
-                nIn,
-                flags,
-                consensus_branch_id,
-                &mut err,
-            )
-        };
-
-        if ret == 1 {
-            Ok(())
-        } else {
-            Err(err)
+    extern "C" fn sighash(
+        s: *mut u8,
+        ctx: *const c_void,
+        _script_code: *const u8,
+        _script_code_len: c_uint,
+        _hash_type: c_int,
+    ) {
+        unsafe {
+            assert!(ctx.is_null());
+            let sighash =
+                hex::decode("e8c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
+                    .unwrap();
+            std::ptr::copy_nonoverlapping(sighash.as_ptr(), s, sighash.len());
         }
     }
 
-    pub fn verify_script_precompute(
-        script_pub_key: &[u8],
-        amount: i64,
-        tx_to: &[u8],
-        nIn: u32,
-        flags: u32,
-        consensus_branch_id: u32,
-    ) -> Result<(), zcash_script_error_t> {
-        let script_ptr = script_pub_key.as_ptr();
-        let script_len = script_pub_key.len();
-        let tx_to_ptr = tx_to.as_ptr();
-        let tx_to_len = tx_to.len();
-        let mut err = 0;
-
-        let precomputed =
-            unsafe { super::zcash_script_new_precomputed_tx(tx_to_ptr, tx_to_len as _, &mut err) };
-
-        let ret = unsafe {
-            super::zcash_script_verify_precomputed(
-                precomputed,
-                nIn,
-                script_ptr,
-                script_len as _,
-                amount,
-                flags,
-                consensus_branch_id,
-                &mut err,
-            )
-        };
-
-        unsafe { super::zcash_script_free_precomputed_tx(precomputed) };
-
-        if ret != 1 {
-            return Err(err);
-        }
-
-        // Also test with the V5 API
-
-        let (all_prev_outputs, all_prev_outputs_ptr) =
-            encode_all_prev_outputs(amount, script_pub_key);
-
-        let precomputed = unsafe {
-            super::zcash_script_new_precomputed_tx_v5(
-                tx_to_ptr,
-                tx_to_len as _,
-                all_prev_outputs_ptr,
-                all_prev_outputs.len() as _,
-                &mut err,
-            )
-        };
-
-        let ret = unsafe {
-            super::zcash_script_verify_precomputed(
-                precomputed,
-                nIn,
-                script_ptr,
-                script_len as u32,
-                amount,
-                flags,
-                consensus_branch_id,
-                &mut err,
-            )
-        };
-
-        unsafe { super::zcash_script_free_precomputed_tx(precomputed) };
-
-        if ret == 1 {
-            Ok(())
-        } else {
-            Err(err)
+    extern "C" fn invalid_sighash(
+        s: *mut u8,
+        ctx: *const c_void,
+        _script_code: *const u8,
+        _script_code_len: c_uint,
+        _hash_type: c_int,
+    ) {
+        unsafe {
+            assert!(ctx.is_null());
+            let sighash =
+                hex::decode("08c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
+                    .unwrap();
+            std::ptr::copy_nonoverlapping(sighash.as_ptr(), s, sighash.len());
         }
     }
 
     #[test]
     fn it_works() {
-        let coin = i64::pow(10, 8);
+        let nLockTime: i64 = 2410374;
+        let isFinal: u8 = 1;
         let script_pub_key = &*SCRIPT_PUBKEY;
-        let amount = 212 * coin;
-        let tx_to = &*SCRIPT_TX;
-        let nIn = 0;
-        let flags = 1;
-        let branch_id = 0x2bb40e60;
+        let script_sig = &*SCRIPT_SIG;
+        let amount: i64 = 1550280000;
+        let nIn: c_uint = 0;
+        let flags: c_uint = 513;
+        let consensus_branch_id: u32 = 0xc2d6d0b4;
+        let mut err = 0;
 
-        verify_script(script_pub_key, amount, tx_to, nIn, flags, branch_id).unwrap();
+        let ret = unsafe {
+            super::zcash_script_verify_callback(
+                std::ptr::null(),
+                Some(sighash),
+                nLockTime,
+                isFinal,
+                script_pub_key.as_ptr(),
+                script_pub_key.len() as c_uint,
+                script_sig.as_ptr(),
+                script_sig.len() as c_uint,
+                amount,
+                nIn,
+                flags,
+                consensus_branch_id,
+                &mut err,
+            )
+        };
+
+        assert!(ret == 1);
     }
 
     #[test]
-    fn it_works_precomputed() {
-        let coin = i64::pow(10, 8);
+    fn it_fails_on_invalid_sighash() {
+        let nLockTime: i64 = 2410374;
+        let isFinal: u8 = 1;
         let script_pub_key = &*SCRIPT_PUBKEY;
-        let amount = 212 * coin;
-        let tx_to = &*SCRIPT_TX;
-        let nIn = 0;
-        let flags = 1;
-        let branch_id = 0x2bb40e60;
+        let script_sig = &*SCRIPT_SIG;
+        let amount: i64 = 1550280000;
+        let nIn: c_uint = 0;
+        let flags: c_uint = 513;
+        let consensus_branch_id: u32 = 0xc2d6d0b4;
+        let mut err = 0;
 
-        verify_script_precompute(script_pub_key, amount, tx_to, nIn, flags, branch_id).unwrap();
-    }
+        let ret = unsafe {
+            super::zcash_script_verify_callback(
+                std::ptr::null(),
+                Some(invalid_sighash),
+                nLockTime,
+                isFinal,
+                script_pub_key.as_ptr(),
+                script_pub_key.len() as c_uint,
+                script_sig.as_ptr(),
+                script_sig.len() as c_uint,
+                amount,
+                nIn,
+                flags,
+                consensus_branch_id,
+                &mut err,
+            )
+        };
 
-    #[test]
-    fn it_doesnt_work() {
-        let coin = i64::pow(10, 8);
-        let script_pub_key = &*SCRIPT_PUBKEY;
-        let amount = 212 * coin;
-        let tx_to = &*SCRIPT_TX;
-        let nIn = 0;
-        let flags = 1;
-        let branch_id = 0x2bb40e61;
-
-        verify_script(script_pub_key, amount, tx_to, nIn, flags, branch_id).unwrap_err();
-    }
-
-    #[test]
-    fn it_doesnt_work_precomputed() {
-        let coin = i64::pow(10, 8);
-        let script_pub_key = &*SCRIPT_PUBKEY;
-        let amount = 212 * coin;
-        let tx_to = &*SCRIPT_TX;
-        let nIn = 0;
-        let flags = 1;
-        let branch_id = 0x2bb40e61;
-
-        verify_script_precompute(script_pub_key, amount, tx_to, nIn, flags, branch_id).unwrap_err();
+        assert!(ret != 1);
     }
 }
