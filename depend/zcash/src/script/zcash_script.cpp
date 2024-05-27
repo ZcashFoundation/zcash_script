@@ -299,17 +299,14 @@ unsigned int zcash_script_legacy_sigop_count_script(
 
 int zcash_script_verify_callback(
     const void* ctx,
-    void (*sighash)(unsigned char* sighash, const void* ctx, const unsigned char* scriptCode, unsigned int scriptCodeLen, int hashType),
+    void (*sighash)(unsigned char* sighash, unsigned int sighashLen, const void* ctx, const unsigned char* scriptCode, unsigned int scriptCodeLen, int hashType),
     int64_t nLockTime,
     uint8_t isFinal,
     const unsigned char* scriptPubKey,
     unsigned int scriptPubKeyLen,
     const unsigned char* scriptSig,
     unsigned int scriptSigLen,
-    int64_t amount,
-    unsigned int nIn,
     unsigned int flags,
-    uint32_t consensusBranchId,
     zcash_script_error* err)
 {
     try {
@@ -320,8 +317,10 @@ int zcash_script_verify_callback(
             CScript(scriptSig, scriptSig + scriptSigLen),
             CScript(scriptPubKey, scriptPubKey + scriptPubKeyLen),
             flags,
-            CallbackTransactionSignatureChecker(ctx, sighash, nLockTimeNum, isFinal != 0, nIn, amount),
-            consensusBranchId,
+            CallbackTransactionSignatureChecker(ctx, sighash, nLockTimeNum, isFinal != 0),
+            // consensusBranchId is not longer used with the callback API; the argument
+            // was left there to minimize changes to interpreter.cpp
+            0,
             &script_err);
     } catch (const std::exception&) {
         return set_error(err, zcash_script_ERR_VERIFY_SCRIPT);

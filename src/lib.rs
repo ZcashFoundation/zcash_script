@@ -26,7 +26,8 @@ mod tests {
     }
 
     extern "C" fn sighash(
-        s: *mut u8,
+        sighash_out: *mut u8,
+        sighash_out_len: c_uint,
         ctx: *const c_void,
         _script_code: *const u8,
         _script_code_len: c_uint,
@@ -37,12 +38,14 @@ mod tests {
             let sighash =
                 hex::decode("e8c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
                     .unwrap();
-            std::ptr::copy_nonoverlapping(sighash.as_ptr(), s, sighash.len());
+            assert!(sighash_out_len == sighash.len() as c_uint);
+            std::ptr::copy_nonoverlapping(sighash.as_ptr(), sighash_out, sighash.len());
         }
     }
 
     extern "C" fn invalid_sighash(
-        s: *mut u8,
+        sighash_out: *mut u8,
+        sighash_out_len: c_uint,
         ctx: *const c_void,
         _script_code: *const u8,
         _script_code_len: c_uint,
@@ -53,7 +56,8 @@ mod tests {
             let sighash =
                 hex::decode("08c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
                     .unwrap();
-            std::ptr::copy_nonoverlapping(sighash.as_ptr(), s, sighash.len());
+            assert!(sighash_out_len == sighash.len() as c_uint);
+            std::ptr::copy_nonoverlapping(sighash.as_ptr(), sighash_out, sighash.len());
         }
     }
 
@@ -63,10 +67,7 @@ mod tests {
         let isFinal: u8 = 1;
         let script_pub_key = &*SCRIPT_PUBKEY;
         let script_sig = &*SCRIPT_SIG;
-        let amount: i64 = 1550280000;
-        let nIn: c_uint = 0;
         let flags: c_uint = 513;
-        let consensus_branch_id: u32 = 0xc2d6d0b4;
         let mut err = 0;
 
         let ret = unsafe {
@@ -79,10 +80,7 @@ mod tests {
                 script_pub_key.len() as c_uint,
                 script_sig.as_ptr(),
                 script_sig.len() as c_uint,
-                amount,
-                nIn,
                 flags,
-                consensus_branch_id,
                 &mut err,
             )
         };
@@ -96,10 +94,7 @@ mod tests {
         let isFinal: u8 = 1;
         let script_pub_key = &*SCRIPT_PUBKEY;
         let script_sig = &*SCRIPT_SIG;
-        let amount: i64 = 1550280000;
-        let nIn: c_uint = 0;
         let flags: c_uint = 513;
-        let consensus_branch_id: u32 = 0xc2d6d0b4;
         let mut err = 0;
 
         let ret = unsafe {
@@ -112,10 +107,7 @@ mod tests {
                 script_pub_key.len() as c_uint,
                 script_sig.as_ptr(),
                 script_sig.len() as c_uint,
-                amount,
-                nIn,
                 flags,
-                consensus_branch_id,
                 &mut err,
             )
         };

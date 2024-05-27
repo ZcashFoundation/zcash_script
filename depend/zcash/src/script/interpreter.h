@@ -124,17 +124,15 @@ class CallbackTransactionSignatureChecker : public BaseSignatureChecker
 {
 private:
     const void* tx;
-    void (*sighash)(unsigned char* sighash, const void* tx, const unsigned char* scriptCode, unsigned int scriptCodeLen, int hashType);
+    void (*sighash)(unsigned char* sighash, unsigned int sighashLen, const void* tx, const unsigned char* scriptCode, unsigned int scriptCodeLen, int hashType);
     const CScriptNum& nLockTime;
     bool isFinal;
-    unsigned int nIn;
-    const CAmount amount;
 
 protected:
     virtual bool VerifySignature(const std::vector<unsigned char>& vchSig, const CPubKey& vchPubKey, const uint256& sighash) const;
 
 public:
-    CallbackTransactionSignatureChecker(const void* tx, void (*sighash)(unsigned char* sighash, const void* tx, const unsigned char* scriptCode, unsigned int scriptCodeLen, int hashType), const CScriptNum& nLockTime, bool isFinal, unsigned int nInIn, const CAmount& amountIn) : tx(tx), sighash(sighash), nLockTime(nLockTime), isFinal(isFinal), nIn(nInIn), amount(amountIn) {}
+    CallbackTransactionSignatureChecker(const void* tx, void (*sighash)(unsigned char* sighash, unsigned int sighashLen, const void* tx, const unsigned char* scriptCode, unsigned int scriptCodeLen, int hashType), const CScriptNum& nLockTime, bool isFinal) : tx(tx), sighash(sighash), nLockTime(nLockTime), isFinal(isFinal) {}
     bool CheckSig(const std::vector<unsigned char>& scriptSig, const std::vector<unsigned char>& vchPubKey, const CScript& scriptCode, uint32_t consensusBranchId) const;
     bool CheckLockTime(const CScriptNum& nLockTime) const;
 };
