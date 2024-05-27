@@ -985,7 +985,7 @@ bool CallbackTransactionSignatureChecker::CheckSig(
     try {
         std::array<uint8_t, 32> sighashArray;
         auto scriptBase = static_cast<const CScriptBase&>(scriptCode);
-        this->sighash(sighashArray.begin(), sighashArray.size(), this->tx, &scriptBase[0], scriptBase.size(), nHashType);
+        this->sighash(sighashArray.data(), sighashArray.size(), this->tx, &scriptBase[0], scriptBase.size(), nHashType);
         sighash = uint256::FromRawBytes(sighashArray);
     } catch (logic_error ex) {
         return false;

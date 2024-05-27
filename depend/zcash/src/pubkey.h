@@ -173,8 +173,10 @@ public:
         return size() > 0;
     }
 
+#if 0
     //! fully validate whether this is a valid public key (more expensive than IsValid())
     bool IsFullyValid() const;
+#endif
 
     //! Check whether this is a compressed public key.
     bool IsCompressed() const
@@ -193,6 +195,7 @@ public:
      */
     static bool CheckLowS(const std::vector<unsigned char>& vchSig);
 
+#if 0
     //! Recover a public key from a compact signature.
     bool RecoverCompact(const uint256& hash, const std::vector<unsigned char>& vchSig);
 
@@ -201,8 +204,10 @@ public:
 
     //! Derive BIP32 child pubkey.
     bool Derive(CPubKey& pubkeyChild, ChainCode &ccChild, unsigned int nChild, const ChainCode& cc) const;
+#endif
 };
 
+#if 0
 class CChainablePubKey {
 private:
     ChainCode chaincode;
@@ -303,5 +308,6 @@ struct CExtPubKey {
         Decode(code);
     }
 };
+#endif
 
 #endif // BITCOIN_PUBKEY_H
