@@ -26,8 +26,6 @@
 #include <vector>
 
 
-#include <rust/ed25519.h>
-
 #include "prevector.h"
 
 static const unsigned int MAX_SIZE = 0x02000000;
@@ -587,25 +585,6 @@ template<typename Stream, typename T> void Unserialize(Stream& os, std::shared_p
 template<typename Stream, typename T> void Serialize(Stream& os, const std::unique_ptr<const T>& p);
 template<typename Stream, typename T> void Unserialize(Stream& os, std::unique_ptr<const T>& p);
 
-/**
- * ed25519::SigningKey
- */
-template<typename Stream> void Serialize(Stream& os, const ed25519::SigningKey& item);
-template<typename Stream> void Unserialize(Stream& is, ed25519::SigningKey& item);
-
-/**
- * ed25519::VerificationKey
- */
-template<typename Stream> void Serialize(Stream& os, const ed25519::VerificationKey& item);
-template<typename Stream> void Unserialize(Stream& is, ed25519::VerificationKey& item);
-
-/**
- * ed25519::Signature
- */
-template<typename Stream> void Serialize(Stream& os, const ed25519::Signature& item);
-template<typename Stream> void Unserialize(Stream& is, ed25519::Signature& item);
-
-
 
 /**
  * If none of the specialized versions above matched, default to calling member function.
@@ -971,57 +950,6 @@ template<typename Stream, typename T>
 void Unserialize(Stream& is, std::shared_ptr<const T>& p)
 {
     p = std::make_shared<const T>(deserialize, is);
-}
-
-
-
-/**
- * ed25519::SigningKey
- */
-template<typename Stream>
-void Serialize(Stream& os, const ed25519::SigningKey& sk)
-{
-    Serialize(os, sk.bytes);
-}
-
-template<typename Stream>
-void Unserialize(Stream& is, ed25519::SigningKey& sk)
-{
-    Unserialize(is, sk.bytes);
-}
-
-
-
-/**
- * ed25519::VerificationKey
- */
-template<typename Stream>
-void Serialize(Stream& os, const ed25519::VerificationKey& vk)
-{
-    Serialize(os, vk.bytes);
-}
-
-template<typename Stream>
-void Unserialize(Stream& is, ed25519::VerificationKey& vk)
-{
-    Unserialize(is, vk.bytes);
-}
-
-
-
-/**
- * ed25519::Signature
- */
-template<typename Stream>
-void Serialize(Stream& os, const ed25519::Signature& sig)
-{
-    Serialize(os, sig.bytes);
-}
-
-template<typename Stream>
-void Unserialize(Stream& is, ed25519::Signature& sig)
-{
-    Unserialize(is, sig.bytes);
 }
 
 
