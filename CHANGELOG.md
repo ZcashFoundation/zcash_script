@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+## [0.2.0] - 2024-06-10
+
+- Major API update. Most functions have been removed and a new callback-based
+  function was introduced. See `depend/zcash/src/script/zcash_script.h` for
+  documentation. This allows removing all dependencies from this crate, greatly
+  simplifying its maintenance.
+
 ## [0.1.16] - 2024-04-26
 
 ### Changed
@@ -106,7 +113,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated `bindgen` to a non yanked version
 
 <!-- next-url -->
-[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.16...HEAD
+[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.16...v0.2.0
 [0.1.16]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.15...v0.1.16
 [0.1.15]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/ZcashFoundation/zcash_script/compare/v0.1.13...v0.1.14
