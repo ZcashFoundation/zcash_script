@@ -9,6 +9,8 @@ pub use cxx::*;
 
 mod interpreter;
 pub use interpreter::{HashType, VerificationFlags};
+mod script;
+mod script_error;
 mod zcash_script;
 pub use zcash_script::*;
 
@@ -108,9 +110,6 @@ impl ZcashScript for Cxx {
             })
     }
 }
-
-#[cfg(feature = "rust-interpreter")]
-pub mod rust_interpreter;
 
 #[cfg(test)]
 mod tests {
