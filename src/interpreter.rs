@@ -73,14 +73,16 @@ bitflags::bitflags! {
     }
 }
 
-fn check_minimal_push(data: &[u8], raw_opcode: u8) -> bool {
+type ValType = Vec<u8>;
+
+fn check_minimal_push(data: &ValType, opcode: Opcode) -> bool {
     todo!()
 }
 
-pub fn evaluate(
+pub fn eval_script(
     stack: &mut Vec<Vec<u8>>,
     script: &Script,
-    options: &VerificationFlags,
+    flags: &VerificationFlags,
 ) -> Result<(), ScriptError> {
     // There's a limit on how large scripts can be.
     if script.0.len() > MAX_SCRIPT_SIZE {
@@ -88,7 +90,7 @@ pub fn evaluate(
     }
 
     let mut script = (*script).clone();
-    let mut push_data = vec![];
+    let mut vch_push_value = vec![];
 
     // We keep track of how many operations have executed so far to prevent
     // expensive-to-verify scripts
@@ -100,7 +102,7 @@ pub fn evaluate(
     // opcodes direct control flow (OP_IF, OP_ELSE, etc.).
     let mut exec: Vec<bool> = vec![];
 
-    let mut alt_stack: Vec<Vec<u8>> = vec![];
+    let mut altstack: Vec<Vec<u8>> = vec![];
 
     // Main execution loop
     while !script.0.is_empty() {
@@ -108,13 +110,13 @@ pub fn evaluate(
         let executing = exec.iter().all(|value| *value);
 
         // Consume an opcode
-        let operation = parse_opcode(&mut script.0, Some(&mut push_data))?;
+        let operation = parse_opcode(&mut script.0, Some(&mut vch_push_value))?;
 
         match operation {
             Operation::PushBytes(raw_opcode) => {
                 // There's a limit to the size of the values we'll put on
                 // the stack.
-                if push_data.len() > MAX_SCRIPT_ELEMENT_SIZE {
+                if vch_push_value.len() > MAX_SCRIPT_ELEMENT_SIZE {
                     return Err(ScriptError::PushSize);
                 }
 
@@ -122,13 +124,13 @@ pub fn evaluate(
                     // Data is being pushed to the stack here; we may need to check
                     // that the minimal script size was used to do so if our caller
                     // requires it.
-                    if options.contains(VerificationFlags::MinimalData)
-                        && !check_minimal_push(&push_data, raw_opcode)
+                    if flags.contains(VerificationFlags::MinimalData)
+                        && !check_minimal_push(&vch_push_value, raw_opcode)
                     {
                         return Err(ScriptError::MinimalData);
                     }
 
-                    stack.push(push_data.clone());
+                    stack.push(vch_push_value.clone());
                 }
             }
             Operation::Constant(value) => {
@@ -138,7 +140,7 @@ pub fn evaluate(
             // Invalid and disabled opcodes do technically contribute to
             // op_count, but they always result in a failed script execution
             // anyway.
-            Operation::Invalid => return Err(ScriptError::InvalidOpcode),
+            Operation::Invalid => return Err(ScriptError::BadOpcode),
             Operation::Disabled => return Err(ScriptError::DisabledOpcode),
 
             Operation::Opcode(opcode) => {
@@ -166,7 +168,7 @@ pub fn evaluate(
                             // These are considered "invalid" opcodes but
                             // only inside of *executing* OP_IF branches of
                             // the script.
-                            return Err(ScriptError::InvalidOpcode);
+                            return Err(ScriptError::BadOpcode);
                         }
                         Opcode::OP_NOP => {
                             // Do nothing.
@@ -185,8 +187,8 @@ pub fn evaluate(
                             // of a standard tx rule, for example) they can
                             // enable `discourage_upgradable_nops` to turn
                             // these opcodes into errors.
-                            if options.contains(VerificationFlags::DiscourageUpgradableNOPs) {
-                                return Err(ScriptError::UpgradableNops);
+                            if flags.contains(VerificationFlags::DiscourageUpgradableNOPs) {
+                                return Err(ScriptError::DiscourageUpgradableNOPs);
                             }
                         }
                         Opcode::OP_CHECKLOCKTIMEVERIFY => {
@@ -194,9 +196,9 @@ pub fn evaluate(
                             // for OP_CHECKLOCKTIMEVERIFY. So, we should act based
                             // on whether or not CLTV has been activated in a soft
                             // fork.
-                            if !options.contains(VerificationFlags::CHECKLOCKTIMEVERIFY) {
-                                if options.contains(VerificationFlags::DiscourageUpgradableNOPs) {
-                                    return Err(ScriptError::UpgradableNops);
+                            if !flags.contains(VerificationFlags::CHECKLOCKTIMEVERIFY) {
+                                if flags.contains(VerificationFlags::DiscourageUpgradableNOPs) {
+                                    return Err(ScriptError::DiscourageUpgradableNOPs);
                                 }
                             } else {
                                 todo!()
@@ -241,14 +243,14 @@ pub fn evaluate(
                                 return Err(ScriptError::InvalidStackOperation);
                             }
 
-                            alt_stack.push(stack.pop().unwrap());
+                            altstack.push(stack.pop().unwrap());
                         }
                         Opcode::OP_FROMALTSTACK => {
-                            if alt_stack.is_empty() {
+                            if altstack.is_empty() {
                                 return Err(ScriptError::InvalidStackOperation);
                             }
 
-                            stack.push(alt_stack.pop().unwrap());
+                            stack.push(altstack.pop().unwrap());
                         }
                         Opcode::OP_2DROP => {
                             if stack.len() < 2 {
@@ -463,7 +465,7 @@ pub fn evaluate(
         // There's a limit to how many items can be added to the stack and
         // alt stack. This limit is enforced upon finishing the execution of
         // an opcode.
-        if stack.len() + alt_stack.len() > 1000 {
+        if stack.len() + altstack.len() > 1000 {
             return Err(ScriptError::StackSize);
         }
     }
