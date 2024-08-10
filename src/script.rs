@@ -1,6 +1,16 @@
 #![allow(non_camel_case_types)]
 
-use super::ScriptError;
+use super::script_error::*;
+
+/// Maximum allowed size of data (in bytes) that can be pushed to the stack.
+pub const MAX_SCRIPT_ELEMENT_SIZE: usize = 520;
+
+/// Maximum allowed script length in bytes.
+pub const MAX_SCRIPT_SIZE: usize = 10000;
+
+// Threshold for nLockTime: below this value it is interpreted as block number,
+// otherwise as UNIX timestamp.
+pub const LOCKTIME_THRESHOLD: usize = 500000000; // Tue Nov  5 00:53:20 1985 UTC
 
 // Opcodes for pushing to the stack
 const OP_0: u8 = 0x00;
@@ -241,4 +251,27 @@ pub fn parse_opcode(
         }
         _ => Operation::Invalid,
     })
+}
+
+#[derive(Clone)]
+pub struct Script<'a>(pub &'a [u8]);
+
+impl<'a> Script<'a> {
+    /// Returns true iff this script is P2PKH.
+    pub fn is_p2pkh(&self) -> bool {
+        (self.0.len() == 25)
+            && (self.0[0] == Opcode::OP_DUP as u8)
+            && (self.0[1] == Opcode::OP_HASH160 as u8)
+            && (self.0[2] == 0x14)
+            && (self.0[23] == Opcode::OP_EQUALVERIFY as u8)
+            && (self.0[24] == Opcode::OP_CHECKSIG as u8)
+    }
+
+    /// Returns true iff this script is P2SH.
+    pub fn is_p2sh(&self) -> bool {
+        (self.0.len() == 23)
+            && (self.0[0] == Opcode::OP_HASH160 as u8)
+            && (self.0[1] == 0x14)
+            && (self.0[22] == Opcode::OP_EQUAL as u8)
+    }
 }
