@@ -258,7 +258,7 @@ pub struct Script<'a>(pub &'a [u8]);
 
 impl<'a> Script<'a> {
     /// Returns true iff this script is P2PKH.
-    pub fn is_p2pkh(&self) -> bool {
+    pub fn is_pay_to_public_key_hash(&self) -> bool {
         (self.0.len() == 25)
             && (self.0[0] == Opcode::OP_DUP as u8)
             && (self.0[1] == Opcode::OP_HASH160 as u8)
@@ -268,7 +268,7 @@ impl<'a> Script<'a> {
     }
 
     /// Returns true iff this script is P2SH.
-    pub fn is_p2sh(&self) -> bool {
+    pub fn is_pay_to_script_hash(&self) -> bool {
         (self.0.len() == 23)
             && (self.0[0] == Opcode::OP_HASH160 as u8)
             && (self.0[1] == 0x14)
