@@ -419,4 +419,5 @@ dependencies = [
  "cc",
  "hex",
  "lazy_static",
+ "log",
 ]

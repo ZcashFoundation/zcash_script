@@ -1,6 +1,7 @@
 use std::num::TryFromIntError;
 
 use super::interpreter::*;
+use super::script::*;
 
 /// This maps to `zcash_script_error_t`, but most of those cases aren’t used any more. This only
 /// replicates the still-used cases, and then an `Unknown` bucket for anything else that might
@@ -20,20 +21,6 @@ pub enum Error {
     ///         hold either.
     Unknown(i64),
 }
-
-/// All signature hashes are 32 bits, since they are necessarily produced by SHA256.
-pub const SIGHASH_SIZE: usize = 32;
-
-/// A function which is called to obtain the sighash.
-///    - script_code: the scriptCode being validated. Note that this not always
-///      matches script_sig, i.e. for P2SH.
-///    - hash_type: the hash type being used.
-///
-/// The `extern "C"` function that calls this doesn’t give much opportunity for rich failure
-/// reporting, but returning `None` indicates _some_ failure to produce the desired hash.
-///
-/// TODO: Can we get the “32” from somewhere rather than hardcoding it?
-pub type SighashCalculator<'a> = &'a dyn Fn(&[u8], HashType) -> Option<[u8; SIGHASH_SIZE]>;
 
 /// The external API of zcash_script. This is defined to make it possible to compare the C++ and
 /// Rust implementations.
@@ -65,4 +52,36 @@ pub trait ZcashScript {
     /// Returns the number of transparent signature operations in the input or
     /// output script pointed to by script.
     fn legacy_sigop_count_script(script: &[u8]) -> Result<u32, Error>;
+}
+
+pub enum Rust {}
+
+impl ZcashScript for Rust {
+    /// Returns the number of transparent signature operations in the
+    /// transparent inputs and outputs of this transaction.
+    fn legacy_sigop_count_script(script: &[u8]) -> Result<u32, Error> {
+        let cscript = Script(script);
+        Ok(cscript.get_sig_op_count(false))
+    }
+
+    fn verify_callback(
+        sighash: SighashCalculator,
+        n_lock_time: i64,
+        is_final: bool,
+        script_pub_key: &[u8],
+        script_sig: &[u8],
+        flags: VerificationFlags,
+    ) -> Result<(), Error> {
+        verify_script(
+            &Script(script_sig),
+            &Script(script_pub_key),
+            flags,
+            &CallbackTransactionSignatureChecker {
+                sighash,
+                n_lock_time,
+                is_final,
+            },
+        )
+        .map_err(|_| Error::Ok)
+    }
 }
