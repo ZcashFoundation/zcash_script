@@ -62,6 +62,7 @@ rust-interpreter = []
 
 [dependencies]
 bitflags = "2.5"
+log = "0.4"
 
 [build-dependencies]
 # The `bindgen` dependency should automatically upgrade to match the version used by zebra-state's `rocksdb` dependency in:
