@@ -10,7 +10,7 @@ pub const MAX_SCRIPT_SIZE: usize = 10000;
 
 // Threshold for nLockTime: below this value it is interpreted as block number,
 // otherwise as UNIX timestamp.
-pub const LOCKTIME_THRESHOLD: usize = 500000000; // Tue Nov  5 00:53:20 1985 UTC
+pub const LOCKTIME_THRESHOLD: i64 = 500000000; // Tue Nov  5 00:53:20 1985 UTC
 
 // Opcodes for pushing to the stack
 const OP_0: u8 = 0x00;
@@ -257,6 +257,15 @@ pub fn parse_opcode(
 pub struct Script<'a>(pub &'a [u8]);
 
 impl<'a> Script<'a> {
+    /// Pre-version-0.6, Bitcoin always counted CHECKMULTISIGs
+    /// as 20 sigops. With pay-to-script-hash, that changed:
+    /// CHECKMULTISIGs serialized in script_sigs are
+    /// counted more accurately, assuming they are of the form
+    ///  ... OP_N CHECKMULTISIG ...
+    pub fn get_sig_op_count(&self, accurate: bool) -> u32 {
+        todo!()
+    }
+
     /// Returns true iff this script is P2PKH.
     pub fn is_pay_to_public_key_hash(&self) -> bool {
         (self.0.len() == 25)
@@ -273,5 +282,10 @@ impl<'a> Script<'a> {
             && (self.0[0] == Opcode::OP_HASH160 as u8)
             && (self.0[1] == 0x14)
             && (self.0[22] == Opcode::OP_EQUAL as u8)
+    }
+
+    /// Called by IsStandardTx and P2SH/BIP62 VerifyScript (which makes it consensus-critical).
+    pub fn is_push_only(&self) -> bool {
+        todo!()
     }
 }

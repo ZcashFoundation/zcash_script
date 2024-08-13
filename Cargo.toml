@@ -15,6 +15,7 @@ include = [
     "/README.md",
     "build.rs",
     "src/*.rs",
+    "src/*/*.rs",
     "/depend/check_uint128_t.c",
     "/depend/zcash/src/amount.cpp",
     "/depend/zcash/src/amount.h",
@@ -62,6 +63,7 @@ rust-interpreter = []
 
 [dependencies]
 bitflags = "2.5"
+log = "0.4"
 
 [build-dependencies]
 # The `bindgen` dependency should automatically upgrade to match the version used by zebra-state's `rocksdb` dependency in:
