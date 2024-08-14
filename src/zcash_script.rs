@@ -41,8 +41,8 @@ pub trait ZcashScript {
     ///
     ///  Note that script verification failure is indicated by `Err(Error::Ok)`.
     fn verify_callback(
-        sighash: SighashCalculator,
-        n_lock_time: i64,
+        sighash_callback: SighashCalculator,
+        lock_time: i64,
         is_final: bool,
         script_pub_key: &[u8],
         script_sig: &[u8],
@@ -66,19 +66,20 @@ impl ZcashScript for Rust {
 
     fn verify_callback(
         sighash: SighashCalculator,
-        n_lock_time: i64,
+        lock_time: i64,
         is_final: bool,
         script_pub_key: &[u8],
         script_sig: &[u8],
         flags: VerificationFlags,
     ) -> Result<(), Error> {
+        let lock_time_num = ScriptNum(lock_time);
         verify_script(
             &Script(script_sig),
             &Script(script_pub_key),
             flags,
             &CallbackTransactionSignatureChecker {
                 sighash,
-                n_lock_time,
+                lock_time: &lock_time_num,
                 is_final,
             },
         )

@@ -10,7 +10,7 @@ pub const MAX_SCRIPT_SIZE: usize = 10000;
 
 // Threshold for nLockTime: below this value it is interpreted as block number,
 // otherwise as UNIX timestamp.
-pub const LOCKTIME_THRESHOLD: i64 = 500000000; // Tue Nov  5 00:53:20 1985 UTC
+pub const LOCKTIME_THRESHOLD: ScriptNum = ScriptNum(500000000); // Tue Nov  5 00:53:20 1985 UTC
 
 // Opcodes for pushing to the stack
 const OP_0: u8 = 0x00;
@@ -53,15 +53,16 @@ const OP_LSHIFT: u8 = 0x98;
 const OP_RSHIFT: u8 = 0x99;
 const OP_CODESEPARATOR: u8 = 0xab;
 
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Operation {
     PushBytes(u8),
-    Constant(i64),
+    Constant(i8),
     Opcode(Opcode),
     Invalid,
     Disabled,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Opcode {
     // OP_RESERVED is technically a valid operation inside of a non-executing
     // OP_IF branch
@@ -160,7 +161,11 @@ impl Opcode {
     }
 }
 
-pub fn parse_opcode(
+pub fn get_op(script: &mut &[u8]) -> Result<Operation, ScriptError> {
+    get_op2(script, None)
+}
+
+pub fn get_op2(
     script: &mut &[u8],
     mut buffer: Option<&mut Vec<u8>>,
 ) -> Result<Operation, ScriptError> {
@@ -219,9 +224,26 @@ pub fn parse_opcode(
         // OP_0/OP_FALSE doesn't actually push a constant 0 onto the stack but
         // pushes an empty array. (Thus we leave the buffer truncated to 0 length)
         OP_0 => Operation::PushBytes(leading_byte),
+        byte if byte >= 0x01 && byte <= 0x4b => {
+            let size = leading_byte as usize;
+
+            if script.len() < size {
+                return Err(ScriptError::ReadError {
+                    expected_bytes: size,
+                    available_bytes: script.len(),
+                });
+            }
+
+            buffer.map(|buffer| {
+                buffer.extend(&script[0..size]);
+                *script = &script[size..];
+            });
+
+            Operation::PushBytes(leading_byte)
+        }
         // OP_1NEGATE through OP_16
         byte if byte >= OP_1NEGATE && byte <= OP_16 => {
-            let value = byte as i64;
+            let value = byte as i8;
             let value = value - 0x50;
 
             if value == 0 {
@@ -253,6 +275,84 @@ pub fn parse_opcode(
     })
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub struct ScriptNum(pub i64);
+
+impl ScriptNum {
+    const DEFAULT_MAX_NUM_SIZE: usize = 4;
+
+    pub fn new(vch: &Vec<u8>, require_minimal: bool, max_num_size: Option<usize>) -> Self {
+        let n_max_num_size = max_num_size.unwrap_or(Self::DEFAULT_MAX_NUM_SIZE);
+        if vch.len() > n_max_num_size {
+            panic!("script number overflow");
+        };
+        if require_minimal {
+            if let Some(vch_back) = vch.last() {
+                // Check that the number is encoded with the minimum possible
+                // number of bytes.
+                //
+                // If the most-significant-byte - excluding the sign bit - is zero
+                // then we're not minimal. Note how this test also rejects the
+                // negative-zero encoding, 0x80.
+                if (vch_back & 0x7F) == 0 {
+                    // One exception: if there's more than one byte and the most
+                    // significant bit of the second-most-significant-byte is set
+                    // it would conflict with the sign bit. An example of this case
+                    // is +-255, which encode to 0xff00 and 0xff80 respectively.
+                    // (big-endian).
+                    if vch.len() <= 1 || (vch[vch.len() - 2] & 0x80) == 0 {
+                        panic!("non-minimally encoded script number");
+                    }
+                }
+            }
+        };
+        ScriptNum(Self::set_vch(vch))
+    }
+
+    pub fn getint(&self) -> i32 {
+        if self.0 > i32::MAX as i64 {
+            i32::MAX
+        } else if self.0 < i32::MIN as i64 {
+            i32::MIN
+        } else {
+            self.0 as i32
+        }
+    }
+
+    fn set_vch(vch: &Vec<u8>) -> i64 {
+        match vch.last() {
+            None => 0,
+            Some(vch_back) => {
+                if *vch == vec![0 as u8, 0, 0, 0, 0, 0, 0, 128, 128] {
+                    // On an x86_64 system, the code below would actually decode the buggy
+                    // INT64_MIN encoding correctly. However in this case, it would be
+                    // performing left shifts of a signed type by 64, which has undefined
+                    // behavior.
+                    return i64::MIN;
+                };
+
+                // Guard against undefined behavior. INT64_MIN is the only allowed 9-byte encoding.
+                if vch.len() > 8 {
+                    panic!("script number overflow");
+                };
+
+                let mut result: i64 = 0;
+                for (i, vchi) in vch.iter().enumerate() {
+                    result |= (*vchi as i64) << 8 * i;
+                }
+
+                // If the input vector's most significant byte is 0x80, remove it from
+                // the result's msb and return a negative.
+                if vch_back & 0x80 != 0 {
+                    return !(result & !(0x80 << (8 * (vch.len() - 1))));
+                };
+
+                result
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Script<'a>(pub &'a [u8]);
 
@@ -263,7 +363,37 @@ impl<'a> Script<'a> {
     /// counted more accurately, assuming they are of the form
     ///  ... OP_N CHECKMULTISIG ...
     pub fn get_sig_op_count(&self, accurate: bool) -> u32 {
-        todo!()
+        let mut n = 0;
+        let mut pc = self.0;
+        let mut last_opcode = Operation::Invalid;
+        while !pc.is_empty() {
+            get_op(&mut pc).map_or((), |opcode| {
+                match opcode {
+                    Operation::Opcode(Opcode::OP_CHECKSIG | Opcode::OP_CHECKSIGVERIFY) => n = n + 1,
+                    Operation::Opcode(
+                        Opcode::OP_CHECKMULTISIG | Opcode::OP_CHECKMULTISIGVERIFY,
+                    ) => {
+                        if accurate {
+                            match last_opcode {
+                                Operation::Constant(n_op) => {
+                                    if n_op >= 1 && n_op <= 16 {
+                                        n = n + n_op as u32
+                                    } else {
+                                        n = n + 200
+                                    }
+                                }
+                                _ => n = n + 200,
+                            }
+                        } else {
+                            n = n + 200
+                        }
+                    }
+                    _ => (),
+                };
+                last_opcode = opcode;
+            })
+        }
+        n
     }
 
     /// Returns true iff this script is P2PKH.
@@ -286,6 +416,15 @@ impl<'a> Script<'a> {
 
     /// Called by IsStandardTx and P2SH/BIP62 VerifyScript (which makes it consensus-critical).
     pub fn is_push_only(&self) -> bool {
-        todo!()
+        // let mut pc = self.clone();
+        // while !pc.0.is_empty() {
+        //     if !get_op(&mut pc.0).map_or(false, |opcode| match opcode {
+        //         Operation::PushBytes(_) | Operation::Constant(_) => true,
+        //         _ => false,
+        //     }) {
+        //         return false;
+        //     };
+        // };
+        return true;
     }
 }
