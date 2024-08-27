@@ -3,6 +3,8 @@
 #![doc(html_logo_url = "https://www.zfnd.org/images/zebra-icon.png")]
 #![doc(html_root_url = "https://docs.rs/zcash_script/0.3.0")]
 #![allow(unsafe_code)]
+#[macro_use]
+extern crate enum_primitive;
 
 mod cxx;
 mod external;

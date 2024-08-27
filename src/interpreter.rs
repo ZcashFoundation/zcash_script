@@ -1,3 +1,4 @@
+use std::mem::swap;
 use std::slice::Iter;
 
 use ripemd::Ripemd160;
@@ -6,7 +7,7 @@ use sha2::{Digest, Sha256};
 
 use super::external::pubkey::PubKey;
 use super::external::uint256::UInt256;
-use super::script::*;
+use super::script::{Operation::*, PushValue::*, *};
 use super::script_error::*;
 
 bitflags::bitflags! {
@@ -81,20 +82,58 @@ bitflags::bitflags! {
     }
 }
 
-/// All signature hashes are 32 bits, since they are necessarily produced by SHA256.
-pub const SIGHASH_SIZE: usize = 32;
+pub trait SignatureChecker {
+    fn check_sig(
+        &self,
+        _script_sig: &Vec<u8>,
+        _vch_pub_key: &Vec<u8>,
+        _script_code: &Script,
+    ) -> bool {
+        false
+    }
 
-/// A function which is called to obtain the sighash.
-///    - script_code: the scriptCode being validated. Note that this not always
-///      matches script_sig, i.e. for P2SH.
-///    - hash_type: the hash type being used.
-///
-/// The `extern "C"` function that calls this doesn’t give much opportunity for rich failure
-/// reporting, but returning `None` indicates _some_ failure to produce the desired hash.
-///
-/// TODO: Can we get the “32” from somewhere rather than hardcoding it?
-pub type SighashCalculator<'a> = &'a dyn Fn(&[u8], HashType) -> Option<[u8; SIGHASH_SIZE]>;
+    fn check_lock_time(&self, _lock_time: &ScriptNum) -> bool {
+        false
+    }
+}
 
+pub struct BaseSignatureChecker();
+
+impl SignatureChecker for BaseSignatureChecker {}
+
+pub struct CallbackTransactionSignatureChecker<'a> {
+    pub sighash: SighashCalculator<'a>,
+    pub lock_time: &'a ScriptNum,
+    pub is_final: bool,
+}
+
+type ValType = Vec<u8>;
+
+fn set_success<T>(res: T) -> Result<T, ScriptError> {
+    Ok(res)
+}
+
+fn set_error<T>(serror: ScriptError) -> Result<T, ScriptError> {
+    Err(serror)
+}
+
+fn cast_to_bool(vch: &ValType) -> bool {
+    for (i, vchi) in vch.iter().enumerate() {
+        if *vchi != 0 {
+            // Can be negative zero
+            if i == vch.len() - 1 && *vchi == 0x80 {
+                return false;
+            };
+            return true;
+        }
+    }
+    false
+}
+
+/**
+ * Script is a stack machine (like Forth) that evaluates a predicate
+ * returning a bool indicating valid or not.  There are no loops.
+ */
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Stack<T>(Vec<T>);
 
@@ -138,8 +177,8 @@ impl<T> Stack<T> {
         self.0.iter()
     }
 
-    pub fn back(&mut self) -> Option<&mut T> {
-        self.0.last_mut()
+    pub fn back(&mut self) -> Result<&mut T, ScriptError> {
+        self.0.last_mut().ok_or(ScriptError::InvalidStackOperation)
     }
 
     pub fn erase(&mut self, start: usize, end: Option<usize>) -> () {
@@ -148,105 +187,13 @@ impl<T> Stack<T> {
         }
     }
 
+    pub fn insert(&mut self, i: usize, element: T) {
+        self.0.insert(i, element)
+    }
+
     pub fn end(&self) -> usize {
         self.0.len()
-     }
-}
-
-pub trait BaseSignatureChecker {
-    fn check_sig(&self, script_sig: &Vec<u8>, vch_pub_key: &Vec<u8>, script_code: &Script) -> bool {
-        false
     }
-
-    fn check_lock_time(&self, lock_time: &ScriptNum) -> bool {
-        false
-    }
-}
-
-type ValType = Vec<u8>;
-
-pub struct CallbackTransactionSignatureChecker<'a> {
-    pub sighash: SighashCalculator<'a>,
-    pub lock_time: &'a ScriptNum,
-    pub is_final: bool,
-}
-
-impl CallbackTransactionSignatureChecker<'_> {
-    pub fn verify_signature(vch_sig: &Vec<u8>, pubkey: &PubKey, sighash: &UInt256) -> bool {
-        pubkey.verify(sighash, vch_sig)
-    }
-}
-
-impl BaseSignatureChecker for CallbackTransactionSignatureChecker<'_> {
-    fn check_sig(&self, vch_sig_in: &Vec<u8>, vch_pub_key: &Vec<u8>, script_code: &Script) -> bool {
-        let pubkey = PubKey(vch_pub_key.as_slice());
-        if !pubkey.is_valid() {
-            return false;
-        };
-
-        // Hash type is one byte tacked on to the end of the signature
-        let mut vch_sig = (*vch_sig_in).clone();
-        vch_sig
-            .pop()
-            .and_then(|hash_type| {
-                (self.sighash)(script_code.0, HashType::from_bits_retain(hash_type.into()))
-            })
-            .map(|sighash| Self::verify_signature(&vch_sig, &pubkey, &sighash))
-            .unwrap_or(false)
-    }
-
-    fn check_lock_time(&self, lock_time: &ScriptNum) -> bool {
-        // There are two times of nLockTime: lock-by-blockheight
-        // and lock-by-blocktime, distinguished by whether
-        // nLockTime < LOCKTIME_THRESHOLD.
-        //
-        // We want to compare apples to apples, so fail the script
-        // unless the type of nLockTime being tested is the same as
-        // the nLockTime in the transaction.
-        if !((*self.lock_time < LOCKTIME_THRESHOLD && *lock_time < LOCKTIME_THRESHOLD)
-            || (*self.lock_time >= LOCKTIME_THRESHOLD && *lock_time >= LOCKTIME_THRESHOLD))
-        {
-            false
-            // Now that we know we're comparing apples-to-apples, the
-            // comparison is a simple numeric one.
-        } else if lock_time > self.lock_time {
-            false
-            // Finally the nLockTime feature can be disabled and thus
-            // CHECKLOCKTIMEVERIFY bypassed if every txin has been
-            // finalized by setting nSequence to maxint. The
-            // transaction would be allowed into the blockchain, making
-            // the opcode ineffective.
-            //
-            // Testing if this vin is not final is sufficient to
-            // prevent this condition. Alternatively we could test all
-            // inputs, but testing just this input minimizes the data
-            // required to prove correct CHECKLOCKTIMEVERIFY execution.
-        } else if self.is_final {
-            false
-        } else {
-            true
-        }
-    }
-
-    // FIXME: Replace the above logic with this, which makes more sense (but preserve a lot of the
-    //        comments).
-    // !self.is_final
-    //     && (self.n_lock_time < LOCKTIME_THRESHOLD && n_lock_time < LOCKTIME_THRESHOLD) ||
-    //         (self.n_lock_time >= LOCKTIME_THRESHOLD && n_lock_time >= LOCKTIME_THRESHOLD))
-    //     && n_lock_time <= self.n_lock_time
-}
-
-fn cast_to_bool(vch: &ValType) -> bool {
-    for (i, vchi) in vch.iter().enumerate() {
-        if *vchi != 0 {
-            // Can be negative zero
-            if i == vch.len() - 1 && *vchi == 0x80 {
-                return false;
-            };
-            return true;
-        }
-    }
-    false
 }
 
 fn is_compressed_or_uncompressed_pub_key(vch_pub_key: &ValType) -> bool {
@@ -308,12 +255,12 @@ fn is_valid_signature_encoding(sig: &Vec<u8>) -> bool {
     };
 
     // Make sure the length covers the entire signature.
-    if sig[1] as usize != sig.len() - 3 {
+    if usize::from(sig[1]) != sig.len() - 3 {
         return false;
     };
 
     // Extract the length of the R element.
-    let len_r: usize = sig[3] as usize;
+    let len_r = usize::from(sig[3]);
 
     // Make sure the length of the S element is still inside the signature.
     if 5 + len_r >= sig.len() {
@@ -321,7 +268,7 @@ fn is_valid_signature_encoding(sig: &Vec<u8>) -> bool {
     };
 
     // Extract the length of the S element.
-    let len_s: usize = sig[5 + len_r] as usize;
+    let len_s = usize::from(sig[5 + len_r]);
 
     // Verify that the length of the signature matches the sum of the length
     // of the elements.
@@ -376,7 +323,7 @@ fn is_valid_signature_encoding(sig: &Vec<u8>) -> bool {
 
 fn is_low_der_signature(vch_sig: &ValType) -> Result<bool, ScriptError> {
     if !is_valid_signature_encoding(vch_sig) {
-        return Err(ScriptError::SigDER);
+        return set_error(ScriptError::SigDER);
     };
     // https://bitcoin.stackexchange.com/a/12556:
     //     Also note that inside transaction signatures, an extra hashtype byte
@@ -412,14 +359,14 @@ fn check_signature_encoding(
         return Ok(true);
     };
     if !is_valid_signature_encoding(vch_sig) {
-        return Err(ScriptError::SigDER);
+        return set_error(ScriptError::SigDER);
     } else if flags.contains(VerificationFlags::LowS) && !is_low_der_signature(vch_sig)? {
         // serror is set
         return Ok(false);
     } else if flags.contains(VerificationFlags::StrictEnc)
         && !is_defined_hashtype_signature(vch_sig)
     {
-        return Err(ScriptError::SigHashtype);
+        return set_error(ScriptError::SigHashtype);
     };
     Ok(true)
 }
@@ -430,28 +377,46 @@ fn check_pub_key_encoding(vch_sig: &ValType, flags: VerificationFlags) -> Result
     {
         return Err(ScriptError::PubKeyType);
     };
-    Ok(())
+    set_success(())
 }
 
-fn check_minimal_push(data: &[u8], raw_opcode: u8) -> bool {
-    todo!()
+fn check_minimal_push(data: &ValType, opcode: PushValue) -> bool {
+    if data.len() == 0 {
+        // Could have used OP_0.
+        return opcode == OP_0;
+    } else if data.len() == 1 && data[0] >= 1 && data[0] <= 16 {
+        // Could have used OP_1 .. OP_16.
+        return u8::from(opcode) == u8::from(OP_1) + (data[0] - 1);
+    } else if data.len() == 1 && data[0] == 0x81 {
+        // Could have used OP_1NEGATE.
+        return opcode == OP_1NEGATE;
+    } else if data.len() <= 75 {
+        // Could have used a direct push (opcode indicating number of bytes pushed + those bytes).
+        return usize::from(u8::from(opcode)) == data.len();
+    } else if data.len() <= 255 {
+        // Could have used OP_PUSHDATA.
+        return opcode == OP_PUSHDATA1;
+    } else if data.len() <= 65535 {
+        // Could have used OP_PUSHDATA2.
+        return opcode == OP_PUSHDATA2;
+    }
+    true
 }
 
 pub fn eval_script(
     stack: &mut Stack<Vec<u8>>,
     script: &Script,
     flags: VerificationFlags,
-    checker: &dyn BaseSignatureChecker,
+    checker: &dyn SignatureChecker,
 ) -> Result<bool, ScriptError> {
     let bn_zero = ScriptNum(0);
     let bn_one = ScriptNum(1);
     let vch_false: ValType = vec![];
-    let vch_zero: ValType = vec![];
     let vch_true: ValType = vec![1];
 
     // There's a limit on how large scripts can be.
-    if script.0.len() > MAX_SCRIPT_SIZE {
-        return Err(ScriptError::ScriptSize);
+    if script.0.len() > MAX_SCRIPT_SIZE.into() {
+        return set_error(ScriptError::ScriptSize);
     }
 
     let mut pc = script.0;
@@ -459,7 +424,7 @@ pub fn eval_script(
 
     // We keep track of how many operations have executed so far to prevent
     // expensive-to-verify scripts
-    let mut op_count = 0;
+    let mut op_count: u8 = 0;
     let require_minimal = flags.contains(VerificationFlags::MinimalData);
 
     // This keeps track of the conditional flags at each nesting level
@@ -475,98 +440,88 @@ pub fn eval_script(
         // Are we in an executing branch of the script?
         let exec = vexec.iter().all(|value| *value);
 
-        // Consume an opcode
-        let operation = get_op2(&mut pc, Some(&mut vch_push_value))?;
+        //
+        // Read instruction
+        //
+        let opcode = Script::get_op2(&mut pc, &mut vch_push_value)?;
+        if vch_push_value.len() > MAX_SCRIPT_ELEMENT_SIZE {
+            return set_error(ScriptError::PushSize);
+        }
 
-        match operation {
-            Operation::PushBytes(raw_opcode) => {
-                // There's a limit to the size of the values we'll put on
-                // the stack.
-                if vch_push_value.len() > MAX_SCRIPT_ELEMENT_SIZE {
-                    return Err(ScriptError::PushSize);
-                }
-
+        match opcode {
+            Opcode::PushValue(pv) => {
                 if exec {
-                    // Data is being pushed to the stack here; we may need to check
-                    // that the minimal script size was used to do so if our caller
-                    // requires it.
-                    if flags.contains(VerificationFlags::MinimalData)
-                        && !check_minimal_push(&vch_push_value, raw_opcode)
-                    {
-                        return Err(ScriptError::MinimalData);
-                    }
-
-                    stack.push_back(vch_push_value.clone());
-                }
-            }
-            Operation::Constant(value) => stack.push_back(vec![value as u8]),
-
-            // Invalid and disabled opcodes do technically contribute to
-            // op_count, but they always result in a failed script execution
-            // anyway.
-            Operation::Invalid => return Err(ScriptError::BadOpcode),
-            Operation::Disabled => return Err(ScriptError::DisabledOpcode),
-
-            Operation::Opcode(opcode) => {
-                // There's a limit on how many operations can execute in a
-                // script. We consider opcodes beyond OP_16 to be "actual"
-                // opcodes as ones below that just involve data pushes. All
-                // opcodes defined by the Opcode enum qualify except for
-                // OP_RESERVED, which is not beyond OP_16.
-                //
-                // Note: operations even if they are not executed but are
-                // still present in the script count toward this count.
-                if opcode != Opcode::OP_RESERVED {
-                    op_count += 1;
-                    if op_count > 201 {
-                        return Err(ScriptError::OpCount);
-                    }
-                }
-
-                if exec || opcode.is_control_flow_opcode() {
-                    match opcode {
-                        Opcode::OP_RESERVED
-                        | Opcode::OP_VER
-                        | Opcode::OP_RESERVED1
-                        | Opcode::OP_RESERVED2 => {
-                            // These are considered "invalid" opcodes but
-                            // only inside of *executing* OP_IF branches of
-                            // the script.
-                            return Err(ScriptError::BadOpcode);
+                    match pv {
+                        //
+                        // Push value
+                        //
+                        OP_1NEGATE | OP_1 | OP_2 | OP_3 | OP_4 | OP_5 | OP_6 | OP_7 | OP_8
+                        | OP_9 | OP_10 | OP_11 | OP_12 | OP_13 | OP_14 | OP_15 | OP_16 => {
+                            // ( -- value)
+                            let bn = ScriptNum((u8::from(opcode) - (u8::from(OP_1) - 1)).into());
+                            stack.push_back(bn.getvch());
+                            // The result of these opcodes should always be the minimal way to push the data
+                            // they push, so no need for a CheckMinimalPush here.
                         }
-                        Opcode::OP_NOP => {
-                            // Do nothing.
-                        }
-                        Opcode::OP_NOP1
-                        | Opcode::OP_NOP3
-                        | Opcode::OP_NOP4
-                        | Opcode::OP_NOP5
-                        | Opcode::OP_NOP6
-                        | Opcode::OP_NOP7
-                        | Opcode::OP_NOP8
-                        | Opcode::OP_NOP9
-                        | Opcode::OP_NOP10 => {
-                            // Do nothing, though if the caller wants to
-                            // prevent people from using these NOPs (as part
-                            // of a standard tx rule, for example) they can
-                            // enable `DiscourageUpgradableNOPs` to turn
-                            // these opcodes into errors.
-                            if flags.contains(VerificationFlags::DiscourageUpgradableNOPs) {
-                                return Err(ScriptError::DiscourageUpgradableNOPs);
+                        _ => {
+                            if pv <= OP_PUSHDATA4 {
+                                if require_minimal && !check_minimal_push(&vch_push_value, pv) {
+                                    return set_error(ScriptError::MinimalData);
+                                }
+                                stack.push_back(vch_push_value.clone());
+                            } else {
+                                return set_error(ScriptError::BadOpcode);
                             }
                         }
-                        Opcode::OP_CHECKLOCKTIMEVERIFY => {
+                    }
+                }
+            }
+            Opcode::Operation(op) => {
+                // Note how OP_RESERVED does not count towards the opcode limit.
+                op_count += 1;
+                if op_count > 201 {
+                    return set_error(ScriptError::OpCount);
+                }
+
+                if op == OP_CAT
+                    || op == OP_SUBSTR
+                    || op == OP_LEFT
+                    || op == OP_RIGHT
+                    || op == OP_INVERT
+                    || op == OP_AND
+                    || op == OP_OR
+                    || op == OP_XOR
+                    || op == OP_2MUL
+                    || op == OP_2DIV
+                    || op == OP_MUL
+                    || op == OP_DIV
+                    || op == OP_MOD
+                    || op == OP_LSHIFT
+                    || op == OP_RSHIFT
+                    || op == OP_CODESEPARATOR
+                {
+                    return set_error(ScriptError::DisabledOpcode); // Disabled opcodes.
+                }
+
+                if exec || (OP_IF <= op && op <= OP_ENDIF) {
+                    match op {
+                        //
+                        // Control
+                        //
+                        OP_NOP => (),
+
+                        OP_CHECKLOCKTIMEVERIFY => {
                             // This was originally OP_NOP2 but has been repurposed
                             // for OP_CHECKLOCKTIMEVERIFY. So, we should act based
                             // on whether or not CLTV has been activated in a soft
                             // fork.
                             if !flags.contains(VerificationFlags::CHECKLOCKTIMEVERIFY) {
                                 if flags.contains(VerificationFlags::DiscourageUpgradableNOPs) {
-                                    return Err(ScriptError::DiscourageUpgradableNOPs);
+                                    return set_error(ScriptError::DiscourageUpgradableNOPs);
                                 }
                             } else {
                                 if stack.size() < 1 {
-                                    return Err(ScriptError::InvalidStackOperation);
+                                    return set_error(ScriptError::InvalidStackOperation);
                                 }
 
                                 // Note that elsewhere numeric opcodes are limited to
@@ -583,389 +538,398 @@ pub fn eval_script(
                                 // Thus as a special case we tell `ScriptNum` to accept up
                                 // to 5-byte bignums, which are good until 2**39-1, well
                                 // beyond the 2**32-1 limit of the `lock_time` field itself.
-                                let lock_time =
-                                    ScriptNum::new(stack.top(-1)?, require_minimal, Some(5));
+                                let lock_time = ScriptNum::new(stack.top(-1)?, require_minimal, Some(5));
 
                                 // In the rare event that the argument may be < 0 due to
                                 // some arithmetic being done first, you can always use
                                 // 0 MAX CHECKLOCKTIMEVERIFY.
                                 if lock_time < ScriptNum(0) {
-                                    return Err(ScriptError::NegativeLockTime);
+                                    return set_error(ScriptError::NegativeLockTime);
                                 }
 
                                 // Actually compare the specified lock time with the transaction.
                                 if !checker.check_lock_time(&lock_time) {
-                                    return Err(ScriptError::UnsatisfiedLockTime);
+                                    return set_error(ScriptError::UnsatisfiedLockTime);
                                 }
                             }
                         }
-                        Opcode::OP_IF | Opcode::OP_NOTIF => {
+
+                        OP_NOP1 | OP_NOP3 | OP_NOP4 | OP_NOP5
+                        | OP_NOP6 | OP_NOP7 | OP_NOP8 | OP_NOP9 | OP_NOP10 => {
+                            // Do nothing, though if the caller wants to prevent people from using
+                            // these NOPs (as part of a standard tx rule, for example) they can
+                            // enable `DiscourageUpgradableNOPs` to turn these opcodes into errors.
+                            if flags.contains(VerificationFlags::DiscourageUpgradableNOPs) {
+                                return set_error(ScriptError::DiscourageUpgradableNOPs);
+                            }
+                        }
+
+                        OP_IF
+                        | OP_NOTIF => {
                             // <expression> if [statements] [else [statements]] endif
                             let mut value = false;
                             if exec {
                                 if stack.size() < 1 {
-                                    return Err(ScriptError::UnbalancedConditional);
+                                    return set_error(ScriptError::UnbalancedConditional);
                                 }
                                 let vch: &ValType = stack.top(-1)?;
                                 value = cast_to_bool(vch);
-                                if opcode == Opcode::OP_NOTIF {
+                                if op == OP_NOTIF {
                                     value = !value
                                 };
                                 stack.pop()?;
                             }
                             vexec.push_back(value);
                         }
-                        Opcode::OP_ELSE => {
-                            if vexec.empty() {
-                                return Err(ScriptError::UnbalancedConditional);
-                            }
 
-                            vexec.back().map(|last| *last = !*last);
+                        OP_ELSE => {
+                            if vexec.empty() {
+                                return set_error(ScriptError::UnbalancedConditional);
+                            }
+                            vexec.back().map(|last| *last = !*last)?;
                         }
-                        Opcode::OP_ENDIF => {
-                            if vexec.empty() {
-                                return Err(ScriptError::UnbalancedConditional);
-                            }
 
+                        OP_ENDIF => {
+                            if vexec.empty() {
+                                return set_error(ScriptError::UnbalancedConditional);
+                            }
                             vexec.pop()?;
                         }
-                        Opcode::OP_VERIFY => {
+
+                        OP_VERIFY => {
                             // (true -- ) or
                             // (false -- false) and return
                             if stack.size() < 1 {
-                                return Err(ScriptError::InvalidStackOperation);
+                                return set_error(ScriptError::InvalidStackOperation);
                             }
                             let value = cast_to_bool(stack.top(-1)?);
                             if value {
                                 stack.pop()?;
                             } else {
-                                return Err(ScriptError::VERIFY);
+                                return set_error(ScriptError::VERIFY);
                             }
                         }
-                        Opcode::OP_RETURN => return Err(ScriptError::OpReturn),
-                        Opcode::OP_TOALTSTACK => {
+
+                        OP_RETURN => return set_error(ScriptError::OpReturn),
+
+                        //
+                        // Stack ops
+                        //
+                        OP_TOALTSTACK => {
                             if stack.empty() {
-                                return Err(ScriptError::InvalidStackOperation);
+                                return set_error(ScriptError::InvalidStackOperation);
                             }
-
-                            altstack.push_back(stack.pop()?);
+                            altstack.push_back(stack.top(-1)?.clone());
+                            stack.pop()?;
                         }
-                        Opcode::OP_FROMALTSTACK => {
+
+                        OP_FROMALTSTACK => {
                             if altstack.empty() {
-                                return Err(ScriptError::InvalidStackOperation);
+                                return set_error(ScriptError::InvalidAltstackOperation);
                             }
-
-                            stack.push_back(altstack.pop()?);
+                            stack.push_back(altstack.top(-1)?.clone());
+                            altstack.pop()?;
                         }
-                        Opcode::OP_2DROP => {
+
+                        OP_2DROP => {
                             if stack.size() < 2 {
-                                return Err(ScriptError::InvalidStackOperation);
+                                return set_error(ScriptError::InvalidStackOperation);
                             }
 
                             stack.pop()?;
                             stack.pop()?;
                         }
-                        Opcode::OP_2DUP => {
-                            if stack.size() < 2 {
-                                return Err(ScriptError::InvalidStackOperation);
-                            }
 
-                            let b = stack.pop()?;
-                            let a = stack.pop()?;
-                            stack.push_back(a.clone());
-                            stack.push_back(b.clone());
-                            stack.push_back(a);
-                            stack.push_back(b);
+                        OP_2DUP => {
+                            // (x1 x2 -- x1 x2 x1 x2)
+                            if stack.size() < 2 {
+                                return set_error(ScriptError::InvalidStackOperation);
+                            }
+                            let vch1 = stack.top(-2)?.clone();
+                            let vch2 = stack.top(-1)?.clone();
+                            stack.push_back(vch1);
+                            stack.push_back(vch2);
                         }
-                        Opcode::OP_3DUP => {
+
+                        OP_3DUP => {
+                            // (x1 x2 x3 -- x1 x2 x3 x1 x2 x3)
                             if stack.size() < 3 {
-                                return Err(ScriptError::InvalidStackOperation);
+                                return set_error(ScriptError::InvalidStackOperation);
                             }
-
-                            let c = stack.pop()?;
-                            let b = stack.pop()?;
-                            let a = stack.pop()?;
-                            stack.push_back(a.clone());
-                            stack.push_back(b.clone());
-                            stack.push_back(c.clone());
-                            stack.push_back(a);
-                            stack.push_back(b);
-                            stack.push_back(c);
+                            let vch1 = stack.top(-3)?.clone();
+                            let vch2 = stack.top(-2)?.clone();
+                            let vch3 = stack.top(-1)?.clone();
+                            stack.push_back(vch1);
+                            stack.push_back(vch2);
+                            stack.push_back(vch3);
                         }
-                        Opcode::OP_2OVER => {
+
+                        OP_2OVER => {
+                            // (x1 x2 x3 x4 -- x1 x2 x3 x4 x1 x2)
                             if stack.size() < 4 {
-                                return Err(ScriptError::InvalidStackOperation);
+                                return set_error(ScriptError::InvalidStackOperation);
                             }
-
-                            let d = stack.pop()?;
-                            let c = stack.pop()?;
-                            let b = stack.pop()?;
-                            let a = stack.pop()?;
-                            stack.push_back(a.clone());
-                            stack.push_back(b.clone());
-                            stack.push_back(c);
-                            stack.push_back(d);
-                            stack.push_back(a);
-                            stack.push_back(b);
+                            let vch1 = stack.top(-4)?.clone();
+                            let vch2 = stack.top(-3)?.clone();
+                            stack.push_back(vch1);
+                            stack.push_back(vch2);
                         }
-                        Opcode::OP_2ROT => {
+
+                        OP_2ROT => {
+                            // (x1 x2 x3 x4 x5 x6 -- x3 x4 x5 x6 x1 x2)
                             if stack.size() < 6 {
-                                return Err(ScriptError::InvalidStackOperation);
+                                return set_error(ScriptError::InvalidStackOperation);
                             }
-
-                            let f = stack.pop()?;
-                            let e = stack.pop()?;
-                            let d = stack.pop()?;
-                            let c = stack.pop()?;
-                            let b = stack.pop()?;
-                            let a = stack.pop()?;
-                            stack.push_back(c);
-                            stack.push_back(d);
-                            stack.push_back(e);
-                            stack.push_back(f);
-                            stack.push_back(a);
-                            stack.push_back(b);
+                            let vch1 = stack.top(-6)?.clone();
+                            let vch2 = stack.top(-5)?.clone();
+                            stack.erase(stack.end() - 6, Some(stack.end() - 4));
+                            stack.push_back(vch1);
+                            stack.push_back(vch2);
                         }
-                        Opcode::OP_2SWAP => {
+
+                        OP_2SWAP => {
+                            // (x1 x2 x3 x4 -- x3 x4 x1 x2)
                             if stack.size() < 4 {
-                                return Err(ScriptError::InvalidStackOperation);
+                                return set_error(ScriptError::InvalidStackOperation);
                             }
-
-                            let d = stack.pop()?;
-                            let c = stack.pop()?;
-                            let b = stack.pop()?;
-                            let a = stack.pop()?;
-                            stack.push_back(c);
-                            stack.push_back(d);
-                            stack.push_back(a);
-                            stack.push_back(b);
+                            stack.swap(-4, -2)?;
+                            stack.swap(-3, -1)?;
                         }
-                        Opcode::OP_IFDUP => {
+
+                        OP_IFDUP => {
                             // (x - 0 | x x)
                             if stack.size() < 1 {
-                                return Err(ScriptError::InvalidStackOperation);
+                                return set_error(ScriptError::InvalidStackOperation);
                             }
                             let vch = stack.top(-1)?;
                             if cast_to_bool(vch) {
                                 stack.push_back(vch.to_vec())
                             }
                         }
-                        Opcode::OP_DEPTH => {
+
+                        OP_DEPTH => {
                             // -- stacksize
-                            let bn = ScriptNum(i64::try_from(stack.size()).unwrap());
+                            let bn = ScriptNum(
+                                i64::try_from(stack.size()).map_err(|_| ScriptError::StackSize)?);
                             stack.push_back(bn.getvch())
                         }
-                        Opcode::OP_DROP => {
-                            if stack.empty() {
-                                return Err(ScriptError::InvalidStackOperation);
-                            }
 
+                        OP_DROP => {
+                            // (x -- )
+                            if stack.size() < 1 {
+                                return set_error(ScriptError::InvalidStackOperation);
+                            }
                             stack.pop()?;
                         }
-                        Opcode::OP_DUP => {
-                            if stack.empty() {
-                                return Err(ScriptError::InvalidStackOperation);
+
+                        OP_DUP => {
+                            // (x -- x x)
+                            if stack.size() < 1 {
+                                return set_error(ScriptError::InvalidStackOperation);
                             }
 
                             let a = stack.pop()?;
                             stack.push_back(a.clone());
                             stack.push_back(a);
                         }
-                        Opcode::OP_NIP => {
-                            if stack.size() < 2 {
-                                return Err(ScriptError::InvalidStackOperation);
-                            }
 
-                            let b = stack.pop()?;
-                            stack.pop()?;
-                            stack.push_back(b);
-                        }
-                        Opcode::OP_OVER => {
+                        OP_NIP => {
+                            // (x1 x2 -- x2)
                             if stack.size() < 2 {
-                                return Err(ScriptError::InvalidStackOperation);
+                                return set_error(ScriptError::InvalidStackOperation);
                             }
-
-                            let b = stack.pop()?;
-                            let a = stack.pop()?;
-                            stack.push_back(a.clone());
-                            stack.push_back(b);
-                            stack.push_back(a);
+                            stack.erase(stack.end() - 2, None);
                         }
-                        Opcode::OP_PICK | Opcode::OP_ROLL => {
+
+                        OP_OVER => {
+                            // (x1 x2 -- x1 x2 x1)
+                            if stack.size() < 2 {
+                                return set_error(ScriptError::InvalidStackOperation);
+                            }
+                            let vch = stack.top(-2)?;
+                            stack.push_back(vch.clone());
+                        }
+
+                        OP_PICK
+                        | OP_ROLL => {
                             // (xn ... x2 x1 x0 n - xn ... x2 x1 x0 xn)
                             // (xn ... x2 x1 x0 n - ... x2 x1 x0 xn)
                             if stack.size() < 2 {
-                                return Err(ScriptError::InvalidStackOperation);
+                                return set_error(ScriptError::InvalidStackOperation);
                             }
-                            let n = ScriptNum::new(stack.top(-1)?, require_minimal, None).getint();
+                            let n = u16::try_from(ScriptNum::new(stack.top(-1)?, require_minimal, None).getint()).map_err(|_| ScriptError::InvalidStackOperation)?;
                             stack.pop()?;
-                            if n < 0 || n >= i32::try_from(stack.size()).unwrap() {
-                                return Err(ScriptError::InvalidStackOperation);
+                            if usize::from(n) >= stack.size() {
+                                return set_error(ScriptError::InvalidStackOperation);
                             }
-                            let vch: ValType = stack.top(isize::try_from(-n).unwrap() - 1)?.clone();
-                            if opcode == Opcode::OP_ROLL {
-                                stack.erase(
-                                    usize::try_from(
-                                        i64::try_from(stack.end()).unwrap() - i64::from(n) - 1,
-                                    )
-                                    .unwrap(),
-                                    None,
-                                );
+                            let vch: ValType = stack.top(-isize::try_from(n).map_err(|_| ScriptError::InvalidStackOperation)? - 1)?.clone();
+                            if op == OP_ROLL {
+                                stack.erase(stack.end() - usize::from(n) - 1, None);
                             }
                             stack.push_back(vch)
                         }
-                        Opcode::OP_ROT => {
+
+                        OP_ROT => {
                             // (x1 x2 x3 -- x2 x3 x1)
                             //  x2 x1 x3  after first swap
                             //  x2 x3 x1  after second swap
                             if stack.size() < 3 {
-                                return Err(ScriptError::InvalidStackOperation);
+                                return set_error(ScriptError::InvalidStackOperation);
                             }
                             stack.swap(-3, -2)?;
                             stack.swap(-2, -1)?;
                         }
-                        Opcode::OP_SWAP => {
-                            if stack.size() < 2 {
-                                return Err(ScriptError::InvalidStackOperation);
-                            }
 
-                            let b = stack.pop()?;
-                            let a = stack.pop()?;
-                            stack.push_back(b);
-                            stack.push_back(a);
-                        }
-                        Opcode::OP_TUCK => {
+                        OP_SWAP => {
+                            // (x1 x2 -- x2 x1)
                             if stack.size() < 2 {
-                                return Err(ScriptError::InvalidStackOperation);
+                                return set_error(ScriptError::InvalidStackOperation);
                             }
-
-                            let b = stack.pop()?;
-                            let a = stack.pop()?;
-                            stack.push_back(b.clone());
-                            stack.push_back(a);
-                            stack.push_back(b);
+                            stack.swap(-2, -1)?;
                         }
-                        Opcode::OP_SIZE => {
+
+                        OP_TUCK => {
+                            // (x1 x2 -- x2 x1 x2)
+                            if stack.size() < 2 {
+                                return set_error(ScriptError::InvalidStackOperation);
+                            }
+                            let vch = stack.top(-1)?.clone();
+                            stack.insert(stack.end() - 2, vch)
+                        }
+
+
+                        OP_SIZE => {
                             // (in -- in size)
                             if stack.size() < 1 {
-                                return Err(ScriptError::InvalidStackOperation);
+                                return set_error(ScriptError::InvalidStackOperation);
                             }
-                            let bn = ScriptNum(i64::try_from(stack.top(-1)?.len()).unwrap());
+                            let bn = ScriptNum(stack.top(-1)?.len().try_into().map_err(|_| ScriptError::PushSize)?);
                             stack.push_back(bn.getvch())
                         }
-                        Opcode::OP_EQUAL | Opcode::OP_EQUALVERIFY => {
-                            if stack.size() < 2 {
-                                return Err(ScriptError::InvalidStackOperation);
-                            }
 
-                            if let Ok(vch2) = stack.pop() {
-                                if let Ok(vch1) = stack.pop() {
-                                    let equal: bool = vch1 == vch2;
-                                    // OP_NOTEQUAL is disabled because it would be too easy to say
-                                    // something like n != 1 and have some wiseguy pass in 1 with extra
-                                    // zero bytes after it (numerically, 0x01 == 0x0001 == 0x000001)
-                                    //if (opcode == OP_NOTEQUAL)
-                                    //    fEqual = !fEqual;
-                                    stack.push_back(if equal {
-                                        vch_true.clone()
+
+                        //
+                        // Bitwise logic
+                        //
+                        OP_EQUAL
+                        | OP_EQUALVERIFY
+                        // | OP_NOTEQUAL // use OP_NUMNOTEQUAL
+                            => {
+                                // (x1 x2 - bool)
+                                if stack.size() < 2 {
+                                    return set_error(ScriptError::InvalidStackOperation);
+                                }
+                                let vch1 = stack.top(-2)?.clone();
+                                let vch2 = stack.top(-1)?.clone();
+                                let equal = vch1 == vch2;
+                                // OP_NOTEQUAL is disabled because it would be too easy to say
+                                // something like n != 1 and have some wiseguy pass in 1 with extra
+                                // zero bytes after it (numerically, 0x01 == 0x0001 == 0x000001)
+                                //if op == OP_NOTEQUAL {
+                                //    fEqual = !fEqual;
+                                //}
+                                stack.pop()?;
+                                stack.pop()?;
+                                stack.push_back(if equal { vch_true.clone() } else { vch_false.clone() });
+                                if op == OP_EQUALVERIFY
+                                {
+                                    if equal {
+                                        stack.pop()?;
                                     } else {
-                                        vch_false.clone()
-                                    });
-                                    if opcode == Opcode::OP_EQUALVERIFY {
-                                        if equal {
-                                            stack.pop()?;
-                                        } else {
-                                            return Err(ScriptError::EQUALVERIFY);
-                                        }
+                                        return set_error(ScriptError::EQUALVERIFY);
                                     }
                                 }
                             }
-                        }
-                        Opcode::OP_1ADD
-                        | Opcode::OP_1SUB
-                        | Opcode::OP_NEGATE
-                        | Opcode::OP_ABS
-                        | Opcode::OP_NOT
-                        | Opcode::OP_0NOTEQUAL => {
+
+
+                        //
+                        // Numeric
+                        //
+                        OP_1ADD
+                        | OP_1SUB
+                        | OP_NEGATE
+                        | OP_ABS
+                        | OP_NOT
+                        | OP_0NOTEQUAL => {
                             // (in -- out)
                             if stack.size() < 1 {
-                                return Err(ScriptError::InvalidStackOperation);
+                                return set_error(ScriptError::InvalidStackOperation);
                             }
                             let mut bn = ScriptNum::new(stack.top(-1)?, require_minimal, None);
-                            match opcode {
-                                Opcode::OP_1ADD => bn = bn + bn_one,
-                                Opcode::OP_1SUB => bn = bn - bn_one,
-                                Opcode::OP_NEGATE => bn = -bn,
-                                Opcode::OP_ABS => {
+                            match op {
+                                OP_1ADD => bn = bn + bn_one,
+                                OP_1SUB => bn = bn - bn_one,
+                                OP_NEGATE => bn = -bn,
+                                OP_ABS => {
                                     if bn < bn_zero {
                                         bn = -bn
                                     }
                                 }
-                                Opcode::OP_NOT => bn = ScriptNum((bn == bn_zero).into()),
-                                Opcode::OP_0NOTEQUAL => bn = ScriptNum((bn != bn_zero).into()),
+                                OP_NOT => bn = ScriptNum((bn == bn_zero).into()),
+                                OP_0NOTEQUAL => bn = ScriptNum((bn != bn_zero).into()),
                                 _ => panic!("invalid opcode"),
                             }
                             stack.pop()?;
                             stack.push_back(bn.getvch())
                         }
-                        Opcode::OP_ADD
-                        | Opcode::OP_SUB
-                        | Opcode::OP_BOOLAND
-                        | Opcode::OP_BOOLOR
-                        | Opcode::OP_NUMEQUAL
-                        | Opcode::OP_NUMEQUALVERIFY
-                        | Opcode::OP_NUMNOTEQUAL
-                        | Opcode::OP_LESSTHAN
-                        | Opcode::OP_GREATERTHAN
-                        | Opcode::OP_LESSTHANOREQUAL
-                        | Opcode::OP_GREATERTHANOREQUAL
-                        | Opcode::OP_MIN
-                        | Opcode::OP_MAX => {
+
+                        OP_ADD
+                        | OP_SUB
+                        | OP_BOOLAND
+                        | OP_BOOLOR
+                        | OP_NUMEQUAL
+                        | OP_NUMEQUALVERIFY
+                        | OP_NUMNOTEQUAL
+                        | OP_LESSTHAN
+                        | OP_GREATERTHAN
+                        | OP_LESSTHANOREQUAL
+                        | OP_GREATERTHANOREQUAL
+                        | OP_MIN
+                        | OP_MAX => {
                             // (x1 x2 -- out)
                             if stack.size() < 2 {
-                                return Err(ScriptError::InvalidStackOperation);
+                                return set_error(ScriptError::InvalidStackOperation);
                             }
                             let bn1 = ScriptNum::new(stack.top(-2)?, require_minimal, None);
                             let bn2 = ScriptNum::new(stack.top(-1)?, require_minimal, None);
                             let bn;
-                            match opcode {
-                                Opcode::OP_ADD => bn = bn1 + bn2,
+                            match op {
+                                OP_ADD =>
+                                    bn = bn1 + bn2,
 
-                                Opcode::OP_SUB => bn = bn1 - bn2,
+                                OP_SUB =>
+                                    bn = bn1 - bn2,
 
-                                Opcode::OP_BOOLAND => {
-                                    bn = ScriptNum((bn1 != bn_zero && bn2 != bn_zero).into())
-                                }
-                                Opcode::OP_BOOLOR => {
-                                    bn = ScriptNum((bn1 != bn_zero || bn2 != bn_zero).into())
-                                }
-                                Opcode::OP_NUMEQUAL => bn = ScriptNum((bn1 == bn2).into()),
-                                Opcode::OP_NUMEQUALVERIFY => bn = ScriptNum((bn1 == bn2).into()),
-                                Opcode::OP_NUMNOTEQUAL => bn = ScriptNum((bn1 != bn2).into()),
-                                Opcode::OP_LESSTHAN => bn = ScriptNum((bn1 < bn2).into()),
-                                Opcode::OP_GREATERTHAN => bn = ScriptNum((bn1 > bn2).into()),
-                                Opcode::OP_LESSTHANOREQUAL => bn = ScriptNum((bn1 <= bn2).into()),
-                                Opcode::OP_GREATERTHANOREQUAL => bn = ScriptNum((bn1 >= bn2).into()),
-                                Opcode::OP_MIN => bn = if bn1 < bn2 { bn1 } else { bn2 },
-                                Opcode::OP_MAX => bn = if bn1 > bn2 { bn1 } else { bn2 },
+                                OP_BOOLAND => bn = ScriptNum((bn1 != bn_zero && bn2 != bn_zero).into()),
+                                OP_BOOLOR => bn = ScriptNum((bn1 != bn_zero || bn2 != bn_zero).into()),
+                                OP_NUMEQUAL => bn = ScriptNum((bn1 == bn2).into()),
+                                OP_NUMEQUALVERIFY => bn = ScriptNum((bn1 == bn2).into()),
+                                OP_NUMNOTEQUAL => bn = ScriptNum((bn1 != bn2).into()),
+                                OP_LESSTHAN => bn = ScriptNum((bn1 < bn2).into()),
+                                OP_GREATERTHAN => bn = ScriptNum((bn1 > bn2).into()),
+                                OP_LESSTHANOREQUAL => bn = ScriptNum((bn1 <= bn2).into()),
+                                OP_GREATERTHANOREQUAL => bn = ScriptNum((bn1 >= bn2).into()),
+                                OP_MIN => bn = if bn1 < bn2 { bn1 } else { bn2 },
+                                OP_MAX => bn = if bn1 > bn2 { bn1 } else { bn2 },
                                 _ => panic!("invalid opcode"),
                             };
                             stack.pop()?;
                             stack.pop()?;
                             stack.push_back(bn.getvch());
 
-                            if opcode == Opcode::OP_NUMEQUALVERIFY {
+                            if op == OP_NUMEQUALVERIFY {
                                 if cast_to_bool(stack.top(-1)?) {
                                     stack.pop()?;
                                 } else {
-                                    return Err(ScriptError::NUMEQUALVERIFY);
+                                    return set_error(ScriptError::NUMEQUALVERIFY);
                                 }
                             }
                         }
-                        Opcode::OP_WITHIN => {
+
+                        OP_WITHIN => {
                             // (x min max -- out)
                             if stack.size() < 3 {
-                                return Err(ScriptError::InvalidStackOperation);
+                                return set_error(ScriptError::InvalidStackOperation);
                             }
                             let bn1 = ScriptNum::new(stack.top(-3)?, require_minimal, None);
                             let bn2 = ScriptNum::new(stack.top(-2)?, require_minimal, None);
@@ -980,37 +944,43 @@ pub fn eval_script(
                                 vch_false.clone()
                             })
                         }
-                        Opcode::OP_RIPEMD160
-                        | Opcode::OP_SHA1
-                        | Opcode::OP_SHA256
-                        | Opcode::OP_HASH160
-                        | Opcode::OP_HASH256 => {
-                            if let Ok(vch) = stack.pop() {
-                                stack.push_back(match opcode {
-                                    Opcode::OP_RIPEMD160 => Ripemd160::digest(vch).to_vec(),
-                                    Opcode::OP_SHA1 => {
-                                        let mut hasher = Sha1::new();
-                                        hasher.update(vch);
-                                        hasher.finalize().to_vec()
-                                    }
-                                    Opcode::OP_SHA256 => Sha256::digest(vch).to_vec(),
-                                    Opcode::OP_HASH160 => {
-                                        Ripemd160::digest(Sha256::digest(vch)).to_vec()
-                                    }
 
-                                    Opcode::OP_HASH256 => {
-                                        Sha256::digest(Sha256::digest(vch)).to_vec()
-                                    }
-                                    _ => panic!("Didn’t match a hashing opcode!"),
-                                });
-                            } else {
-                                return Err(ScriptError::InvalidStackOperation);
+                        //
+                        // Crypto
+                        //
+                        OP_RIPEMD160
+                        | OP_SHA1
+                        | OP_SHA256
+                        | OP_HASH160
+                        | OP_HASH256 => {
+                            // (in -- hash)
+                            if stack.size() < 1 {
+                                return set_error(ScriptError::InvalidStackOperation);
                             }
+                            let vch = stack.top(-1)?;
+                            let mut vch_hash = vec![];
+                            if op == OP_RIPEMD160 {
+                                vch_hash = Ripemd160::digest(vch).to_vec();
+                            } else if op == OP_SHA1 {
+                                let mut hasher = Sha1::new();
+                                hasher.update(vch);
+                                vch_hash = hasher.finalize().to_vec();
+                            } else if op == OP_SHA256 {
+                                vch_hash = Sha256::digest(vch).to_vec();
+                            } else if op == OP_HASH160 {
+                                vch_hash = Ripemd160::digest(Sha256::digest(vch)).to_vec();
+                            } else if op == OP_HASH256 {
+                                vch_hash = Sha256::digest(Sha256::digest(vch)).to_vec();
+                            }
+                            stack.pop()?;
+                            stack.push_back(vch_hash)
                         }
-                        Opcode::OP_CHECKSIG | Opcode::OP_CHECKSIGVERIFY => {
+
+                        OP_CHECKSIG
+                        | OP_CHECKSIGVERIFY => {
                             // (sig pubkey -- bool)
                             if stack.size() < 2 {
-                                return Err(ScriptError::InvalidStackOperation);
+                                return set_error(ScriptError::InvalidStackOperation);
                             }
 
                             let vch_sig = stack.top(-2)?.clone();
@@ -1030,56 +1000,59 @@ pub fn eval_script(
                             } else {
                                 vch_false.clone()
                             });
-                            if opcode == Opcode::OP_CHECKSIGVERIFY {
+                            if op == OP_CHECKSIGVERIFY {
                                 if success {
                                     stack.pop()?;
                                 } else {
-                                    return Err(ScriptError::CHECKSIGVERIFY);
+                                    return set_error(ScriptError::CHECKSIGVERIFY);
                                 }
                             }
                         }
-                        Opcode::OP_CHECKMULTISIG | Opcode::OP_CHECKMULTISIGVERIFY => {
+
+                        OP_CHECKMULTISIG
+                        | OP_CHECKMULTISIGVERIFY => {
                             // ([sig ...] num_of_signatures [pubkey ...] num_of_pubkeys -- bool)
 
-                            let mut i: i32 = 1;
-                            if (stack.size() as i32) < i {
-                                return Err(ScriptError::InvalidStackOperation);
+                            // NB: This is guaranteed u8-safe, because we are limited to 20 keys and
+                            //     20 signatures, plus a couple other fields. u8 also gives us total
+                            //     conversions to the other types we deal with here (`isize` and `i64`).
+                            let mut i: u8 = 1;
+                            if stack.size() < i.into() {
+                                return set_error(ScriptError::InvalidStackOperation);
                             };
 
-                            let mut keys_count: i32 =
-                                ScriptNum::new(stack.top(-i as isize)?, require_minimal, None)
-                                    .getint();
-                            if keys_count < 0 || keys_count > 20 {
-                                return Err(ScriptError::PubKeyCount);
+                            let mut keys_count =
+                                u8::try_from(ScriptNum::new(stack.top(-isize::from(i))?, require_minimal, None).getint()).map_err(|_| ScriptError::PubKeyCount)?;
+                            if keys_count > 20 {
+                                return set_error(ScriptError::PubKeyCount);
                             };
                             op_count += keys_count;
                             if op_count > 201 {
-                                return Err(ScriptError::OpCount);
+                                return set_error(ScriptError::OpCount);
                             };
                             i += 1;
                             let mut ikey = i;
                             i += keys_count;
-                            if (stack.size() as i32) < i {
-                                return Err(ScriptError::InvalidStackOperation);
+                            if stack.size() < i.into() {
+                                return set_error(ScriptError::InvalidStackOperation);
                             }
 
-                            let mut sigs_count: i32 =
-                                ScriptNum::new(stack.top(-i as isize)?, require_minimal, None)
-                                    .getint();
-                            if sigs_count < 0 || sigs_count > keys_count {
-                                return Err(ScriptError::SigCount);
+                            let mut sigs_count =
+                                u8::try_from(ScriptNum::new(stack.top(-isize::from(i))?, require_minimal, None).getint()).map_err(|_| ScriptError::SigCount)?;
+                            if sigs_count > keys_count {
+                                return set_error(ScriptError::SigCount);
                             };
                             i += 1;
                             let mut isig = i;
                             i += sigs_count;
-                            if (stack.size() as i32) < i {
-                                return Err(ScriptError::InvalidStackOperation);
+                            if stack.size() < i.into() {
+                                return set_error(ScriptError::InvalidStackOperation);
                             };
 
                             let mut success = true;
                             while success && sigs_count > 0 {
-                                let vch_sig: &ValType = stack.top(-isig as isize)?;
-                                let vch_pub_key: &ValType = stack.top(-ikey as isize)?;
+                                let vch_sig: &ValType = stack.top(-isize::from(isig))?;
+                                let vch_pub_key: &ValType = stack.top(-isize::from(ikey))?;
 
                                 // Note how this makes the exact order of pubkey/signature evaluation
                                 // distinguishable by CHECKMULTISIG NOT if the STRICTENC flag is set.
@@ -1124,12 +1097,10 @@ pub fn eval_script(
                             // so optionally verify it is exactly equal to zero prior
                             // to removing it from the stack.
                             if stack.size() < 1 {
-                                return Err(ScriptError::InvalidStackOperation);
+                                return set_error(ScriptError::InvalidStackOperation);
                             };
-                            if flags.contains(VerificationFlags::NullDummy)
-                                && stack.top(-1)?.len() != 0
-                            {
-                                return Err(ScriptError::SigNullDummy);
+                            if flags.contains(VerificationFlags::NullDummy) && stack.top(-1)?.len() != 0 {
+                                return set_error(ScriptError::SigNullDummy);
                             };
                             stack.pop()?;
 
@@ -1139,91 +1110,166 @@ pub fn eval_script(
                                 vch_false.clone()
                             });
 
-                            if opcode == Opcode::OP_CHECKMULTISIGVERIFY {
+                            if op == OP_CHECKMULTISIGVERIFY {
                                 if success {
                                     stack.pop()?;
                                 } else {
-                                    return Err(ScriptError::CHECKMULTISIGVERIFY);
+                                    return set_error(ScriptError::CHECKMULTISIGVERIFY);
                                 }
                             }
+                        }
+
+                        _ => {
+                            return set_error(ScriptError::BadOpcode);
                         }
                     }
                 }
             }
+            Opcode::OP_INVALIDOPCODE => return set_error(ScriptError::BadOpcode),
         }
 
-        // There's a limit to how many items can be added to the stack and
-        // alt stack. This limit is enforced upon finishing the execution of
-        // an opcode.
+        // Size limits
         if stack.size() + altstack.size() > 1000 {
-            return Err(ScriptError::StackSize);
+            return set_error(ScriptError::StackSize);
         }
     }
 
     if !vexec.empty() {
-        return Err(ScriptError::UnbalancedConditional);
-    };
+        return set_error(ScriptError::UnbalancedConditional);
+    }
 
-    Ok(true)
+    set_success(true)
+}
+
+/// All signature hashes are 32 bits, since they are necessarily produced by SHA256.
+pub const SIGHASH_SIZE: usize = 32;
+
+/// A function which is called to obtain the sighash.
+///    - script_code: the scriptCode being validated. Note that this not always
+///      matches script_sig, i.e. for P2SH.
+///    - hash_type: the hash type being used.
+///
+/// The `extern "C"` function that calls this doesn’t give much opportunity for rich failure
+/// reporting, but returning `None` indicates _some_ failure to produce the desired hash.
+///
+/// TODO: Can we get the “32” from somewhere rather than hardcoding it?
+pub type SighashCalculator<'a> = &'a dyn Fn(&[u8], HashType) -> Option<[u8; SIGHASH_SIZE]>;
+
+impl CallbackTransactionSignatureChecker<'_> {
+    pub fn verify_signature(vch_sig: &Vec<u8>, pubkey: &PubKey, sighash: &UInt256) -> bool {
+        pubkey.verify(sighash, vch_sig)
+    }
+}
+
+impl SignatureChecker for CallbackTransactionSignatureChecker<'_> {
+    fn check_sig(&self, vch_sig_in: &Vec<u8>, vch_pub_key: &Vec<u8>, script_code: &Script) -> bool {
+        let pubkey = PubKey(vch_pub_key.as_slice());
+        if !pubkey.is_valid() {
+            return false;
+        };
+
+        // Hash type is one byte tacked on to the end of the signature
+        let mut vch_sig = (*vch_sig_in).clone();
+        vch_sig
+            .pop()
+            .and_then(|hash_type| {
+                (self.sighash)(script_code.0, HashType::from_bits_retain(hash_type.into()))
+            })
+            .map(|sighash| Self::verify_signature(&vch_sig, &pubkey, &sighash))
+            .unwrap_or(false)
+    }
+
+    fn check_lock_time(&self, lock_time: &ScriptNum) -> bool {
+        // There are two times of nLockTime: lock-by-blockheight
+        // and lock-by-blocktime, distinguished by whether
+        // nLockTime < LOCKTIME_THRESHOLD.
+        //
+        // We want to compare apples to apples, so fail the script
+        // unless the type of nLockTime being tested is the same as
+        // the nLockTime in the transaction.
+        if !(*self.lock_time < LOCKTIME_THRESHOLD && *lock_time < LOCKTIME_THRESHOLD
+            || *self.lock_time >= LOCKTIME_THRESHOLD && *lock_time >= LOCKTIME_THRESHOLD)
+        {
+            false
+            // Now that we know we're comparing apples-to-apples, the
+            // comparison is a simple numeric one.
+        } else if lock_time > self.lock_time {
+            false
+            // Finally the nLockTime feature can be disabled and thus
+            // CHECKLOCKTIMEVERIFY bypassed if every txin has been
+            // finalized by setting nSequence to maxint. The
+            // transaction would be allowed into the blockchain, making
+            // the opcode ineffective.
+            //
+            // Testing if this vin is not final is sufficient to
+            // prevent this condition. Alternatively we could test all
+            // inputs, but testing just this input minimizes the data
+            // required to prove correct CHECKLOCKTIMEVERIFY execution.
+        } else if self.is_final {
+            false
+        } else {
+            true
+        }
+    }
 }
 
 pub fn verify_script(
     script_sig: &Script,
     script_pub_key: &Script,
     flags: VerificationFlags,
-    checker: &dyn BaseSignatureChecker,
+    checker: &dyn SignatureChecker,
 ) -> Result<(), ScriptError> {
     if flags.contains(VerificationFlags::SigPushOnly) && !script_sig.is_push_only() {
-        return Err(ScriptError::SigPushOnly);
+        return set_error(ScriptError::SigPushOnly);
     };
 
     let mut stack = Stack(Vec::new());
     let mut stack_copy = Stack(Vec::new());
     if !eval_script(&mut stack, script_sig, flags, checker)? {
-        // FIXME: `eval_script` returned `false`, but didn’t error.
-        return Err(ScriptError::UnknownError);
+        // serror is set
+        return set_error(ScriptError::UnknownError);
     };
     if flags.contains(VerificationFlags::P2SH) {
         stack_copy = stack.clone()
     };
     if !eval_script(&mut stack, script_pub_key, flags, checker)? {
-        // FIXME: `eval_script` returned `false`, but didn’t error.
-        return Err(ScriptError::UnknownError);
+        // serror is set
+        return set_error(ScriptError::UnknownError);
     };
     if stack.back().map_or(true, |b| cast_to_bool(&b) == false) {
-        return Err(ScriptError::EvalFalse);
+        return set_error(ScriptError::EvalFalse);
     };
 
     // Additional validation for spend-to-script-hash transactions:
     if flags.contains(VerificationFlags::P2SH) && script_pub_key.is_pay_to_script_hash() {
         // script_sig must be literals-only or validation fails
         if !script_sig.is_push_only() {
-            return Err(ScriptError::SigPushOnly);
+            return set_error(ScriptError::SigPushOnly);
         };
 
         // Restore stack.
-        stack = stack_copy;
+        swap(&mut stack, &mut stack_copy);
 
-        if let Ok(pub_key_serialized) = stack.pop() {
-            let pub_key_2 = Script(&pub_key_serialized.as_slice());
+        // stack cannot be empty here, because if it was the
+        // P2SH  HASH <> EQUAL  scriptPubKey would be evaluated with
+        // an empty stack and the EvalScript above would return false.
+        assert!(!stack.empty());
 
-            if !eval_script(&mut stack, &pub_key_2, flags, checker)? {
-                // FIXME: `eval_script` returned `false`, but didn’t error.
-                return Err(ScriptError::UnknownError);
-            };
-            if stack.back().map_or(true, |b| cast_to_bool(&b) == false) {
-                return Err(ScriptError::EvalFalse);
-            }
-        } else {
-            // stack cannot be empty here, because if it was the
-            // P2SH  HASH <> EQUAL  scriptPubKey would be evaluated with
-            // an empty stack and the EvalScript above would return false.
-            //
-            // NB: This is different behavior from the C++ implementation, which
-            //     panics here.
-            return Err(ScriptError::StackSize);
+        let pub_key_serialized = stack.back()?.clone();
+        let pub_key_2 = Script(&pub_key_serialized.as_slice());
+        stack.pop()?;
+
+        if !eval_script(&mut stack, &pub_key_2, flags, checker)? {
+            // serror is set
+            return set_error(ScriptError::UnknownError);
         }
-    };
+        if stack.empty() {
+            return set_error(ScriptError::EvalFalse);
+        }
+        if !cast_to_bool(stack.back()?) {
+            return set_error(ScriptError::EvalFalse);
+        }
+    }
 
     // The CLEANSTACK check is only performed after potential P2SH evaluation,
     // as the non-P2SH evaluation of a P2SH script will obviously not result in
@@ -1233,9 +1279,9 @@ pub fn verify_script(
         // would be possible, which is not a softfork (and P2SH should be one).
         assert!(flags.contains(VerificationFlags::P2SH));
         if stack.size() != 1 {
-            return Err(ScriptError::CleanStack);
+            return set_error(ScriptError::CleanStack);
         }
     };
 
-    Ok(())
+    set_success(())
 }
