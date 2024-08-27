@@ -46,6 +46,13 @@ impl PubKey<'_> {
     }
 
     pub fn check_low_s(vch_sig: &Vec<u8>) -> bool {
-        todo!()
+        /* Zcash, unlike Bitcoin, has always enforced strict DER signatures. */
+        if let Ok(sig) = ecdsa::Signature::from_der(vch_sig) {
+            let mut check = sig.clone();
+            check.normalize_s();
+            sig == check
+        } else {
+            false
+        }
     }
 }
