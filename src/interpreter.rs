@@ -1,12 +1,8 @@
 bitflags::bitflags! {
     /// The different SigHash types, as defined in <https://zips.z.cash/zip-0143>
     ///
-    /// TODO: There are three implementations of this (with three distinct primitive types):
-    ///     - u8 constants in librustzcash,
-    ///     - i32 (well, c_int) bitflags from the C++ constants here, and
-    ///     - u32 bitflags in zebra-chain.
-    ///
-    ///   Ideally we could unify on bitflags in librustzcash.
+    /// TODO: This is currently defined as `i32` to match the `c_int` constants in this package, but
+    ///       should use librustzcash’s `u8` constants once we’ve removed the C++.
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
     pub struct HashType: i32 {
         /// Sign all the outputs

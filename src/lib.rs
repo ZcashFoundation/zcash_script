@@ -39,7 +39,7 @@ extern "C" fn sighash(
     // `script_code` and `sighash_out` are valid buffers since they are always
     //  specified when the callback is called.
     unsafe {
-        let ctx = ctx as *const &SighashCallback;
+        let ctx = ctx as *const SighashCallback;
         let script_code_vec = std::slice::from_raw_parts(script_code, script_code_len as usize);
         if let Some(sighash) = (*ctx)(script_code_vec, HashType::from_bits_retain(hash_type)) {
             // Sanity check; must always be true.
@@ -52,7 +52,7 @@ extern "C" fn sighash(
 /// This steals a bit of the wrapper code from zebra_script, to provide the API that they want.
 impl ZcashScript for Cxx {
     fn verify_callback(
-        sighash_callback: &SighashCallback,
+        sighash_callback: SighashCallback,
         lock_time: i64,
         is_final: bool,
         script_pub_key: &[u8],
@@ -68,7 +68,7 @@ impl ZcashScript for Cxx {
         // SAFETY: The `script` fields are created from a valid Rust `slice`.
         let ret = unsafe {
             zcash_script_verify_callback(
-                (&sighash_callback as *const &SighashCallback) as *const c_void,
+                (&sighash_callback as *const SighashCallback) as *const c_void,
                 Some(sighash),
                 lock_time,
                 is_final,
