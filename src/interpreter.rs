@@ -18,9 +18,8 @@ bitflags::bitflags! {
 
 bitflags::bitflags! {
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+    /// Script verification flags
     pub struct VerificationFlags: u32 {
-        const None = 0;
-
         /// Evaluate P2SH subscripts (softfork safe, BIP16).
         const P2SH = 1 << 0;
 

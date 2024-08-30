@@ -19,11 +19,11 @@ pub enum Error {
 ///      matches script_sig, i.e. for P2SH.
 ///    - hash_type: the hash type being used.
 ///
-/// The underlying C++ callback doesn’t give much opportunity for rich failure reporting, but
-/// returning `None` indicates _some_ failure to produce the desired hash.
+/// The `extern "C"` function that calls this doesn’t give much opportunity for rich failure
+/// reporting, but returning `None` indicates _some_ failure to produce the desired hash.
 ///
 /// TODO: Can we get the “32” from somewhere rather than hardcoding it?
-pub type SighashCallback<'a> = &'a dyn Fn(&[u8], HashType) -> Option<[u8; 32]>;
+pub type SighashCalculator<'a> = &'a dyn Fn(&[u8], HashType) -> Option<[u8; 32]>;
 
 /// The external API of zcash_script. This is defined to make it possible to compare the C++ and
 /// Rust implementations.
@@ -45,7 +45,7 @@ pub trait ZcashScript {
     ///
     ///  Note that script verification failure is indicated by `Err(Error::Ok)`.
     fn verify_callback(
-        sighash_callback: SighashCallback,
+        sighash: SighashCalculator,
         n_lock_time: i64,
         is_final: bool,
         script_pub_key: &[u8],

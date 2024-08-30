@@ -1,3 +1,5 @@
+//! Zcash transparent script implementations.
+
 #![doc(html_logo_url = "https://www.zfnd.org/images/zebra-icon.png")]
 #![doc(html_root_url = "https://docs.rs/zcash_script/0.3.0")]
 #![allow(unsafe_code)]
@@ -12,6 +14,7 @@ pub use zcash_script::*;
 
 use std::os::raw::{c_int, c_uint, c_void};
 
+/// A tag to indicate that the C++ implementation of zcash_script should be used.
 pub enum Cxx {}
 
 impl From<zcash_script_error_t> for Error {
@@ -26,7 +29,7 @@ impl From<zcash_script_error_t> for Error {
 }
 
 /// The sighash callback to use with zcash_script.
-extern "C" fn sighash(
+extern "C" fn sighash_callback(
     sighash_out: *mut u8,
     sighash_out_len: c_uint,
     ctx: *const c_void,
@@ -34,25 +37,26 @@ extern "C" fn sighash(
     script_code_len: c_uint,
     hash_type: c_int,
 ) {
-    // SAFETY: `ctx` is a valid SighashCallbackt because it is always passed to
-    // `verify_callback` which simply forwards it to the callback.
-    // `script_code` and `sighash_out` are valid buffers since they are always
-    //  specified when the callback is called.
-    unsafe {
-        let ctx = ctx as *const SighashCallback;
-        let script_code_vec = std::slice::from_raw_parts(script_code, script_code_len as usize);
-        if let Some(sighash) = (*ctx)(script_code_vec, HashType::from_bits_retain(hash_type)) {
-            // Sanity check; must always be true.
-            assert_eq!(sighash_out_len, sighash.len() as c_uint);
-            std::ptr::copy_nonoverlapping(sighash.as_ptr(), sighash_out, sighash.len());
-        }
+    let ctx = ctx as *const SighashCalculator;
+    // SAFETY: `script_code` is created from a Rust slice in `verify_callback`, passed through the
+    // C++ code, eventually to `CallbackTransactionSignatureChecker::CheckSig`, which calls this
+    // function.
+    let script_code_vec =
+        unsafe { std::slice::from_raw_parts(script_code, script_code_len as usize) };
+    // SAFETY: `ctx` is a valid `SighashCalculator` passed to `verify_callback` which forwards it to
+    // the `CallbackTransactionSignatureChecker`.
+    if let Some(sighash) = unsafe { *ctx }(script_code_vec, HashType::from_bits_retain(hash_type)) {
+        assert_eq!(sighash_out_len, sighash.len() as c_uint);
+        // SAFETY: `sighash_out` is a valid buffer created in
+        // `CallbackTransactionSignatureChecker::CheckSig`.
+        unsafe { std::ptr::copy_nonoverlapping(sighash.as_ptr(), sighash_out, sighash.len()) };
     }
 }
 
 /// This steals a bit of the wrapper code from zebra_script, to provide the API that they want.
 impl ZcashScript for Cxx {
     fn verify_callback(
-        sighash_callback: SighashCallback,
+        sighash: SighashCalculator,
         lock_time: i64,
         is_final: bool,
         script_pub_key: &[u8],
@@ -61,22 +65,18 @@ impl ZcashScript for Cxx {
     ) -> Result<(), Error> {
         let mut err = 0;
 
-        let flags = flags.bits();
-
-        let is_final = if is_final { 1 } else { 0 };
-
         // SAFETY: The `script` fields are created from a valid Rust `slice`.
         let ret = unsafe {
             zcash_script_verify_callback(
-                (&sighash_callback as *const SighashCallback) as *const c_void,
-                Some(sighash),
+                (&sighash as *const SighashCalculator) as *const c_void,
+                Some(sighash_callback),
                 lock_time,
-                is_final,
+                if is_final { 1 } else { 0 },
                 script_pub_key.as_ptr(),
                 script_pub_key.len() as u32,
                 signature_script.as_ptr(),
                 signature_script.len() as u32,
-                flags,
+                flags.bits(),
                 &mut err,
             )
         };
