@@ -1,3 +1,5 @@
+use std::num::TryFromIntError;
+
 use super::interpreter::*;
 
 /// This maps to `zcash_script_error_t`, but most of those cases aren’t used any more. This only
@@ -10,6 +12,8 @@ pub enum Error {
     Ok = 0,
     /// An exception was caught.
     VerifyScript = 7,
+    /// The script size can’t fit in a `u32`, as required by the C++ code.
+    InvalidScriptSize(TryFromIntError),
     /// Some other failure value recovered from C++.
     Unknown(u32),
 }
@@ -55,5 +59,5 @@ pub trait ZcashScript {
 
     /// Returns the number of transparent signature operations in the input or
     /// output script pointed to by script.
-    fn legacy_sigop_count_script(script: &[u8]) -> u32;
+    fn legacy_sigop_count_script(script: &[u8]) -> Result<u32, Error>;
 }

@@ -37,16 +37,18 @@ extern "C" fn sighash_callback(
     script_code_len: c_uint,
     hash_type: c_int,
 ) {
-    let ctx = ctx as *const SighashCalculator;
+    let checked_script_code_len = usize::try_from(script_code_len)
+        .expect("This was converted from a `usize` in the first place");
     // SAFETY: `script_code` is created from a Rust slice in `verify_callback`, passed through the
     // C++ code, eventually to `CallbackTransactionSignatureChecker::CheckSig`, which calls this
     // function.
     let script_code_vec =
-        unsafe { std::slice::from_raw_parts(script_code, script_code_len as usize) };
+        unsafe { std::slice::from_raw_parts(script_code, checked_script_code_len) };
+    let ctx = ctx as *const SighashCalculator;
     // SAFETY: `ctx` is a valid `SighashCalculator` passed to `verify_callback` which forwards it to
     // the `CallbackTransactionSignatureChecker`.
     if let Some(sighash) = unsafe { *ctx }(script_code_vec, HashType::from_bits_retain(hash_type)) {
-        assert_eq!(sighash_out_len, sighash.len() as c_uint);
+        assert_eq!(sighash_out_len, sighash.len().try_into().unwrap());
         // SAFETY: `sighash_out` is a valid buffer created in
         // `CallbackTransactionSignatureChecker::CheckSig`.
         unsafe { std::ptr::copy_nonoverlapping(sighash.as_ptr(), sighash_out, sighash.len()) };
@@ -73,9 +75,15 @@ impl ZcashScript for Cxx {
                 lock_time,
                 if is_final { 1 } else { 0 },
                 script_pub_key.as_ptr(),
-                script_pub_key.len() as u32,
+                script_pub_key
+                    .len()
+                    .try_into()
+                    .map_err(Error::InvalidScriptSize)?,
                 signature_script.as_ptr(),
-                signature_script.len() as u32,
+                signature_script
+                    .len()
+                    .try_into()
+                    .map_err(Error::InvalidScriptSize)?,
                 flags.bits(),
                 &mut err,
             )
@@ -90,8 +98,14 @@ impl ZcashScript for Cxx {
 
     /// Returns the number of transparent signature operations in the
     /// transparent inputs and outputs of this transaction.
-    fn legacy_sigop_count_script(script: &[u8]) -> u32 {
-        unsafe { zcash_script_legacy_sigop_count_script(script.as_ptr(), script.len() as u32) }
+    fn legacy_sigop_count_script(script: &[u8]) -> Result<u32, Error> {
+        script
+            .len()
+            .try_into()
+            .map_err(Error::InvalidScriptSize)
+            .map(|script_len| unsafe {
+                zcash_script_legacy_sigop_count_script(script.as_ptr(), script_len)
+            })
     }
 }
 
