@@ -18,6 +18,9 @@ pub enum Error {
     Unknown(u32),
 }
 
+/// All signature hashes are 32 bits, since they are necessarily produced by SHA256.
+pub const SIGHASH_SIZE: usize = 32;
+
 /// A function which is called to obtain the sighash.
 ///    - script_code: the scriptCode being validated. Note that this not always
 ///      matches script_sig, i.e. for P2SH.
@@ -27,7 +30,7 @@ pub enum Error {
 /// reporting, but returning `None` indicates _some_ failure to produce the desired hash.
 ///
 /// TODO: Can we get the “32” from somewhere rather than hardcoding it?
-pub type SighashCalculator<'a> = &'a dyn Fn(&[u8], HashType) -> Option<[u8; 32]>;
+pub type SighashCalculator<'a> = &'a dyn Fn(&[u8], HashType) -> Option<[u8; SIGHASH_SIZE]>;
 
 /// The external API of zcash_script. This is defined to make it possible to compare the C++ and
 /// Rust implementations.
@@ -45,7 +48,6 @@ pub trait ZcashScript {
     ///  - script_pub_key: the scriptPubKey of the output being spent.
     ///  - script_sig: the scriptSig of the input being validated.
     ///  - flags: the script verification flags to use.
-    ///  - err: if not NULL, err will contain an error/success code for the operation.
     ///
     ///  Note that script verification failure is indicated by `Err(Error::Ok)`.
     fn verify_callback(
