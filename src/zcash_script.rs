@@ -15,7 +15,10 @@ pub enum Error {
     /// The script size can’t fit in a `u32`, as required by the C++ code.
     InvalidScriptSize(TryFromIntError),
     /// Some other failure value recovered from C++.
-    Unknown(u32),
+    ///
+    /// __NB__: Linux uses `u32` for the underlying C++ enum while Windows uses `i32`, so `i64` can
+    ///         hold either.
+    Unknown(i64),
 }
 
 /// All signature hashes are 32 bits, since they are necessarily produced by SHA256.

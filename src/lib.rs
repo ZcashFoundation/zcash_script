@@ -23,7 +23,7 @@ impl From<zcash_script_error_t> for Error {
         match err_code {
             zcash_script_error_t_zcash_script_ERR_OK => Error::Ok,
             zcash_script_error_t_zcash_script_ERR_VERIFY_SCRIPT => Error::VerifyScript,
-            unknown => Error::Unknown(unknown),
+            unknown => Error::Unknown(unknown.into()),
         }
     }
 }
