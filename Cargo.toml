@@ -66,6 +66,7 @@ bitflags = "2.5"
 log = "0.4"
 ripemd = "0.1"
 secp256k1 = "0.29"
+sha-1 = "0.10"
 sha2 = "0.10"
 
 [build-dependencies]
