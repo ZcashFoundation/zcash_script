@@ -41,6 +41,8 @@ bool CPubKey::Verify(const uint256 &hash, const std::vector<unsigned char>& vchS
     return secp256k1_ecdsa_verify(secp256k1_context_static, &sig, hash.begin(), &pubkey);
 }
 
+#if 0
+
 bool CPubKey::RecoverCompact(const uint256 &hash, const std::vector<unsigned char>& vchSig) {
     if (vchSig.size() != COMPACT_SIGNATURE_SIZE)
         return false;
@@ -138,6 +140,7 @@ bool CExtPubKey::Derive(CExtPubKey &out, unsigned int _nChild) const {
     out.nChild = _nChild;
     return pubkey.Derive(out.pubkey, out.chaincode, _nChild, chaincode);
 }
+#endif
 
 /* static */ bool CPubKey::CheckLowS(const std::vector<unsigned char>& vchSig) {
     secp256k1_ecdsa_signature sig;
@@ -149,6 +152,7 @@ bool CExtPubKey::Derive(CExtPubKey &out, unsigned int _nChild) const {
     return (!secp256k1_ecdsa_signature_normalize(secp256k1_context_static, NULL, &sig));
 }
 
+#if 0
 /* static */ std::optional<CChainablePubKey> CChainablePubKey::FromParts(ChainCode chaincode, CPubKey pubkey) {
     if (pubkey.IsCompressed()) {
         return CChainablePubKey(chaincode, pubkey);
@@ -156,3 +160,5 @@ bool CExtPubKey::Derive(CExtPubKey &out, unsigned int _nChild) const {
         return std::nullopt;
     }
 }
+
+#endif

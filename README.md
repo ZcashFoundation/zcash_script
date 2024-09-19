@@ -17,18 +17,12 @@ Rust bindings to the ECC's `zcash_script` C++ library.
 
 This crate works by manually including the `zcash_script` .h and .cpp files,
 using `bindgen` to generate Rust bindings, and compiling everything together
-into a single library. Due to the way the `zcash_script` is written we unfortunately need
-to include a lot of other stuff e.g. the orchard library.
+into a single library.
 
 ### Updating this crate
 
 1. Create a new branch batch so all the release commits can be made into a PR
 2. Update `depend/zcash` with the latest tagged version of `zcashd`, using the instructions below
-3. Update `Cargo.toml` versions to match the versions used by the latest tagged version of `zcashd`, and its dependencies
-4. For dependencies that are shared with Zebra (but not `zcashd`), match the latest version in Zebra's [Cargo.lock](https://github.com/ZcashFoundation/zebra/blob/main/Cargo.lock):
-    - use `cargo tree --invert <crate>` to see if the crate is from `zcash_script` or another dependency
-    - see the list in [Cargo.toml](https://github.com/ZcashFoundation/zcash_script/blob/master/Cargo.toml#L69)
-5. For new dependencies with a leading zero in their version (`0.x.y`), use a `>=` dependency [to make them automatically upgrade to match Zebra's dependencies](https://doc.rust-lang.org/cargo/reference/resolver.html#semver-compatibility)
 6. Test if everything works by running `cargo test`. If you get any compiling errors, see
    the troubleshooting section below.
 7. Check all open PRs to see if they can be merged before the release
@@ -37,50 +31,23 @@ to include a lot of other stuff e.g. the orchard library.
 
 ### Updating `depend/zcash`
 
-We keep a copy of the zcash source in `depend/zcash` with the help of `git subtree`.
-It has one single difference that must be enforced every time it's updated: the root
-`Cargo.toml` must be deleted, since otherwise cargo will ignore the entire folder
-when publishing the crate (see https://github.com/rust-lang/cargo/issues/8597).
+We keep a copy of the zcash source in `depend/zcash`, but it has diverged
+in 0.2.0 release (based on zcashd 5.9.0) with the following changes:
 
-However, `git subtree` requires merge commits in order to make further updates
-work correctly. Since we don't allow those in our repository, we start over
-every time, basically using it as a glorified `git clone`. This issue is being
-tracked in https://github.com/ZcashFoundation/zcash_script/issues/35.
+- The root `Cargo.toml` was be deleted, since otherwise cargo will ignore the
+  entire folder when publishing the crate (see
+  https://github.com/rust-lang/cargo/issues/8597).
+- New classes were introduced in interpreter.h/.cpp to support the callback API.
+- Some #if guards were added to remove code that is not needed for script
+  verification.
 
-We also need to patch the zcash source to enable Windows compatibility. This
-is done by applying a patch file as described below. If the patch application
-fails, check the patch file for reference on what needs to be changed (and
-update the patch file).
+The simplified API now mostly require files that are truly required for script
+verification. These are unlikely to change so this crate no longers need to keep
+the zcashd source in sync, unless there was some bug fix in script verification.
 
-If you need to update the zcash source, run:
-
-```console
-git rm -r depend/zcash
-(commit changes)
-git subtree add -P depend/zcash https://github.com/zcash/zcash.git <ref> --squash
-git rm depend/zcash/Cargo.toml
-git apply zcash.patch
-(commit changes)
-```
-
-where `<ref>` is a reference to a branch, tag or commit (it should be a tag when preparing
-a release, but it will be likely a branch or commit when testing).
-
-### Updating `Cargo.toml`
-
-Note that `zcash_script` (the C++ library/folder inside `zcash`) uses some Rust
-FFI functions from `zcash`; and it also links to `librustzcash` which is written in Rust.
-Therefore, when updating `zcash_script` (this crate), we need to make sure that shared dependencies
-between all of those are the same versions (and are patched to the same revisions, if applicable).
-To do that, check for versions in:
-
-- `zcash/Cargo.toml` in the revision pointed to by this crate (also check for patches)
-- `librustzcash/Cargo.toml` in the revision pointed to by `zcash` (also check for patches)
-- `librustzcash/<crate>/Cargo.toml` in the revision pointed to by `zcash`
-- `orchard/Cargo.toml` in the revision pointed to by `zcash` (also check for patches)
-
-To double-check, you can use `cargo tree` or `cargo deny check bans` on Zebra,
-once the `zcash_script`, `librustzcash`, and `orchard` versions have all been updated.
+If updating zcashd source is required, you will need to manually update the
+`depend/zcash` source tree and reapply changes that have been made to it. If
+you do that, please document the process in detail in this file.
 
 ### Publishing New Releases
 

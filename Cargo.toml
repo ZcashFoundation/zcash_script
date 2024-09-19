@@ -1,6 +1,6 @@
 [package]
 name = "zcash_script"
-version = "0.1.16"
+version = "0.2.0"
 authors = ["Tamas Blummer <tamas.blummer@gmail.com>", "Zcash Foundation <zebra@zfnd.org>"]
 license = "Apache-2.0"
 readme = "README.md"
@@ -16,29 +16,40 @@ include = [
     "build.rs",
     "src/*.rs",
     "/depend/check_uint128_t.c",
-    "/depend/zcash/src/script/zcash_script.h",
-    "/depend/zcash/src/script/zcash_script.cpp",
-    "/depend/zcash/src/utilstrencodings.cpp",
-    "/depend/zcash/src/uint256.cpp",
-    "/depend/zcash/src/pubkey.cpp",
-    "/depend/zcash/src/hash.cpp",
-    "/depend/zcash/src/primitives/transaction.cpp",
+    "/depend/zcash/src/amount.cpp",
+    "/depend/zcash/src/amount.h",
+    "/depend/zcash/src/compat/byteswap.h",
+    "/depend/zcash/src/compat/endian.h",
+    "/depend/zcash/src/consensus/consensus.h",
+    "/depend/zcash/src/crypto/common.h",
     "/depend/zcash/src/crypto/ripemd160.cpp",
+    "/depend/zcash/src/crypto/ripemd160.h",
     "/depend/zcash/src/crypto/sha1.cpp",
+    "/depend/zcash/src/crypto/sha1.h",
     "/depend/zcash/src/crypto/sha256.cpp",
-    "/depend/zcash/src/crypto/sha512.cpp",
-    "/depend/zcash/src/crypto/hmac_sha512.cpp",
+    "/depend/zcash/src/crypto/sha256.h",
+    "/depend/zcash/src/hash.h",
+    "/depend/zcash/src/key_constants.h",
+    "/depend/zcash/src/prevector.h",
+    "/depend/zcash/src/primitives/transaction.h",
+    "/depend/zcash/src/pubkey.cpp",
+    "/depend/zcash/src/pubkey.h",
     "/depend/zcash/src/script/interpreter.cpp",
-    "/depend/zcash/src/script/script.cpp",
+    "/depend/zcash/src/script/interpreter.h",
     "/depend/zcash/src/script/script_error.cpp",
-    "/depend/zcash/src/",
-    "/depend/zcash/src/rust/include/",
-    "/depend/zcash/src/secp256k1/include/",
+    "/depend/zcash/src/script/script_error.h",
+    "/depend/zcash/src/script/script.cpp",
+    "/depend/zcash/src/script/script.h",
+    "/depend/zcash/src/script/zcash_script.cpp",
+    "/depend/zcash/src/script/zcash_script.h",
     "/depend/zcash/src/secp256k1/",
-    "/depend/zcash/src/support/cleanse.cpp",
-    "/depend/zcash/src/support/cleanse.h",
-    "/depend/zcash/src/rust/gen/",
-    "/depend/expected/include/",
+    "/depend/zcash/src/serialize.h",
+    "/depend/zcash/src/tinyformat.h",
+    "/depend/zcash/src/uint256.cpp",
+    "/depend/zcash/src/uint256.h",
+    "/depend/zcash/src/util/strencodings.cpp",
+    "/depend/zcash/src/util/strencodings.h",
+    "/depend/zcash/src/version.h",
 ]
 
 [lib]
@@ -50,35 +61,7 @@ external-secp = []
 rust-interpreter = []
 
 [dependencies]
-# All these dependencies must match the versions in:
-# https://github.com/zcash/zcash/blob/<git subtree version>/Cargo.toml
-bellman = "0.14"
-blake2b_simd = "1"
-blake2s_simd = "1"
-bls12_381 = "0.8"
-byteorder = "1"
-crossbeam-channel = "0.5"
-cxx = { version = "=1.0.113", features = ["c++17"] }
-group = "0.13"
-incrementalmerkletree = "0.5"
-jubjub = "0.10"
-libc = "0.2"
-memuse = "0.2"
-metrics = "0.21"
-orchard = "0.7"
-rand_core = "0.6"
-rayon = "1.5"
-redjubjub = "0.7"
-sapling = { package = "sapling-crypto", version = "0.1", features = ["temporary-zcashd"] }
-subtle = "2.2"
-tracing = "0.1"
-zcash_address = "0.3"
-zcash_encoding = "0.2"
-zcash_note_encryption = "0.4"
-zcash_primitives = { version = "=0.14.0", features = ["temporary-zcashd", "transparent-inputs"] }
-zcash_proofs = { version = "=0.14.0", features = ["directories"] }
-bridgetree = "0.4"
-rand = "0.8"
+bitflags = "2.5"
 
 [build-dependencies]
 # The `bindgen` dependency should automatically upgrade to match the version used by zebra-state's `rocksdb` dependency in:
@@ -91,9 +74,6 @@ bindgen = ">= 0.64.0"
 # so they are configured to automatically upgrade to match Zebra.
 # But we try to use the latest versions here, to catch any bugs in `zcash_script`'s CI.
 cc = { version = "1.0.94", features = ["parallel"] }
-# Treat minor versions with a zero major version as compatible (cargo doesn't by default).
-cxx-gen = ">= 0.7.107"
-syn = { version = "1.0.109", features = ["full", "printing"] }
 
 [dev-dependencies]
 # These dependencies are shared with a lot of other Zebra dependencies.
@@ -102,8 +82,6 @@ syn = { version = "1.0.109", features = ["full", "printing"] }
 # Treat minor versions with a zero major version as compatible (cargo doesn't by default).
 hex = ">= 0.4.3"
 lazy_static = "1.4.0"
-incrementalmerkletree = { version = "0.5", features = ["test-dependencies"] }
-zcash_primitives = { version = "=0.14.0", features = ["temporary-zcashd", "transparent-inputs", "test-dependencies"] }
 
 [[package.metadata.release.pre-release-replacements]]
 file = "CHANGELOG.md"

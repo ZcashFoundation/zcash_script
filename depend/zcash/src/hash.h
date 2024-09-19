@@ -16,10 +16,6 @@
 
 #include <vector>
 
-#include <rust/blake2b.h>
-#include <rust/constants.h>
-#include <rust/cxx.h>
-
 typedef uint256 ChainCode;
 
 /** A hasher class for Bitcoin's 256-bit hash (double SHA-256). */
@@ -150,50 +146,6 @@ public:
 
     template<typename T>
     CHashWriter& operator<<(const T& obj) {
-        // Serialize to this stream
-        ::Serialize(*this, obj);
-        return (*this);
-    }
-};
-
-
-/** A writer stream (for serialization) that computes a 256-bit BLAKE2b hash. */
-class CBLAKE2bWriter
-{
-private:
-    rust::Box<blake2b::State> state;
-
-public:
-    int nType;
-    int nVersion;
-
-    CBLAKE2bWriter(int nTypeIn, int nVersionIn, const unsigned char* personal) :
-        nType(nTypeIn),
-        nVersion(nVersionIn),
-        state(blake2b::init(32, {personal, blake2b::PERSONALBYTES})) {}
-
-    int GetType() const { return nType; }
-    int GetVersion() const { return nVersion; }
-
-    void write_u8(const unsigned char* pch, size_t size)
-    {
-        state->update({pch, size});
-    }
-
-    CBLAKE2bWriter& write(const char *pch, size_t size) {
-        state->update({(const unsigned char*)pch, size});
-        return (*this);
-    }
-
-    // invalidates the object
-    uint256 GetHash() {
-        uint256 result;
-        state->finalize({result.begin(), result.size()});
-        return result;
-    }
-
-    template<typename T>
-    CBLAKE2bWriter& operator<<(const T& obj) {
         // Serialize to this stream
         ::Serialize(*this, obj);
         return (*this);

@@ -1,281 +1,204 @@
-//! Rust bindings for Zcash transparent scripts.
+//! Zcash transparent script implementations.
 
 #![doc(html_logo_url = "https://www.zfnd.org/images/zebra-icon.png")]
-#![doc(html_root_url = "https://docs.rs/zcash_script/0.1.16")]
-#![allow(missing_docs)]
-#![allow(clippy::needless_lifetimes)]
-#![allow(non_upper_case_globals)]
-#![allow(non_camel_case_types)]
-#![allow(non_snake_case)]
+#![doc(html_root_url = "https://docs.rs/zcash_script/0.3.0")]
 #![allow(unsafe_code)]
-#![allow(unused_imports)]
-#![allow(clippy::unwrap_or_default)]
 
-// Use the generated C++ bindings
-include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+mod cxx;
+pub use cxx::*;
 
-// Include the items from depend/zcash/src/rust/src/rustzcash.rs (librustzcash/lib.rs)
-// that we need
+mod interpreter;
+pub use interpreter::{HashType, VerificationFlags};
+mod zcash_script;
+pub use zcash_script::*;
 
-use ::sapling::circuit::{
-    OutputParameters, OutputVerifyingKey, SpendParameters, SpendVerifyingKey,
-};
+use std::os::raw::{c_int, c_uint, c_void};
 
-/// The code that uses this constant is not called by zcash_script.
-static mut SAPLING_SPEND_VK: Option<SpendVerifyingKey> = None;
-/// The code that uses this constant is not called by zcash_script.
-static mut SAPLING_OUTPUT_VK: Option<OutputVerifyingKey> = None;
-/// The code that uses this constant is not called by zcash_script.
-static mut SAPLING_SPEND_PARAMS: Option<SpendParameters> = None;
-/// The code that uses this constant is not called by zcash_script.
-static mut SAPLING_OUTPUT_PARAMS: Option<OutputParameters> = None;
+/// A tag to indicate that the C++ implementation of zcash_script should be used.
+pub enum Cxx {}
 
-/// The code that uses this constant is not called by zcash_script.
-static mut ORCHARD_PK: Option<orchard::circuit::ProvingKey> = None;
-/// The code that uses this constant is not called by zcash_script.
-static mut ORCHARD_VK: Option<orchard::circuit::VerifyingKey> = None;
-
-/// Converts CtOption<t> into Option<T>
-fn de_ct<T>(ct: subtle::CtOption<T>) -> Option<T> {
-    if ct.is_some().into() {
-        Some(ct.unwrap())
-    } else {
-        None
+impl From<zcash_script_error_t> for Error {
+    #[allow(non_upper_case_globals)]
+    fn from(err_code: zcash_script_error_t) -> Error {
+        match err_code {
+            zcash_script_error_t_zcash_script_ERR_OK => Error::Ok,
+            zcash_script_error_t_zcash_script_ERR_VERIFY_SCRIPT => Error::VerifyScript,
+            unknown => Error::Unknown(unknown.into()),
+        }
     }
 }
 
-/// The size of a Groth16 Sapling proof.
-const GROTH_PROOF_SIZE: usize = 48 // π_A
-    + 96 // π_B
-    + 48; // π_C
+/// The sighash callback to use with zcash_script.
+extern "C" fn sighash_callback(
+    sighash_out: *mut u8,
+    sighash_out_len: c_uint,
+    ctx: *const c_void,
+    script_code: *const u8,
+    script_code_len: c_uint,
+    hash_type: c_int,
+) {
+    let checked_script_code_len = usize::try_from(script_code_len)
+        .expect("This was converted from a `usize` in the first place");
+    // SAFETY: `script_code` is created from a Rust slice in `verify_callback`, passed through the
+    // C++ code, eventually to `CallbackTransactionSignatureChecker::CheckSig`, which calls this
+    // function.
+    let script_code_vec =
+        unsafe { std::slice::from_raw_parts(script_code, checked_script_code_len) };
+    let ctx = ctx as *const SighashCalculator;
+    // SAFETY: `ctx` is a valid `SighashCalculator` passed to `verify_callback` which forwards it to
+    // the `CallbackTransactionSignatureChecker`.
+    if let Some(sighash) = unsafe { *ctx }(script_code_vec, HashType::from_bits_retain(hash_type)) {
+        assert_eq!(sighash_out_len, sighash.len().try_into().unwrap());
+        // SAFETY: `sighash_out` is a valid buffer created in
+        // `CallbackTransactionSignatureChecker::CheckSig`.
+        unsafe { std::ptr::copy_nonoverlapping(sighash.as_ptr(), sighash_out, sighash.len()) };
+    }
+}
 
-// Include the modules from depend/zcash/src/rust (librustzcash) that we need
-mod blake2b;
-mod bridge;
-mod bundlecache;
-mod incremental_merkle_tree;
-mod merkle_frontier;
-mod note_encryption;
-mod orchard_bundle;
-mod params;
-mod sapling;
-mod streams;
-mod test_harness_ffi;
-mod wallet;
-mod wallet_scanner;
-mod zcashd_orchard;
+/// This steals a bit of the wrapper code from zebra_script, to provide the API that they want.
+impl ZcashScript for Cxx {
+    fn verify_callback(
+        sighash: SighashCalculator,
+        lock_time: i64,
+        is_final: bool,
+        script_pub_key: &[u8],
+        signature_script: &[u8],
+        flags: VerificationFlags,
+    ) -> Result<(), Error> {
+        let mut err = 0;
 
-mod builder_ffi;
-mod orchard_ffi;
-mod streams_ffi;
-mod transaction_ffi;
+        // SAFETY: The `script` fields are created from a valid Rust `slice`.
+        let ret = unsafe {
+            zcash_script_verify_callback(
+                (&sighash as *const SighashCalculator) as *const c_void,
+                Some(sighash_callback),
+                lock_time,
+                if is_final { 1 } else { 0 },
+                script_pub_key.as_ptr(),
+                script_pub_key
+                    .len()
+                    .try_into()
+                    .map_err(Error::InvalidScriptSize)?,
+                signature_script.as_ptr(),
+                signature_script
+                    .len()
+                    .try_into()
+                    .map_err(Error::InvalidScriptSize)?,
+                flags.bits(),
+                &mut err,
+            )
+        };
+
+        if ret == 1 {
+            Ok(())
+        } else {
+            Err(Error::from(err))
+        }
+    }
+
+    /// Returns the number of transparent signature operations in the
+    /// transparent inputs and outputs of this transaction.
+    fn legacy_sigop_count_script(script: &[u8]) -> Result<u32, Error> {
+        script
+            .len()
+            .try_into()
+            .map_err(Error::InvalidScriptSize)
+            .map(|script_len| unsafe {
+                zcash_script_legacy_sigop_count_script(script.as_ptr(), script_len)
+            })
+    }
+}
 
 #[cfg(feature = "rust-interpreter")]
 pub mod rust_interpreter;
 
 #[cfg(test)]
 mod tests {
-    pub use super::zcash_script_error_t;
+    pub use super::*;
     use hex::FromHex;
 
     lazy_static::lazy_static! {
-        pub static ref SCRIPT_PUBKEY: Vec<u8> = <Vec<u8>>::from_hex("76a914f47cac1e6fec195c055994e8064ffccce0044dd788ac").unwrap();
-        pub static ref SCRIPT_TX: Vec<u8> = <Vec<u8>>::from_hex("0400008085202f8901fcaf44919d4a17f6181a02a7ebe0420be6f7dad1ef86755b81d5a9567456653c010000006a473044022035224ed7276e61affd53315eca059c92876bc2df61d84277cafd7af61d4dbf4002203ed72ea497a9f6b38eb29df08e830d99e32377edb8a574b8a289024f0241d7c40121031f54b095eae066d96b2557c1f99e40e967978a5fd117465dbec0986ca74201a6feffffff020050d6dc0100000017a9141b8a9bda4b62cd0d0582b55455d0778c86f8628f870d03c812030000001976a914e4ff5512ffafe9287992a1cd177ca6e408e0300388ac62070d0095070d000000000000000000000000").expect("Block bytes are in valid hex representation");
+        pub static ref SCRIPT_PUBKEY: Vec<u8> = <Vec<u8>>::from_hex("a914c117756dcbe144a12a7c33a77cfa81aa5aeeb38187").unwrap();
+        pub static ref SCRIPT_SIG: Vec<u8> = <Vec<u8>>::from_hex("00483045022100d2ab3e6258fe244fa442cfb38f6cef9ac9a18c54e70b2f508e83fa87e20d040502200eead947521de943831d07a350e45af8e36c2166984a8636f0a8811ff03ed09401473044022013e15d865010c257eef133064ef69a780b4bc7ebe6eda367504e806614f940c3022062fdbc8c2d049f91db2042d6c9771de6f1ef0b3b1fea76c1ab5542e44ed29ed8014c69522103b2cc71d23eb30020a4893982a1e2d352da0d20ee657fa02901c432758909ed8f21029d1e9a9354c0d2aee9ffd0f0cea6c39bbf98c4066cf143115ba2279d0ba7dabe2103e32096b63fd57f3308149d238dcbb24d8d28aad95c0e4e74e3e5e6a11b61bcc453ae").expect("Block bytes are in valid hex representation");
     }
 
-    /// Manually encode all previous outputs for a single output.
-    fn encode_all_prev_outputs(amount: i64, script_pub_key: &[u8]) -> (Vec<u8>, *const u8) {
-        // Number of transactions (CompactSize)
-        let mut all_prev_outputs = vec![1];
-        // Amount as 8 little-endian bytes
-        all_prev_outputs.extend(amount.to_le_bytes().iter().cloned());
-        // Length of the pub key script (CompactSize)
-        all_prev_outputs.push(script_pub_key.len() as u8);
-        // Pub key script
-        all_prev_outputs.extend(script_pub_key.iter().cloned());
-        let all_prev_outputs_ptr = all_prev_outputs.as_ptr();
-        (all_prev_outputs, all_prev_outputs_ptr)
+    fn sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
+        hex::decode("e8c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
+            .unwrap()
+            .as_slice()
+            .first_chunk::<32>()
+            .map(|hash| *hash)
     }
 
-    pub fn verify_script(
-        script_pub_key: &[u8],
-        amount: i64,
-        tx_to: &[u8],
-        nIn: u32,
-        flags: u32,
-        consensus_branch_id: u32,
-    ) -> Result<(), zcash_script_error_t> {
-        let script_ptr = script_pub_key.as_ptr();
-        let script_len = script_pub_key.len();
-        let tx_to_ptr = tx_to.as_ptr();
-        let tx_to_len = tx_to.len();
-        let mut err = 0;
-
-        let ret = unsafe {
-            super::zcash_script_verify(
-                script_ptr,
-                script_len as u32,
-                amount,
-                tx_to_ptr,
-                tx_to_len as u32,
-                nIn,
-                flags,
-                consensus_branch_id,
-                &mut err,
-            )
-        };
-
-        if ret != 1 {
-            return Err(err);
-        }
-
-        // Also test with the V5 API
-
-        let (all_prev_outputs, all_prev_outputs_ptr) =
-            encode_all_prev_outputs(amount, script_pub_key);
-
-        let ret = unsafe {
-            super::zcash_script_verify_v5(
-                tx_to_ptr,
-                tx_to_len as u32,
-                all_prev_outputs_ptr,
-                all_prev_outputs.len() as _,
-                nIn,
-                flags,
-                consensus_branch_id,
-                &mut err,
-            )
-        };
-
-        if ret == 1 {
-            Ok(())
-        } else {
-            Err(err)
-        }
+    fn invalid_sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
+        hex::decode("08c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
+            .unwrap()
+            .as_slice()
+            .first_chunk::<32>()
+            .map(|hash| *hash)
     }
 
-    pub fn verify_script_precompute(
-        script_pub_key: &[u8],
-        amount: i64,
-        tx_to: &[u8],
-        nIn: u32,
-        flags: u32,
-        consensus_branch_id: u32,
-    ) -> Result<(), zcash_script_error_t> {
-        let script_ptr = script_pub_key.as_ptr();
-        let script_len = script_pub_key.len();
-        let tx_to_ptr = tx_to.as_ptr();
-        let tx_to_len = tx_to.len();
-        let mut err = 0;
-
-        let precomputed =
-            unsafe { super::zcash_script_new_precomputed_tx(tx_to_ptr, tx_to_len as _, &mut err) };
-
-        let ret = unsafe {
-            super::zcash_script_verify_precomputed(
-                precomputed,
-                nIn,
-                script_ptr,
-                script_len as _,
-                amount,
-                flags,
-                consensus_branch_id,
-                &mut err,
-            )
-        };
-
-        unsafe { super::zcash_script_free_precomputed_tx(precomputed) };
-
-        if ret != 1 {
-            return Err(err);
-        }
-
-        // Also test with the V5 API
-
-        let (all_prev_outputs, all_prev_outputs_ptr) =
-            encode_all_prev_outputs(amount, script_pub_key);
-
-        let precomputed = unsafe {
-            super::zcash_script_new_precomputed_tx_v5(
-                tx_to_ptr,
-                tx_to_len as _,
-                all_prev_outputs_ptr,
-                all_prev_outputs.len() as _,
-                &mut err,
-            )
-        };
-
-        let ret = unsafe {
-            super::zcash_script_verify_precomputed(
-                precomputed,
-                nIn,
-                script_ptr,
-                script_len as u32,
-                amount,
-                flags,
-                consensus_branch_id,
-                &mut err,
-            )
-        };
-
-        unsafe { super::zcash_script_free_precomputed_tx(precomputed) };
-
-        if ret == 1 {
-            Ok(())
-        } else {
-            Err(err)
-        }
+    fn missing_sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
+        None
     }
 
     #[test]
     fn it_works() {
-        let coin = i64::pow(10, 8);
-        let script_pub_key = &*SCRIPT_PUBKEY;
-        let amount = 212 * coin;
-        let tx_to = &*SCRIPT_TX;
-        let nIn = 0;
-        let flags = 1;
-        let branch_id = 0x2bb40e60;
+        let n_lock_time: i64 = 2410374;
+        let is_final: bool = true;
+        let script_pub_key = &SCRIPT_PUBKEY;
+        let script_sig = &SCRIPT_SIG;
+        let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
 
-        verify_script(script_pub_key, amount, tx_to, nIn, flags, branch_id).unwrap();
+        let ret = Cxx::verify_callback(
+            &sighash,
+            n_lock_time,
+            is_final,
+            script_pub_key,
+            script_sig,
+            flags,
+        );
+
+        assert!(ret.is_ok());
     }
 
     #[test]
-    fn it_works_precomputed() {
-        let coin = i64::pow(10, 8);
-        let script_pub_key = &*SCRIPT_PUBKEY;
-        let amount = 212 * coin;
-        let tx_to = &*SCRIPT_TX;
-        let nIn = 0;
-        let flags = 1;
-        let branch_id = 0x2bb40e60;
+    fn it_fails_on_invalid_sighash() {
+        let n_lock_time: i64 = 2410374;
+        let is_final: bool = true;
+        let script_pub_key = &SCRIPT_PUBKEY;
+        let script_sig = &SCRIPT_SIG;
+        let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
 
-        verify_script_precompute(script_pub_key, amount, tx_to, nIn, flags, branch_id).unwrap();
+        let ret = Cxx::verify_callback(
+            &invalid_sighash,
+            n_lock_time,
+            is_final,
+            script_pub_key,
+            script_sig,
+            flags,
+        );
+
+        assert_eq!(ret, Err(Error::Ok));
     }
 
     #[test]
-    fn it_doesnt_work() {
-        let coin = i64::pow(10, 8);
-        let script_pub_key = &*SCRIPT_PUBKEY;
-        let amount = 212 * coin;
-        let tx_to = &*SCRIPT_TX;
-        let nIn = 0;
-        let flags = 1;
-        let branch_id = 0x2bb40e61;
+    fn it_fails_on_missing_sighash() {
+        let n_lock_time: i64 = 2410374;
+        let is_final: bool = true;
+        let script_pub_key = &SCRIPT_PUBKEY;
+        let script_sig = &SCRIPT_SIG;
+        let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
 
-        verify_script(script_pub_key, amount, tx_to, nIn, flags, branch_id).unwrap_err();
-    }
+        let ret = Cxx::verify_callback(
+            &missing_sighash,
+            n_lock_time,
+            is_final,
+            script_pub_key,
+            script_sig,
+            flags,
+        );
 
-    #[test]
-    fn it_doesnt_work_precomputed() {
-        let coin = i64::pow(10, 8);
-        let script_pub_key = &*SCRIPT_PUBKEY;
-        let amount = 212 * coin;
-        let tx_to = &*SCRIPT_TX;
-        let nIn = 0;
-        let flags = 1;
-        let branch_id = 0x2bb40e61;
-
-        verify_script_precompute(script_pub_key, amount, tx_to, nIn, flags, branch_id).unwrap_err();
+        assert_eq!(ret, Err(Error::Ok));
     }
 }
