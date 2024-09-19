@@ -1,5 +1,7 @@
 #![allow(non_camel_case_types)]
 
+use std::ops::{Add, Neg, Sub};
+
 use super::script_error::*;
 
 /// Maximum allowed size of data (in bytes) that can be pushed to the stack.
@@ -319,6 +321,53 @@ impl ScriptNum {
         }
     }
 
+    pub fn getvch(&self) -> Vec<u8> {
+        Self::serialize(&self.0)
+    }
+
+    pub fn serialize(value: &i64) -> Vec<u8> {
+        if *value == 0 {
+            return Vec::new();
+        }
+
+        if *value == i64::MIN {
+            // The code below is buggy, and produces the "wrong" result for
+            // INT64_MIN. To avoid undefined behavior while attempting to
+            // negate a value of INT64_MIN, we intentionally return the result
+            // that the code below would produce on an x86_64 system.
+            return vec![0, 0, 0, 0, 0, 0, 0, 128, 128];
+        }
+
+        let mut result = Vec::new();
+        let neg = *value < 0;
+        let mut absvalue: u64 = value.abs() as u64;
+
+        while absvalue != 0 {
+            result.push((absvalue & 0xff) as u8);
+            absvalue >>= 8;
+        }
+
+        //    - If the most significant byte is >= 0x80 and the value is positive, push a
+        //    new zero-byte to make the significant byte < 0x80 again.
+
+        //    - If the most significant byte is >= 0x80 and the value is negative, push a
+        //    new 0x80 byte that will be popped off when converting to an integral.
+
+        //    - If the most significant byte is < 0x80 and the value is negative, add
+        //    0x80 to it, since it will be subtracted and interpreted as a negative when
+        //    converting to an integral.
+
+        if result.last().map_or(true, |last| last & 0x80 != 0) {
+            result.push(if neg { 0x80 } else { 0 });
+        } else if neg {
+            if let Some(last) = result.last_mut() {
+                *last |= 0x80;
+            }
+        }
+
+        result
+    }
+
     fn set_vch(vch: &Vec<u8>) -> i64 {
         match vch.last() {
             None => 0,
@@ -350,6 +399,43 @@ impl ScriptNum {
                 result
             }
         }
+    }
+}
+
+impl Add for ScriptNum {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        let rhs = other.0;
+        assert!(
+            rhs == 0
+                || (rhs > 0 && self.0 <= i64::MAX - rhs)
+                || (rhs < 0 && self.0 >= i64::MIN - rhs)
+        );
+        Self(self.0 + rhs)
+    }
+}
+
+impl Sub for ScriptNum {
+    type Output = Self;
+
+    fn sub(self, other: Self) -> Self {
+        let rhs = other.0;
+        assert!(
+            rhs == 0
+                || (rhs > 0 && self.0 >= i64::MIN + rhs)
+                || (rhs < 0 && self.0 <= i64::MAX + rhs)
+        );
+        Self(self.0 - rhs)
+    }
+}
+
+impl Neg for ScriptNum {
+    type Output = Self;
+
+    fn neg(self) -> Self {
+        assert!(self.0 != i64::MIN);
+        Self(-self.0)
     }
 }
 
