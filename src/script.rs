@@ -274,7 +274,7 @@ impl ScriptNum {
         if vch.len() > n_max_num_size {
             panic!("script number overflow");
         };
-        if require_minimal && vch.len() > 0 {
+        if require_minimal && !vch.is_empty() {
             // Check that the number is encoded with the minimum possible
             // number of bytes.
             //
@@ -348,7 +348,7 @@ impl ScriptNum {
         if result.last().map_or(true, |last| last & 0x80 != 0) {
             result.push(if neg { 0x80 } else { 0 });
         } else if neg {
-            result.last_mut().map(|last| *last |= 0x80);
+            if let Some(last) = result.last_mut() { *last = 0x80; }
         }
 
         result
@@ -373,7 +373,7 @@ impl ScriptNum {
 
                 let mut result: i64 = 0;
                 for (i, vchi) in vch.iter().enumerate() {
-                    result |= i64::from(*vchi) << 8 * i;
+                    result |= i64::from(*vchi) << (8 * i);
                 }
 
                 // If the input vector's most significant byte is 0x80, remove it from
@@ -518,38 +518,25 @@ impl<'a> Script<'a> {
                 Ok(o) => o,
                 Err(_) => break,
             };
-            match opcode {
-                Opcode::Operation(op) => {
-                    if op == OP_CHECKSIG || op == OP_CHECKSIGVERIFY {
-                        n += 1;
-                    } else if op == OP_CHECKMULTISIG || op == OP_CHECKMULTISIGVERIFY {
-                        match last_opcode {
-                            Opcode::PushValue(pv) => {
-                                if accurate && pv >= OP_1 && pv <= OP_16 {
-                                    n += Self::decode_op_n(pv);
-                                } else {
-                                    n += 20
-                                }
+            if let Opcode::Operation(op) = opcode {
+                if op == OP_CHECKSIG || op == OP_CHECKSIGVERIFY {
+                    n += 1;
+                } else if op == OP_CHECKMULTISIG || op == OP_CHECKMULTISIGVERIFY {
+                    match last_opcode {
+                        Opcode::PushValue(pv) => {
+                            if accurate && pv >= OP_1 && pv <= OP_16 {
+                                n += Self::decode_op_n(pv);
+                            } else {
+                                n += 20
                             }
-                            _ => n += 20,
                         }
+                        _ => n += 20,
                     }
                 }
-                _ => (),
             }
             last_opcode = opcode;
         }
         n
-    }
-
-    /// Returns true iff this script is P2PKH.
-    pub fn is_pay_to_public_key_hash(&self) -> bool {
-        self.0.len() == 25
-            && self.0[0] == OP_DUP.into()
-            && self.0[1] == OP_HASH160.into()
-            && self.0[2] == 0x14
-            && self.0[23] == OP_EQUALVERIFY.into()
-            && self.0[24] == OP_CHECKSIG.into()
     }
 
     /// Returns true iff this script is P2SH.
@@ -564,11 +551,7 @@ impl<'a> Script<'a> {
     pub fn is_push_only(&self) -> bool {
         let mut pc = self.0;
         while !pc.is_empty() {
-            if let Ok(opcode) = Self::get_op(&mut pc) {
-                match opcode {
-                    Opcode::PushValue(_) => (),
-                    _ => return false,
-                }
+            if let Ok(Opcode::PushValue(_)) = Self::get_op(&mut pc) {
             } else {
                 return false;
             }
