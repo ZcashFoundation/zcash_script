@@ -6,12 +6,11 @@ use super::interpreter::*;
 /// replicates the still-used cases, and then an `Unknown` bucket for anything else that might
 /// happen.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-#[repr(u32)]
 pub enum Error {
     /// Any failure that results in the script being invalid.
-    Ok = 0,
+    Ok,
     /// An exception was caught.
-    VerifyScript = 7,
+    VerifyScript,
     /// The script size can’t fit in a `u32`, as required by the C++ code.
     InvalidScriptSize(TryFromIntError),
     /// Some other failure value recovered from C++.
@@ -21,7 +20,9 @@ pub enum Error {
     Unknown(i64),
 }
 
-/// All signature hashes are 32 bits, since they are necessarily produced by SHA256.
+/// All signature hashes are 32 bytes, since they are either:
+/// - a SHA-256 output (for v1 or v2 transactions).
+/// - a BLAKE2b-256 output (for v3 and above transactions).
 pub const SIGHASH_SIZE: usize = 32;
 
 /// A function which is called to obtain the sighash.
@@ -44,7 +45,7 @@ pub trait ZcashScript {
     ///  the transaction itself. In particular, the sighash for the spend
     ///  is obtained using a callback function.
     ///
-    ///  - sighash_callback: a callback function which is called to obtain the sighash.
+    ///  - sighash: a callback function which is called to obtain the sighash.
     ///  - n_lock_time: the lock time of the transaction being validated.
     ///  - is_final: a boolean indicating whether the input being validated is final
     ///    (i.e. its sequence number is 0xFFFFFFFF).

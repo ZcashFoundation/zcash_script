@@ -1,18 +1,34 @@
-bitflags::bitflags! {
-    /// The different SigHash types, as defined in <https://zips.z.cash/zip-0143>
-    ///
-    /// TODO: This is currently defined as `i32` to match the `c_int` constants in this package, but
-    ///       should use librustzcash’s `u8` constants once we’ve removed the C++.
-    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-    pub struct HashType: i32 {
-        /// Sign all the outputs
-        const All = 1;
-        /// Sign none of the outputs - anyone can spend
-        const None = 2;
-        /// Sign one of the outputs - anyone can spend the rest
-        const Single = 3;
-        /// Anyone can add inputs to this transaction
-        const AnyoneCanPay = 0x80;
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum SignedOutputs {
+    /// Sign all the outputs
+    All,
+    /// Sign one of the outputs - anyone can spend the rest
+    Single,
+    /// Sign none of the outputs - anyone can spend
+    None,
+}
+
+/// The different SigHash types, as defined in <https://zips.z.cash/zip-0143>
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct HashType {
+    pub signed_outputs: SignedOutputs,
+    /// Anyone can add inputs to this transaction
+    pub anyone_can_pay: bool,
+}
+
+impl HashType {
+    pub fn from_bits(bits: i32) -> Option<Self> {
+        let msigned_outputs = match (bits & 2 != 0, bits & 1 != 0) {
+            (false, false) => None,
+            (false, true) => Some(SignedOutputs::All),
+            (true, false) => Some(SignedOutputs::None),
+            (true, true) => Some(SignedOutputs::Single),
+        };
+
+        msigned_outputs.map(|signed_outputs| HashType {
+            signed_outputs,
+            anyone_can_pay: bits & 0x80 != 0,
+        })
     }
 }
 

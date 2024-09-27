@@ -47,7 +47,9 @@ extern "C" fn sighash_callback(
     let ctx = ctx as *const SighashCalculator;
     // SAFETY: `ctx` is a valid `SighashCalculator` passed to `verify_callback` which forwards it to
     // the `CallbackTransactionSignatureChecker`.
-    if let Some(sighash) = unsafe { *ctx }(script_code_vec, HashType::from_bits_retain(hash_type)) {
+    if let Some(sighash) =
+        HashType::from_bits(hash_type).and_then(|ht| unsafe { *ctx }(script_code_vec, ht))
+    {
         assert_eq!(sighash_out_len, sighash.len().try_into().unwrap());
         // SAFETY: `sighash_out` is a valid buffer created in
         // `CallbackTransactionSignatureChecker::CheckSig`.
