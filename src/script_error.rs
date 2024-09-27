@@ -1,8 +1,8 @@
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[repr(i32)]
 pub enum ScriptError {
-    Ok = 0,
-    UnknownError,
+    // Ok = 0,
+    UnknownError = 1,
     EvalFalse,
     OpReturn,
 
@@ -15,11 +15,11 @@ pub enum ScriptError {
     PubKeyCount,
 
     // Failed verify operations
-    VERIFY,
-    EQUALVERIFY,
-    CHECKMULTISIGVERIFY,
-    CHECKSIGVERIFY,
-    NUMEQUALVERIFY,
+    Verify,
+    EqualVerify,
+    CheckMultisigVerify,
+    CheckSigVerify,
+    NumEqualVerify,
 
     // Logical/Format/Canonical errors
     BadOpcode,
@@ -33,12 +33,12 @@ pub enum ScriptError {
     UnsatisfiedLockTime,
 
     // BIP62
-    SigHashtype,
+    SigHashType,
     SigDER,
     MinimalData,
     SigPushOnly,
-    SigHighS,
-    SigNullDummy,
+    // SigHighS,
+    SigNullDummy = 27,
     PubKeyType,
     CleanStack,
 
