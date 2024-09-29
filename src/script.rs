@@ -348,7 +348,9 @@ impl ScriptNum {
         if result.last().map_or(true, |last| last & 0x80 != 0) {
             result.push(if neg { 0x80 } else { 0 });
         } else if neg {
-            if let Some(last) = result.last_mut() { *last = 0x80; }
+            if let Some(last) = result.last_mut() {
+                *last = 0x80;
+            }
         }
 
         result

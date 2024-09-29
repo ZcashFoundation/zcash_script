@@ -1187,7 +1187,8 @@ impl SignatureChecker for CallbackTransactionSignatureChecker<'_> {
             || *self.lock_time >= LOCKTIME_THRESHOLD && *lock_time < LOCKTIME_THRESHOLD
             // Now that we know we're comparing apples-to-apples, the
             // comparison is a simple numeric one.
-            || lock_time > self.lock_time {
+            || lock_time > self.lock_time
+        {
             false
             // Finally the nLockTime feature can be disabled and thus
             // CHECKLOCKTIMEVERIFY bypassed if every txin has been
