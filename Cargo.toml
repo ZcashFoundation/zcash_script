@@ -15,6 +15,7 @@ include = [
     "/README.md",
     "build.rs",
     "src/*.rs",
+    "src/*/*.rs",
     "/depend/check_uint128_t.c",
     "/depend/zcash/src/amount.cpp",
     "/depend/zcash/src/amount.h",
