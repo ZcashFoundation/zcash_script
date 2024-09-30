@@ -1,3 +1,5 @@
+use zcash_primitives::transaction::TxVersion;
+
 /// The ways in which a transparent input may commit to the transparent outputs of its
 /// transaction.
 ///
@@ -30,19 +32,38 @@ pub struct HashType {
     pub anyone_can_pay: bool,
 }
 
-impl HashType {
-    pub fn from_bits(bits: i32) -> Option<Self> {
-        let msigned_outputs = match (bits & 2 != 0, bits & 1 != 0) {
-            (false, false) => None,
-            (false, true) => Some(SignedOutputs::All),
-            (true, false) => Some(SignedOutputs::None),
-            (true, true) => Some(SignedOutputs::Single),
-        };
+/// Things that can go wrong when constructing a `HashType` from bit flags.
+pub enum InvalidHashType {
+    /// Either or both of the two least-significant bits must be set.
+    UnknownSignedOutputs,
+    /// With v5 transactions, bits other than those specified for `HashType` must be 0. The `i32`
+    /// includes only the bits that are undefined by `HashType`.
+    ExtraBitsSet(i32),
+}
 
-        msigned_outputs.map(|signed_outputs| HashType {
-            signed_outputs,
-            anyone_can_pay: bits & 0x80 != 0,
-        })
+impl HashType {
+    /// Construct a `HashType` from bit flags.
+    ///
+    /// ## Consensus rules
+    ///
+    /// [§4.10](https://zips.z.cash/protocol/protocol.pdf#sighash):
+    /// - Any `HashType` in a v5 transaction must have no undefined bits set.
+    pub fn from_bits(bits: i32, tx_version: TxVersion) -> Result<Self, InvalidHashType> {
+        let unknown_bits = (bits | 0x83) ^ 0x83;
+        if tx_version == TxVersion::Zip225 && unknown_bits != 0 {
+            Err(InvalidHashType::ExtraBitsSet(unknown_bits))
+        } else {
+            let msigned_outputs = match (bits & 2 != 0, bits & 1 != 0) {
+                (false, false) => Err(InvalidHashType::UnknownSignedOutputs),
+                (false, true) => Ok(SignedOutputs::All),
+                (true, false) => Ok(SignedOutputs::None),
+                (true, true) => Ok(SignedOutputs::Single),
+            };
+            msigned_outputs.map(|signed_outputs| HashType {
+                signed_outputs,
+                anyone_can_pay: bits & 0x80 != 0,
+            })
+        }
     }
 }
 

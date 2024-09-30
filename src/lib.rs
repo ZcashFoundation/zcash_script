@@ -14,6 +14,8 @@ pub use zcash_script::*;
 
 use std::os::raw::{c_int, c_uint, c_void};
 
+use zcash_primitives::transaction::TxVersion;
+
 /// A tag to indicate that the C++ implementation of zcash_script should be used.
 pub enum Cxx {}
 
@@ -44,11 +46,12 @@ extern "C" fn sighash_callback(
     // function.
     let script_code_vec =
         unsafe { std::slice::from_raw_parts(script_code, checked_script_code_len) };
-    let ctx = ctx as *const SighashCalculator;
-    // SAFETY: `ctx` is a valid `SighashCalculator` passed to `verify_callback` which forwards it to
-    // the `CallbackTransactionSignatureChecker`.
-    if let Some(sighash) =
-        HashType::from_bits(hash_type).and_then(|ht| unsafe { *ctx }(script_code_vec, ht))
+    // SAFETY: `ctx` is a valid `(SighashCalculator, TxVersion)` constructed in `verify_callback`
+    // which forwards it to the `CallbackTransactionSignatureChecker`.
+    let (callback, tx_version) = unsafe { *(ctx as *const (SighashCalculator, TxVersion)) };
+    if let Some(sighash) = HashType::from_bits(hash_type, tx_version)
+        .ok()
+        .and_then(|ht| callback(script_code_vec, ht))
     {
         assert_eq!(sighash_out_len, sighash.len().try_into().unwrap());
         // SAFETY: `sighash_out` is a valid buffer created in
@@ -66,13 +69,14 @@ impl ZcashScript for Cxx {
         script_pub_key: &[u8],
         signature_script: &[u8],
         flags: VerificationFlags,
+        tx_version: TxVersion,
     ) -> Result<(), Error> {
         let mut err = 0;
 
         // SAFETY: The `script` fields are created from a valid Rust `slice`.
         let ret = unsafe {
             zcash_script_verify_callback(
-                (&sighash as *const SighashCalculator) as *const c_void,
+                (&(sighash, tx_version) as *const (SighashCalculator, TxVersion)) as *const c_void,
                 Some(sighash_callback),
                 lock_time,
                 if is_final { 1 } else { 0 },
@@ -156,6 +160,7 @@ mod tests {
             script_pub_key,
             script_sig,
             flags,
+            TxVersion::Sapling,
         );
 
         assert!(ret.is_ok());
@@ -176,6 +181,7 @@ mod tests {
             script_pub_key,
             script_sig,
             flags,
+            TxVersion::Sapling,
         );
 
         assert_eq!(ret, Err(Error::Ok));
@@ -196,6 +202,7 @@ mod tests {
             script_pub_key,
             script_sig,
             flags,
+            TxVersion::Sapling,
         );
 
         assert_eq!(ret, Err(Error::Ok));

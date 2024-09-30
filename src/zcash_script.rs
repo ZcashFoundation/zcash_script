@@ -1,5 +1,7 @@
 use std::num::TryFromIntError;
 
+use zcash_primitives::transaction::TxVersion;
+
 use super::interpreter::*;
 
 /// This maps to `zcash_script_error_t`, but most of those cases aren’t used any more. This only
@@ -61,6 +63,7 @@ pub trait ZcashScript {
         script_pub_key: &[u8],
         script_sig: &[u8],
         flags: VerificationFlags,
+        tx_version: TxVersion,
     ) -> Result<(), Error>;
 
     /// Returns the number of transparent signature operations in the input or
