@@ -1,10 +1,24 @@
+/// The ways in which a transparent input may commit to the transparent outputs of its
+/// transaction.
+///
+/// Note that:
+/// - Transparent inputs always commit to all shielded outputs.
+/// - Shielded inputs always commit to all outputs.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum SignedOutputs {
-    /// Sign all the outputs
+    /// The input signature commits to all transparent outputs in the transaction.
     All,
-    /// Sign one of the outputs - anyone can spend the rest
+    /// The transparent input's signature commits to the transparent output at the same
+    /// index as the transparent input.
+    ///
+    /// If the specified transparent output along with any shielded outputs only consume
+    /// part of this input, anyone is permitted to modify the transaction to claim the
+    /// remainder.
     Single,
-    /// Sign none of the outputs - anyone can spend
+    /// The transparent input's signature does not commit to any transparent outputs.
+    ///
+    /// If the shielded outputs only consume part (or none) of this input, anyone is
+    /// permitted to modify the transaction to claim the remainder.
     None,
 }
 
@@ -12,7 +26,7 @@ pub enum SignedOutputs {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct HashType {
     pub signed_outputs: SignedOutputs,
-    /// Anyone can add inputs to this transaction
+    /// Allows anyone to add transparent inputs to this transaction.
     pub anyone_can_pay: bool,
 }
 
