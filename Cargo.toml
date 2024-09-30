@@ -61,6 +61,7 @@ external-secp = []
 
 [dependencies]
 bitflags = "2.5"
+zcash_primitives = "0.17"
 
 [build-dependencies]
 # The `bindgen` dependency should automatically upgrade to match the version used by zebra-state's `rocksdb` dependency in:
