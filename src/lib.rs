@@ -203,10 +203,31 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for (T, U) {
     }
 }
 
+#[cfg(any(test, feature = "test-dependencies"))]
+pub mod testing {
+    use super::*;
+
+    /// Ensures that flags represent a supported state. This avoids crashes in the C++ code, which
+    /// break various tests.
+    pub fn repair_flags(flags: VerificationFlags) -> VerificationFlags {
+        // TODO: The C++ implementation fails an assert (interpreter.cpp:1097) if `CleanStack` is
+        //       set without `P2SH`.
+        if flags.contains(VerificationFlags::CleanStack) {
+            flags & VerificationFlags::P2SH
+        } else {
+            flags
+        }
+    }
+
+    /// A `usize` one larger than the longest allowed script, for testing bounds.
+    pub const OVERFLOW_SCRIPT_SIZE: usize = script::MAX_SCRIPT_SIZE + 1;
+}
+
 #[cfg(test)]
 mod tests {
-    pub use super::*;
+    use super::{testing::*, *};
     use hex::FromHex;
+    use proptest::prelude::*;
 
     lazy_static::lazy_static! {
         pub static ref SCRIPT_PUBKEY: Vec<u8> = <Vec<u8>>::from_hex("a914c117756dcbe144a12a7c33a77cfa81aa5aeeb38187").unwrap();
@@ -294,5 +315,55 @@ mod tests {
 
         assert_eq!(ret.0, ret.1);
         assert_eq!(ret.0, Err(Error::Ok));
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig {
+            cases: 20_000, .. ProptestConfig::default()
+        })]
+
+        /// This test is very shallow, because we have only `()` for success and most errors have
+        /// been collapsed to `Error::Ok`. A deeper comparison, requires changes to the C++ code.
+        #[test]
+        fn test_arbitrary_scripts(
+            lock_time in prop::num::i64::ANY,
+            is_final in prop::bool::ANY,
+            pub_key in prop::collection::vec(0..=0xffu8, 0..=OVERFLOW_SCRIPT_SIZE),
+            sig in prop::collection::vec(0..=0xffu8, 1..=OVERFLOW_SCRIPT_SIZE),
+            flags in prop::bits::u32::masked(VerificationFlags::all().bits()),
+        ) {
+            let ret = check_verify_callback::<Cxx, Rust>(
+                &missing_sighash,
+                lock_time,
+                is_final,
+                &pub_key[..],
+                &sig[..],
+                repair_flags(VerificationFlags::from_bits_truncate(flags)),
+            );
+            prop_assert_eq!(ret.0, ret.1);
+        }
+
+        /// Similar to `test_arbitrary_scripts`, but ensures the `sig` only contains pushes.
+        #[test]
+        fn test_restricted_sig_scripts(
+            lock_time in prop::num::i64::ANY,
+            is_final in prop::bool::ANY,
+            pub_key in prop::collection::vec(0..=0xffu8, 0..=OVERFLOW_SCRIPT_SIZE),
+            sig in prop::collection::vec(0..=0x60u8, 0..=OVERFLOW_SCRIPT_SIZE),
+            flags in prop::bits::u32::masked(
+                // Don’t waste test cases on whether or not `SigPushOnly` is set.
+                (VerificationFlags::all() - VerificationFlags::SigPushOnly).bits()),
+        ) {
+            let ret = check_verify_callback::<Cxx, Rust>(
+                &missing_sighash,
+                lock_time,
+                is_final,
+                &pub_key[..],
+                &sig[..],
+                repair_flags(VerificationFlags::from_bits_truncate(flags))
+                    | VerificationFlags::SigPushOnly,
+            );
+            prop_assert_eq!(ret.0, ret.1);
+        }
     }
 }
