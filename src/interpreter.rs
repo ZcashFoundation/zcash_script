@@ -104,7 +104,7 @@ pub struct CallbackTransactionSignatureChecker<'a> {
 
 type ValType = Vec<u8>;
 
-fn set_success<T>(res: T) -> Result<T, ScriptError> {
+fn set_success<'a, T>(res: T) -> Result<T, ScriptError<'a>> {
     Ok(res)
 }
 
@@ -135,25 +135,25 @@ pub struct Stack<T>(Vec<T>);
 /// Wraps a Vec (or whatever underlying implementation we choose in a way that matches the C++ impl
 /// and provides us some decent chaining)
 impl<T> Stack<T> {
-    fn reverse_index(&self, i: isize) -> Result<usize, ScriptError> {
+    fn reverse_index<'a>(&self, i: isize) -> Result<usize, ScriptError<'a>> {
         usize::try_from(-i)
             .map(|a| self.0.len() - a)
             .map_err(|_| ScriptError::InvalidStackOperation)
     }
 
-    pub fn top(&self, i: isize) -> Result<&T, ScriptError> {
+    pub fn top<'a>(&self, i: isize) -> Result<&T, ScriptError<'a>> {
         let idx = self.reverse_index(i)?;
         self.0.get(idx).ok_or(ScriptError::InvalidStackOperation)
     }
 
-    pub fn swap(&mut self, a: isize, b: isize) -> Result<(), ScriptError> {
+    pub fn swap<'a>(&mut self, a: isize, b: isize) -> Result<(), ScriptError<'a>> {
         let au = self.reverse_index(a)?;
         let bu = self.reverse_index(b)?;
         self.0.swap(au, bu);
         Ok(())
     }
 
-    pub fn pop(&mut self) -> Result<T, ScriptError> {
+    pub fn pop<'a>(&mut self) -> Result<T, ScriptError<'a>> {
         self.0.pop().ok_or(ScriptError::InvalidStackOperation)
     }
 
@@ -173,7 +173,7 @@ impl<T> Stack<T> {
         self.0.iter()
     }
 
-    pub fn back(&mut self) -> Result<&mut T, ScriptError> {
+    pub fn back<'a>(&mut self) -> Result<&mut T, ScriptError<'a>> {
         self.0.last_mut().ok_or(ScriptError::InvalidStackOperation)
     }
 
@@ -317,7 +317,7 @@ fn is_valid_signature_encoding(sig: &[u8]) -> bool {
     true
 }
 
-fn is_low_der_signature(vch_sig: &ValType) -> Result<bool, ScriptError> {
+fn is_low_der_signature<'a>(vch_sig: &ValType) -> Result<bool, ScriptError<'a>> {
     if !is_valid_signature_encoding(vch_sig) {
         return set_error(ScriptError::SigDER);
     };
@@ -345,10 +345,10 @@ fn is_defined_hashtype_signature(vch_sig: &ValType) -> bool {
     true
 }
 
-fn check_signature_encoding(
+fn check_signature_encoding<'a>(
     vch_sig: &Vec<u8>,
     flags: VerificationFlags,
-) -> Result<bool, ScriptError> {
+) -> Result<bool, ScriptError<'a>> {
     // Empty signature. Not strictly DER encoded, but allowed to provide a
     // compact way to provide an invalid signature for use with CHECK(MULTI)SIG
     if vch_sig.is_empty() {
@@ -367,7 +367,10 @@ fn check_signature_encoding(
     Ok(true)
 }
 
-fn check_pub_key_encoding(vch_sig: &ValType, flags: VerificationFlags) -> Result<(), ScriptError> {
+fn check_pub_key_encoding<'a>(
+    vch_sig: &ValType,
+    flags: VerificationFlags,
+) -> Result<(), ScriptError<'a>> {
     if flags.contains(VerificationFlags::StrictEnc)
         && !is_compressed_or_uncompressed_pub_key(vch_sig)
     {
@@ -399,12 +402,12 @@ fn check_minimal_push(data: &ValType, opcode: PushValue) -> bool {
     true
 }
 
-pub fn eval_script(
+pub fn eval_script<'a>(
     stack: &mut Stack<Vec<u8>>,
     script: &Script,
     flags: VerificationFlags,
     checker: &dyn SignatureChecker,
-) -> Result<bool, ScriptError> {
+) -> Result<bool, ScriptError<'a>> {
     let bn_zero = ScriptNum(0);
     let bn_one = ScriptNum(1);
     let vch_false: ValType = vec![];
@@ -536,7 +539,7 @@ pub fn eval_script(
                                 // to 5-byte bignums, which are good until 2**39-1, well
                                 // beyond the 2**32-1 limit of the `lock_time` field itself.
                                 let lock_time =
-                                    ScriptNum::new(stack.top(-1)?, require_minimal, Some(5));
+                                    ScriptNum::new(stack.top(-1)?, require_minimal, Some(5))?;
 
                                 // In the rare event that the argument may be < 0 due to
                                 // some arithmetic being done first, you can always use
@@ -756,7 +759,7 @@ pub fn eval_script(
                                 return set_error(ScriptError::InvalidStackOperation);
                             }
                             let n =
-                                u16::try_from(ScriptNum::new(stack.top(-1)?, require_minimal, None).getint())
+                                u16::try_from(ScriptNum::new(stack.top(-1)?, require_minimal, None)?.getint())
                                 .map_err(|_| ScriptError::InvalidStackOperation)?;
                             stack.pop()?;
                             if usize::from(n) >= stack.size() {
@@ -858,7 +861,7 @@ pub fn eval_script(
                             if stack.size() < 1 {
                                 return set_error(ScriptError::InvalidStackOperation);
                             }
-                            let mut bn = ScriptNum::new(stack.top(-1)?, require_minimal, None);
+                            let mut bn = ScriptNum::new(stack.top(-1)?, require_minimal, None)?;
                             match op {
                                 OP_1ADD => bn = bn + bn_one,
                                 OP_1SUB => bn = bn - bn_one,
@@ -893,8 +896,8 @@ pub fn eval_script(
                             if stack.size() < 2 {
                                 return set_error(ScriptError::InvalidStackOperation);
                             }
-                            let bn1 = ScriptNum::new(stack.top(-2)?, require_minimal, None);
-                            let bn2 = ScriptNum::new(stack.top(-1)?, require_minimal, None);
+                            let bn1 = ScriptNum::new(stack.top(-2)?, require_minimal, None)?;
+                            let bn2 = ScriptNum::new(stack.top(-1)?, require_minimal, None)?;
                             let bn = match op {
                                 OP_ADD =>
                                     bn1 + bn2,
@@ -933,9 +936,9 @@ pub fn eval_script(
                             if stack.size() < 3 {
                                 return set_error(ScriptError::InvalidStackOperation);
                             }
-                            let bn1 = ScriptNum::new(stack.top(-3)?, require_minimal, None);
-                            let bn2 = ScriptNum::new(stack.top(-2)?, require_minimal, None);
-                            let bn3 = ScriptNum::new(stack.top(-1)?, require_minimal, None);
+                            let bn1 = ScriptNum::new(stack.top(-3)?, require_minimal, None)?;
+                            let bn2 = ScriptNum::new(stack.top(-2)?, require_minimal, None)?;
+                            let bn3 = ScriptNum::new(stack.top(-1)?, require_minimal, None)?;
                             let value = bn2 <= bn1 && bn1 < bn3;
                             stack.pop()?;
                             stack.pop()?;
@@ -1024,7 +1027,8 @@ pub fn eval_script(
                             };
 
                             let mut keys_count =
-                                u8::try_from(ScriptNum::new(stack.top(-isize::from(i))?, require_minimal, None).getint()).map_err(|_| ScriptError::PubKeyCount)?;
+                                u8::try_from(ScriptNum::new(stack.top(-isize::from(i))?, require_minimal, None)?.getint())
+                                  .map_err(|_| ScriptError::PubKeyCount)?;
                             if keys_count > 20 {
                                 return set_error(ScriptError::PubKeyCount);
                             };
@@ -1040,7 +1044,8 @@ pub fn eval_script(
                             }
 
                             let mut sigs_count =
-                                u8::try_from(ScriptNum::new(stack.top(-isize::from(i))?, require_minimal, None).getint()).map_err(|_| ScriptError::SigCount)?;
+                                u8::try_from(ScriptNum::new(stack.top(-isize::from(i))?, require_minimal, None)?.getint())
+                                  .map_err(|_| ScriptError::SigCount)?;
                             if sigs_count > keys_count {
                                 return set_error(ScriptError::SigCount);
                             };
@@ -1213,12 +1218,12 @@ impl SignatureChecker for CallbackTransactionSignatureChecker<'_> {
     }
 }
 
-pub fn verify_script(
+pub fn verify_script<'a>(
     script_sig: &Script,
     script_pub_key: &Script,
     flags: VerificationFlags,
     checker: &dyn SignatureChecker,
-) -> Result<(), ScriptError> {
+) -> Result<(), ScriptError<'a>> {
     if flags.contains(VerificationFlags::SigPushOnly) && !script_sig.is_push_only() {
         return set_error(ScriptError::SigPushOnly);
     }

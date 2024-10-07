@@ -1,6 +1,6 @@
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 #[repr(i32)]
-pub enum ScriptError {
+pub enum ScriptError<'a> {
     // Ok = 0,
     UnknownError = 1,
     EvalFalse,
@@ -49,4 +49,7 @@ pub enum ScriptError {
         expected_bytes: usize,
         available_bytes: usize,
     },
+
+    /// Corresponds to the `scriptnum_error` exception in C++.
+    ScriptNumError(&'a str),
 }
