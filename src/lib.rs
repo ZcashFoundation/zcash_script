@@ -131,7 +131,7 @@ fn check_legacy_sigop_count_script<T: ZcashScript, U: ZcashScript>(
 /// Runs both the C++ and Rust implementations of `ZcashScript::verify_callback` and returns both
 /// results. This is more useful for testing than the impl that logs a warning if the results differ
 /// and always returns the C++ result.
-fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
+pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
     sighash: SighashCalculator,
     lock_time: i64,
     is_final: bool,

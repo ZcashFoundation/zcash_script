@@ -149,3 +149,24 @@ jobs:
         with:
           command: clippy
           args: -- -D warnings
+
+  fuzz:
+    name: Fuzz
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust:
+          - nightly
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          override: true
+      - run: cargo install cargo-fuzz
+      - uses: actions-rs/cargo@v1
+        with:
+          command: fuzz
+          args: run compare -- -max_len=20000 -max_total_time=100

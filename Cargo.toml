@@ -59,11 +59,12 @@ path = "src/lib.rs"
 
 [features]
 external-secp = []
-rust-interpreter = []
+test-dependencies = []
 
 [dependencies]
 bitflags = "2.5"
 enum_primitive = "0.1"
+libfuzzer-sys = "0.4"
 log = "0.4"
 proptest = "0.9"
 ripemd = "0.1"
