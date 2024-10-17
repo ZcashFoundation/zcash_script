@@ -20,5 +20,6 @@ fuzz_target!(|tup: (i64, bool, &[u8], &[u8], u32)| {
         sig,
         testing::repair_flags(VerificationFlags::from_bits_truncate(flags)),
     );
-    assert_eq!(ret.0, ret.1);
+    assert_eq!(ret.0, ret.1.clone().map_err(testing::normalize_error),
+               "original Rust result: {:?}", ret.1);
 });

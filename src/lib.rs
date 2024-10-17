@@ -24,11 +24,11 @@ pub use zcash_script::*;
 /// A tag to indicate that the C++ implementation of zcash_script should be used.
 pub enum Cxx {}
 
-impl From<zcash_script_error_t> for Error {
+impl<'a> From<zcash_script_error_t> for Error<'a> {
     #[allow(non_upper_case_globals)]
-    fn from(err_code: zcash_script_error_t) -> Error {
+    fn from(err_code: zcash_script_error_t) -> Self {
         match err_code {
-            zcash_script_error_t_zcash_script_ERR_OK => Error::Ok,
+            zcash_script_error_t_zcash_script_ERR_OK => Error::Ok(None),
             zcash_script_error_t_zcash_script_ERR_VERIFY_SCRIPT => Error::VerifyScript,
             unknown => Error::Unknown(unknown.into()),
         }
@@ -64,14 +64,14 @@ extern "C" fn sighash_callback(
 
 /// This steals a bit of the wrapper code from zebra_script, to provide the API that they want.
 impl ZcashScript for Cxx {
-    fn verify_callback(
+    fn verify_callback<'a>(
         sighash: SighashCalculator,
         lock_time: i64,
         is_final: bool,
         script_pub_key: &[u8],
         signature_script: &[u8],
         flags: VerificationFlags,
-    ) -> Result<(), Error> {
+    ) -> Result<(), Error<'a>> {
         let mut err = 0;
 
         // SAFETY: The `script` fields are created from a valid Rust `slice`.
@@ -131,14 +131,14 @@ fn check_legacy_sigop_count_script<T: ZcashScript, U: ZcashScript>(
 /// Runs both the C++ and Rust implementations of `ZcashScript::verify_callback` and returns both
 /// results. This is more useful for testing than the impl that logs a warning if the results differ
 /// and always returns the C++ result.
-pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
+pub fn check_verify_callback<'a, T: ZcashScript, U: ZcashScript>(
     sighash: SighashCalculator,
     lock_time: i64,
     is_final: bool,
     script_pub_key: &[u8],
     script_sig: &[u8],
     flags: VerificationFlags,
-) -> (Result<(), Error>, Result<(), Error>) {
+) -> (Result<(), Error<'a>>, Result<(), Error<'a>>) {
     (
         T::verify_callback(
             sighash,
@@ -173,14 +173,14 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for (T, U) {
         cxx
     }
 
-    fn verify_callback(
+    fn verify_callback<'a>(
         sighash: SighashCalculator,
         lock_time: i64,
         is_final: bool,
         script_pub_key: &[u8],
         script_sig: &[u8],
         flags: VerificationFlags,
-    ) -> Result<(), Error> {
+    ) -> Result<(), Error<'a>> {
         let (cxx, rust) = check_verify_callback::<T, U>(
             sighash,
             lock_time,
@@ -206,6 +206,14 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for (T, U) {
 #[cfg(any(test, feature = "test-dependencies"))]
 pub mod testing {
     use super::*;
+
+    /// Convert errors that don’t exist in the C++ code into the cases that do.
+    pub fn normalize_error(err: Error) -> Error {
+        match err {
+            Error::Ok(Some(_)) => Error::Ok(None),
+            _ => err,
+        }
+    }
 
     /// Ensures that flags represent a supported state. This avoids crashes in the C++ code, which
     /// break various tests.
@@ -271,7 +279,7 @@ mod tests {
             flags,
         );
 
-        assert_eq!(ret.0, ret.1);
+        assert_eq!(ret.0, ret.1.map_err(normalize_error));
         assert!(ret.0.is_ok());
     }
 
@@ -292,8 +300,12 @@ mod tests {
             flags,
         );
 
-        assert_eq!(ret.0, ret.1);
-        assert_eq!(ret.0, Err(Error::Ok));
+        assert_eq!(ret.0, ret.1.clone().map_err(normalize_error));
+        // Checks the Rust result, because we have more information on the Rust side.
+        assert_eq!(
+            ret.1,
+            Err(Error::Ok(Some(script_error::ScriptError::EvalFalse)))
+        );
     }
 
     #[test]
@@ -313,8 +325,12 @@ mod tests {
             flags,
         );
 
-        assert_eq!(ret.0, ret.1);
-        assert_eq!(ret.0, Err(Error::Ok));
+        assert_eq!(ret.0, ret.1.clone().map_err(normalize_error));
+        // Checks the Rust result, because we have more information on the Rust side.
+        assert_eq!(
+            ret.1,
+            Err(Error::Ok(Some(script_error::ScriptError::EvalFalse)))
+        );
     }
 
     proptest! {
@@ -340,7 +356,8 @@ mod tests {
                 &sig[..],
                 repair_flags(VerificationFlags::from_bits_truncate(flags)),
             );
-            prop_assert_eq!(ret.0, ret.1);
+            prop_assert_eq!(ret.0, ret.1.clone().map_err(normalize_error),
+                            "original Rust result: {:?}", ret.1);
         }
 
         /// Similar to `test_arbitrary_scripts`, but ensures the `sig` only contains pushes.
@@ -363,7 +380,8 @@ mod tests {
                 repair_flags(VerificationFlags::from_bits_truncate(flags))
                     | VerificationFlags::SigPushOnly,
             );
-            prop_assert_eq!(ret.0, ret.1);
+            prop_assert_eq!(ret.0, ret.1.clone().map_err(normalize_error),
+                            "original Rust result: {:?}", ret.1);
         }
     }
 }

@@ -2,15 +2,16 @@ use std::num::TryFromIntError;
 
 use super::interpreter::*;
 use super::script::*;
+use super::script_error::*;
 
 /// This maps to `zcash_script_error_t`, but most of those cases aren’t used any more. This only
 /// replicates the still-used cases, and then an `Unknown` bucket for anything else that might
 /// happen.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[repr(u32)]
-pub enum Error {
+pub enum Error<'a> {
     /// Any failure that results in the script being invalid.
-    Ok = 0,
+    Ok(Option<ScriptError<'a>>) = 0,
     /// An exception was caught.
     VerifyScript = 7,
     /// The script size can’t fit in a `u32`, as required by the C++ code.
@@ -40,14 +41,14 @@ pub trait ZcashScript {
     ///  - flags: the script verification flags to use.
     ///
     ///  Note that script verification failure is indicated by `Err(Error::Ok)`.
-    fn verify_callback(
+    fn verify_callback<'a>(
         sighash_callback: SighashCalculator,
         lock_time: i64,
         is_final: bool,
         script_pub_key: &[u8],
         script_sig: &[u8],
         flags: VerificationFlags,
-    ) -> Result<(), Error>;
+    ) -> Result<(), Error<'a>>;
 
     /// Returns the number of transparent signature operations in the input or
     /// output script pointed to by script.
@@ -64,14 +65,14 @@ impl ZcashScript for Rust {
         Ok(cscript.get_sig_op_count(false))
     }
 
-    fn verify_callback(
+    fn verify_callback<'a>(
         sighash: SighashCalculator,
         lock_time: i64,
         is_final: bool,
         script_pub_key: &[u8],
         script_sig: &[u8],
         flags: VerificationFlags,
-    ) -> Result<(), Error> {
+    ) -> Result<(), Error<'a>> {
         let lock_time_num = ScriptNum(lock_time);
         verify_script(
             &Script(script_sig),
@@ -83,6 +84,6 @@ impl ZcashScript for Rust {
                 is_final,
             },
         )
-        .map_err(|_| Error::Ok)
+        .map_err(|e| Error::Ok(Some(e)))
     }
 }
