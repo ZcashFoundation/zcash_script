@@ -2,6 +2,7 @@ use std::num::TryFromIntError;
 
 use super::interpreter::*;
 use super::script::*;
+use super::script_error::*;
 
 /// This maps to `zcash_script_error_t`, but most of those cases aren’t used any more. This only
 /// replicates the still-used cases, and then an `Unknown` bucket for anything else that might
@@ -10,7 +11,10 @@ use super::script::*;
 #[repr(u32)]
 pub enum Error {
     /// Any failure that results in the script being invalid.
-    Ok = 0,
+    ///
+    /// __NB__: This is in `Option` because this type is used by both the C++ and Rust
+    ///         implementations, but the C++ impl doesn’t yet expose the original error.
+    Ok(Option<ScriptError>) = 0,
     /// An exception was caught.
     VerifyScript = 7,
     /// The script size can’t fit in a `u32`, as required by the C++ code.
@@ -84,6 +88,6 @@ impl ZcashScript for Rust {
                 is_final,
             },
         )
-        .map_err(|_| Error::Ok)
+        .map_err(|e| Error::Ok(Some(e)))
     }
 }

@@ -10,7 +10,7 @@ mod cxx;
 mod external;
 mod interpreter;
 mod script;
-mod script_error;
+pub mod script_error;
 mod zcash_script;
 
 use std::os::raw::{c_int, c_uint, c_void};
@@ -26,9 +26,9 @@ pub enum Cxx {}
 
 impl From<zcash_script_error_t> for Error {
     #[allow(non_upper_case_globals)]
-    fn from(err_code: zcash_script_error_t) -> Error {
+    fn from(err_code: zcash_script_error_t) -> Self {
         match err_code {
-            zcash_script_error_t_zcash_script_ERR_OK => Error::Ok,
+            zcash_script_error_t_zcash_script_ERR_OK => Error::Ok(None),
             zcash_script_error_t_zcash_script_ERR_VERIFY_SCRIPT => Error::VerifyScript,
             unknown => Error::Unknown(unknown.into()),
         }
@@ -207,6 +207,14 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for (T, U) {
 pub mod testing {
     use super::*;
 
+    /// Convert errors that don’t exist in the C++ code into the cases that do.
+    pub fn normalize_error(err: Error) -> Error {
+        match err {
+            Error::Ok(Some(_)) => Error::Ok(None),
+            _ => err,
+        }
+    }
+
     /// Ensures that flags represent a supported state. This avoids crashes in the C++ code, which
     /// break various tests.
     pub fn repair_flags(flags: VerificationFlags) -> VerificationFlags {
@@ -271,7 +279,7 @@ mod tests {
             flags,
         );
 
-        assert_eq!(ret.0, ret.1);
+        assert_eq!(ret.0, ret.1.map_err(normalize_error));
         assert!(ret.0.is_ok());
     }
 
@@ -292,8 +300,12 @@ mod tests {
             flags,
         );
 
-        assert_eq!(ret.0, ret.1);
-        assert_eq!(ret.0, Err(Error::Ok));
+        assert_eq!(ret.0, ret.1.map_err(normalize_error));
+        // Checks the Rust result, because we have more information on the Rust side.
+        assert_eq!(
+            ret.1,
+            Err(Error::Ok(Some(script_error::ScriptError::EvalFalse)))
+        );
     }
 
     #[test]
@@ -313,8 +325,12 @@ mod tests {
             flags,
         );
 
-        assert_eq!(ret.0, ret.1);
-        assert_eq!(ret.0, Err(Error::Ok));
+        assert_eq!(ret.0, ret.1.map_err(normalize_error));
+        // Checks the Rust result, because we have more information on the Rust side.
+        assert_eq!(
+            ret.1,
+            Err(Error::Ok(Some(script_error::ScriptError::EvalFalse)))
+        );
     }
 
     proptest! {
@@ -340,7 +356,8 @@ mod tests {
                 &sig[..],
                 repair_flags(VerificationFlags::from_bits_truncate(flags)),
             );
-            prop_assert_eq!(ret.0, ret.1);
+            prop_assert_eq!(ret.0, ret.1.map_err(normalize_error),
+                            "original Rust result: {:?}", ret.1);
         }
 
         /// Similar to `test_arbitrary_scripts`, but ensures the `sig` only contains pushes.
@@ -363,7 +380,8 @@ mod tests {
                 repair_flags(VerificationFlags::from_bits_truncate(flags))
                     | VerificationFlags::SigPushOnly,
             );
-            prop_assert_eq!(ret.0, ret.1);
+            prop_assert_eq!(ret.0, ret.1.map_err(normalize_error),
+                            "original Rust result: {:?}", ret.1);
         }
     }
 }
