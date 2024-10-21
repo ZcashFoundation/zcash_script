@@ -536,7 +536,8 @@ pub fn eval_script(
                                 // to 5-byte bignums, which are good until 2**39-1, well
                                 // beyond the 2**32-1 limit of the `lock_time` field itself.
                                 let lock_time =
-                                    ScriptNum::new(stack.top(-1)?, require_minimal, Some(5));
+                                    ScriptNum::new(stack.top(-1)?, require_minimal, Some(5))
+                                      .map_err(ScriptError::ScriptNumError)?;
 
                                 // In the rare event that the argument may be < 0 due to
                                 // some arithmetic being done first, you can always use
@@ -756,7 +757,8 @@ pub fn eval_script(
                                 return set_error(ScriptError::InvalidStackOperation);
                             }
                             let n =
-                                u16::try_from(ScriptNum::new(stack.top(-1)?, require_minimal, None).getint())
+                                u16::try_from(ScriptNum::new(stack.top(-1)?, require_minimal, None)
+                                      .map_err(ScriptError::ScriptNumError)?.getint())
                                 .map_err(|_| ScriptError::InvalidStackOperation)?;
                             stack.pop()?;
                             if usize::from(n) >= stack.size() {
@@ -858,7 +860,8 @@ pub fn eval_script(
                             if stack.size() < 1 {
                                 return set_error(ScriptError::InvalidStackOperation);
                             }
-                            let mut bn = ScriptNum::new(stack.top(-1)?, require_minimal, None);
+                            let mut bn = ScriptNum::new(stack.top(-1)?, require_minimal, None)
+                                      .map_err(ScriptError::ScriptNumError)?;
                             match op {
                                 OP_1ADD => bn = bn + bn_one,
                                 OP_1SUB => bn = bn - bn_one,
@@ -893,8 +896,10 @@ pub fn eval_script(
                             if stack.size() < 2 {
                                 return set_error(ScriptError::InvalidStackOperation);
                             }
-                            let bn1 = ScriptNum::new(stack.top(-2)?, require_minimal, None);
-                            let bn2 = ScriptNum::new(stack.top(-1)?, require_minimal, None);
+                            let bn1 = ScriptNum::new(stack.top(-2)?, require_minimal, None)
+                                      .map_err(ScriptError::ScriptNumError)?;
+                            let bn2 = ScriptNum::new(stack.top(-1)?, require_minimal, None)
+                                      .map_err(ScriptError::ScriptNumError)?;
                             let bn = match op {
                                 OP_ADD =>
                                     bn1 + bn2,
@@ -933,9 +938,12 @@ pub fn eval_script(
                             if stack.size() < 3 {
                                 return set_error(ScriptError::InvalidStackOperation);
                             }
-                            let bn1 = ScriptNum::new(stack.top(-3)?, require_minimal, None);
-                            let bn2 = ScriptNum::new(stack.top(-2)?, require_minimal, None);
-                            let bn3 = ScriptNum::new(stack.top(-1)?, require_minimal, None);
+                            let bn1 = ScriptNum::new(stack.top(-3)?, require_minimal, None)
+                                      .map_err(ScriptError::ScriptNumError)?;
+                            let bn2 = ScriptNum::new(stack.top(-2)?, require_minimal, None)
+                                      .map_err(ScriptError::ScriptNumError)?;
+                            let bn3 = ScriptNum::new(stack.top(-1)?, require_minimal, None)
+                                      .map_err(ScriptError::ScriptNumError)?;
                             let value = bn2 <= bn1 && bn1 < bn3;
                             stack.pop()?;
                             stack.pop()?;
@@ -1024,7 +1032,9 @@ pub fn eval_script(
                             };
 
                             let mut keys_count =
-                                u8::try_from(ScriptNum::new(stack.top(-isize::from(i))?, require_minimal, None).getint()).map_err(|_| ScriptError::PubKeyCount)?;
+                                u8::try_from(ScriptNum::new(stack.top(-isize::from(i))?, require_minimal, None)
+                                      .map_err(ScriptError::ScriptNumError)?.getint())
+                                  .map_err(|_| ScriptError::PubKeyCount)?;
                             if keys_count > 20 {
                                 return set_error(ScriptError::PubKeyCount);
                             };
@@ -1040,7 +1050,9 @@ pub fn eval_script(
                             }
 
                             let mut sigs_count =
-                                u8::try_from(ScriptNum::new(stack.top(-isize::from(i))?, require_minimal, None).getint()).map_err(|_| ScriptError::SigCount)?;
+                                u8::try_from(ScriptNum::new(stack.top(-isize::from(i))?, require_minimal, None)
+                                      .map_err(ScriptError::ScriptNumError)?.getint())
+                                  .map_err(|_| ScriptError::SigCount)?;
                             if sigs_count > keys_count {
                                 return set_error(ScriptError::SigCount);
                             };

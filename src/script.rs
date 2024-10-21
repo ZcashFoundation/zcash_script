@@ -270,11 +270,18 @@ pub struct ScriptNum(pub i64);
 impl ScriptNum {
     const DEFAULT_MAX_NUM_SIZE: usize = 4;
 
-    pub fn new(vch: &Vec<u8>, require_minimal: bool, max_num_size: Option<usize>) -> Self {
+    pub fn new(
+        vch: &Vec<u8>,
+        require_minimal: bool,
+        max_num_size: Option<usize>,
+    ) -> Result<Self, ScriptNumError> {
         let max_num_size = max_num_size.unwrap_or(Self::DEFAULT_MAX_NUM_SIZE);
         if vch.len() > max_num_size {
-            panic!("script number overflow");
-        };
+            return Err(ScriptNumError::Overflow {
+                max_num_size,
+                actual: vch.len(),
+            });
+        }
         if require_minimal && !vch.is_empty() {
             // Check that the number is encoded with the minimum possible
             // number of bytes.
@@ -288,12 +295,14 @@ impl ScriptNum {
                 // it would conflict with the sign bit. An example of this case
                 // is +-255, which encode to 0xff00 and 0xff80 respectively.
                 // (big-endian).
-                if vch.len() <= 1 || (vch[vch.len() - 2] & 0x80) == 0 {
-                    panic!("non-minimally encoded script number");
+                if vch.len() <= 1 {
+                    return Err(ScriptNumError::NegativeZero);
+                } else if (vch[vch.len() - 2] & 0x80) == 0 {
+                    return Err(ScriptNumError::NonMinimalEncoding);
                 }
             }
         }
-        ScriptNum(Self::set_vch(vch))
+        Self::set_vch(vch).map(ScriptNum)
     }
 
     pub fn getint(&self) -> i32 {
@@ -357,21 +366,24 @@ impl ScriptNum {
         result
     }
 
-    fn set_vch(vch: &Vec<u8>) -> i64 {
+    fn set_vch(vch: &Vec<u8>) -> Result<i64, ScriptNumError> {
         match vch.last() {
-            None => 0,
+            None => Ok(0),
             Some(vch_back) => {
                 if *vch == vec![0, 0, 0, 0, 0, 0, 0, 128, 128] {
                     // On an x86_64 system, the code below would actually decode the buggy
                     // INT64_MIN encoding correctly. However in this case, it would be
                     // performing left shifts of a signed type by 64, which has undefined
                     // behavior.
-                    return i64::MIN;
+                    return Ok(i64::MIN);
                 };
 
                 // Guard against undefined behavior. INT64_MIN is the only allowed 9-byte encoding.
                 if vch.len() > 8 {
-                    panic!("script number overflow");
+                    return Err(ScriptNumError::Overflow {
+                        max_num_size: 8,
+                        actual: vch.len(),
+                    });
                 };
 
                 let mut result: i64 = 0;
@@ -382,10 +394,10 @@ impl ScriptNum {
                 // If the input vector's most significant byte is 0x80, remove it from
                 // the result's msb and return a negative.
                 if vch_back & 0x80 != 0 {
-                    return -(result & !(0x80 << (8 * (vch.len() - 1))));
+                    return Ok(-(result & !(0x80 << (8 * (vch.len() - 1)))));
                 };
 
-                result
+                Ok(result)
             }
         }
     }
