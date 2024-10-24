@@ -1,18 +1,69 @@
-bitflags::bitflags! {
-    /// The different SigHash types, as defined in <https://zips.z.cash/zip-0143>
+use zcash_primitives::transaction::TxVersion;
+
+/// The ways in which a transparent input may commit to the transparent outputs of its
+/// transaction.
+///
+/// Note that:
+/// - Transparent inputs always commit to all shielded outputs.
+/// - Shielded inputs always commit to all outputs.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum SignedOutputs {
+    /// The input signature commits to all transparent outputs in the transaction.
+    All,
+    /// The transparent input's signature commits to the transparent output at the same
+    /// index as the transparent input.
     ///
-    /// TODO: This is currently defined as `i32` to match the `c_int` constants in this package, but
-    ///       should use librustzcash’s `u8` constants once we’ve removed the C++.
-    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-    pub struct HashType: i32 {
-        /// Sign all the outputs
-        const All = 1;
-        /// Sign none of the outputs - anyone can spend
-        const None = 2;
-        /// Sign one of the outputs - anyone can spend the rest
-        const Single = 3;
-        /// Anyone can add inputs to this transaction
-        const AnyoneCanPay = 0x80;
+    /// If the specified transparent output along with any shielded outputs only consume
+    /// part of this input, anyone is permitted to modify the transaction to claim the
+    /// remainder.
+    Single,
+    /// The transparent input's signature does not commit to any transparent outputs.
+    ///
+    /// If the shielded outputs only consume part (or none) of this input, anyone is
+    /// permitted to modify the transaction to claim the remainder.
+    None,
+}
+
+/// The different SigHash types, as defined in <https://zips.z.cash/zip-0143>
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct HashType {
+    pub signed_outputs: SignedOutputs,
+    /// Allows anyone to add transparent inputs to this transaction.
+    pub anyone_can_pay: bool,
+}
+
+/// Things that can go wrong when constructing a `HashType` from bit flags.
+pub enum InvalidHashType {
+    /// Either or both of the two least-significant bits must be set.
+    UnknownSignedOutputs,
+    /// With v5 transactions, bits other than those specified for `HashType` must be 0. The `i32`
+    /// includes only the bits that are undefined by `HashType`.
+    ExtraBitsSet(i32),
+}
+
+impl HashType {
+    /// Construct a `HashType` from bit flags.
+    ///
+    /// ## Consensus rules
+    ///
+    /// [§4.10](https://zips.z.cash/protocol/protocol.pdf#sighash):
+    /// - Any `HashType` in a v5 transaction must have no undefined bits set.
+    pub fn from_bits(bits: i32, tx_version: TxVersion) -> Result<Self, InvalidHashType> {
+        let unknown_bits = (bits | 0x83) ^ 0x83;
+        if tx_version == TxVersion::Zip225 && unknown_bits != 0 {
+            Err(InvalidHashType::ExtraBitsSet(unknown_bits))
+        } else {
+            let msigned_outputs = match (bits & 2 != 0, bits & 1 != 0) {
+                (false, false) => Err(InvalidHashType::UnknownSignedOutputs),
+                (false, true) => Ok(SignedOutputs::All),
+                (true, false) => Ok(SignedOutputs::None),
+                (true, true) => Ok(SignedOutputs::Single),
+            };
+            msigned_outputs.map(|signed_outputs| HashType {
+                signed_outputs,
+                anyone_can_pay: bits & 0x80 != 0,
+            })
+        }
     }
 }
 
