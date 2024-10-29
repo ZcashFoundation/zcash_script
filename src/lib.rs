@@ -22,7 +22,7 @@ pub use interpreter::{HashType, SighashCalculator, VerificationFlags};
 pub use zcash_script::*;
 
 /// A tag to indicate that the C++ implementation of zcash_script should be used.
-pub enum Cxx {}
+pub enum CxxInterpreter {}
 
 impl From<zcash_script_error_t> for Error {
     #[allow(non_upper_case_globals)]
@@ -63,7 +63,7 @@ extern "C" fn sighash_callback(
 }
 
 /// This steals a bit of the wrapper code from zebra_script, to provide the API that they want.
-impl ZcashScript for Cxx {
+impl ZcashScript for CxxInterpreter {
     fn verify_callback(
         sighash: SighashCalculator,
         lock_time: i64,
@@ -128,9 +128,9 @@ fn check_legacy_sigop_count_script<T: ZcashScript, U: ZcashScript>(
     )
 }
 
-/// Runs both the C++ and Rust implementations of `ZcashScript::verify_callback` and returns both
-/// results. This is more useful for testing than the impl that logs a warning if the results differ
-/// and always returns the C++ result.
+/// Runs two implementations of `ZcashScript::verify_callback` with the same arguments and returns
+/// both results. This is more useful for testing than the impl that logs a warning if the results
+/// differ and always returns the `T` result.
 pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
     sighash: SighashCalculator,
     lock_time: i64,
@@ -159,11 +159,16 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
     )
 }
 
-/// This implementation is functionally equivalent to `Cxx`, but it also runs `Rust` and logs a
-/// warning if they disagree.
-impl<T: ZcashScript, U: ZcashScript> ZcashScript for (T, U) {
+/// A tag to indicate that both the C++ and Rust implementations of zcash_script should be used,
+/// with their results compared.
+pub enum CxxRustComparisonInterpreter {}
+
+/// This implementation is functionally equivalent to the `T` impl, but it also runs a second (`U`)
+/// impl and logs a warning if they disagree.
+impl ZcashScript for CxxRustComparisonInterpreter {
     fn legacy_sigop_count_script(script: &[u8]) -> Result<u32, Error> {
-        let (cxx, rust) = check_legacy_sigop_count_script::<T, U>(script);
+        let (cxx, rust) =
+            check_legacy_sigop_count_script::<CxxInterpreter, RustInterpreter>(script);
         if rust != cxx {
             warn!(
                 "The Rust Zcash Script interpreter had a different sigop count ({:?}) from the C++ one ({:?}).",
@@ -181,7 +186,7 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for (T, U) {
         script_sig: &[u8],
         flags: VerificationFlags,
     ) -> Result<(), Error> {
-        let (cxx, rust) = check_verify_callback::<T, U>(
+        let (cxx, rust) = check_verify_callback::<CxxInterpreter, RustInterpreter>(
             sighash,
             lock_time,
             is_final,
@@ -270,7 +275,7 @@ mod tests {
         let script_sig = &SCRIPT_SIG;
         let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
 
-        let ret = check_verify_callback::<Cxx, Rust>(
+        let ret = check_verify_callback::<CxxInterpreter, RustInterpreter>(
             &sighash,
             n_lock_time,
             is_final,
@@ -291,7 +296,7 @@ mod tests {
         let script_sig = &SCRIPT_SIG;
         let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
 
-        let ret = check_verify_callback::<Cxx, Rust>(
+        let ret = check_verify_callback::<CxxInterpreter, RustInterpreter>(
             &invalid_sighash,
             n_lock_time,
             is_final,
@@ -316,7 +321,7 @@ mod tests {
         let script_sig = &SCRIPT_SIG;
         let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
 
-        let ret = check_verify_callback::<Cxx, Rust>(
+        let ret = check_verify_callback::<CxxInterpreter, RustInterpreter>(
             &missing_sighash,
             n_lock_time,
             is_final,
@@ -348,7 +353,7 @@ mod tests {
             sig in prop::collection::vec(0..=0xffu8, 1..=OVERFLOW_SCRIPT_SIZE),
             flags in prop::bits::u32::masked(VerificationFlags::all().bits()),
         ) {
-            let ret = check_verify_callback::<Cxx, Rust>(
+            let ret = check_verify_callback::<CxxInterpreter, RustInterpreter>(
                 &missing_sighash,
                 lock_time,
                 is_final,
@@ -371,7 +376,7 @@ mod tests {
                 // Don’t waste test cases on whether or not `SigPushOnly` is set.
                 (VerificationFlags::all() - VerificationFlags::SigPushOnly).bits()),
         ) {
-            let ret = check_verify_callback::<Cxx, Rust>(
+            let ret = check_verify_callback::<CxxInterpreter, RustInterpreter>(
                 &missing_sighash,
                 lock_time,
                 is_final,

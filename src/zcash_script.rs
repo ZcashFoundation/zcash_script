@@ -59,9 +59,9 @@ pub trait ZcashScript {
 }
 
 /// A tag to indicate that the Rust implementation of zcash_script should be used.
-pub enum Rust {}
+pub enum RustInterpreter {}
 
-impl ZcashScript for Rust {
+impl ZcashScript for RustInterpreter {
     /// Returns the number of transparent signature operations in the
     /// transparent inputs and outputs of this transaction.
     fn legacy_sigop_count_script(script: &[u8]) -> Result<u32, Error> {

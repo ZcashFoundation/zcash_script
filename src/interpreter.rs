@@ -6,7 +6,6 @@ use sha1::Sha1;
 use sha2::{Digest, Sha256};
 
 use super::external::pubkey::PubKey;
-use super::external::uint256::UInt256;
 use super::script::{Operation::*, PushValue::*, *};
 use super::script_error::*;
 
@@ -1166,12 +1165,10 @@ pub const SIGHASH_SIZE: usize = 32;
 ///
 /// The `extern "C"` function that calls this doesn’t give much opportunity for rich failure
 /// reporting, but returning `None` indicates _some_ failure to produce the desired hash.
-///
-/// TODO: Can we get the “32” from somewhere rather than hardcoding it?
 pub type SighashCalculator<'a> = &'a dyn Fn(&[u8], HashType) -> Option<[u8; SIGHASH_SIZE]>;
 
 impl CallbackTransactionSignatureChecker<'_> {
-    pub fn verify_signature(vch_sig: &[u8], pubkey: &PubKey, sighash: &UInt256) -> bool {
+    pub fn verify_signature(vch_sig: &[u8], pubkey: &PubKey, sighash: &[u8; SIGHASH_SIZE]) -> bool {
         pubkey.verify(sighash, vch_sig)
     }
 }

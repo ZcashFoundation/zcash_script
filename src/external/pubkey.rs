@@ -1,7 +1,5 @@
 use secp256k1::{ecdsa, Message, PublicKey, Secp256k1};
 
-use super::uint256::*;
-
 /// FIXME: `PUBLIC_KEY_SIZE` is meant to be an upper bound, it seems. Maybe parameterize the type
 ///        over the size.
 pub struct PubKey<'a>(pub &'a [u8]);
@@ -19,7 +17,7 @@ impl PubKey<'_> {
 
     /// Verify a DER signature (~72 bytes).
     /// If this public key is not fully valid, the return value will be false.
-    pub fn verify(&self, hash: &UInt256, vch_sig: &[u8]) -> bool {
+    pub fn verify(&self, hash: &[u8; 32], vch_sig: &[u8]) -> bool {
         if !self.is_valid() {
             return false;
         };
