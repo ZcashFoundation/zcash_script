@@ -1,6 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
+use zcash_primitives::transaction::TxVersion;
 extern crate zcash_script;
 
 use zcash_script::*;
@@ -19,6 +20,7 @@ fuzz_target!(|tup: (i64, bool, &[u8], &[u8], u32)| {
         pub_key,
         sig,
         testing::repair_flags(VerificationFlags::from_bits_truncate(flags)),
+        TxVersion::Zip225,
     );
     assert_eq!(ret.0, ret.1.clone().map_err(testing::normalize_error),
                "original Rust result: {:?}", ret.1);

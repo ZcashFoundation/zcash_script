@@ -4,26 +4,76 @@ use std::slice::Iter;
 use ripemd::Ripemd160;
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
+use zcash_primitives::transaction::TxVersion;
 
 use super::external::pubkey::PubKey;
 use super::script::{Operation::*, PushValue::*, *};
 use super::script_error::*;
 
-bitflags::bitflags! {
-    /// The different SigHash types, as defined in <https://zips.z.cash/zip-0143>
+/// The ways in which a transparent input may commit to the transparent outputs of its
+/// transaction.
+///
+/// Note that:
+/// - Transparent inputs always commit to all shielded outputs.
+/// - Shielded inputs always commit to all outputs.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum SignedOutputs {
+    /// The input signature commits to all transparent outputs in the transaction.
+    All,
+    /// The transparent input's signature commits to the transparent output at the same
+    /// index as the transparent input.
     ///
-    /// TODO: This is currently defined as `i32` to match the `c_int` constants in this package, but
-    ///       should use librustzcash’s `u8` constants once we’ve removed the C++.
-    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-    pub struct HashType: i32 {
-        /// Sign all the outputs
-        const All = 1;
-        /// Sign none of the outputs - anyone can spend
-        const None = 2;
-        /// Sign one of the outputs - anyone can spend the rest
-        const Single = 3;
-        /// Anyone can add inputs to this transaction
-        const AnyoneCanPay = 0x80;
+    /// If the specified transparent output along with any shielded outputs only consume
+    /// part of this input, anyone is permitted to modify the transaction to claim the
+    /// remainder.
+    Single,
+    /// The transparent input's signature does not commit to any transparent outputs.
+    ///
+    /// If the shielded outputs only consume part (or none) of this input, anyone is
+    /// permitted to modify the transaction to claim the remainder.
+    None,
+}
+
+/// The different SigHash types, as defined in <https://zips.z.cash/zip-0143>
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct HashType {
+    pub signed_outputs: SignedOutputs,
+    /// Allows anyone to add transparent inputs to this transaction.
+    pub anyone_can_pay: bool,
+}
+
+/// Things that can go wrong when constructing a `HashType` from bit flags.
+pub enum InvalidHashType {
+    /// Either or both of the two least-significant bits must be set.
+    UnknownSignedOutputs,
+    /// With v5 transactions, bits other than those specified for `HashType` must be 0. The `i32`
+    /// includes only the bits that are undefined by `HashType`.
+    ExtraBitsSet(i32),
+}
+
+impl HashType {
+    /// Construct a `HashType` from bit flags.
+    ///
+    /// ## Consensus rules
+    ///
+    /// [§4.10](https://zips.z.cash/protocol/protocol.pdf#sighash):
+    /// - Any `HashType` in a v5 transaction must have no undefined bits set.
+    pub fn from_bits(bits: i32, tx_version: TxVersion) -> Result<Self, InvalidHashType> {
+        let unknown_bits = (bits | 0x83) ^ 0x83;
+        if tx_version == TxVersion::Zip225 && unknown_bits != 0 {
+            Err(InvalidHashType::ExtraBitsSet(unknown_bits))
+        } else {
+            let msigned_outputs = match (bits & 2 != 0, bits & 1 != 0) {
+                (false, false) => Err(InvalidHashType::UnknownSignedOutputs),
+                (false, true) => Ok(SignedOutputs::All),
+                (true, false) => Ok(SignedOutputs::None),
+                (true, true) => Ok(SignedOutputs::Single),
+            };
+            msigned_outputs.map(|signed_outputs| HashType {
+                signed_outputs,
+                anyone_can_pay: bits & 0x80 != 0,
+            })
+        }
     }
 }
 
@@ -99,6 +149,7 @@ pub struct CallbackTransactionSignatureChecker<'a> {
     pub sighash: SighashCalculator<'a>,
     pub lock_time: &'a ScriptNum,
     pub is_final: bool,
+    pub tx_version: TxVersion,
 }
 
 type ValType = Vec<u8>;
@@ -336,12 +387,8 @@ fn is_defined_hashtype_signature(vch_sig: &ValType) -> bool {
     if vch_sig.is_empty() {
         return false;
     };
-    let hash_type = i32::from(vch_sig[vch_sig.len() - 1]) & !HashType::AnyoneCanPay.bits();
-    if hash_type < HashType::All.bits() || hash_type > HashType::Single.bits() {
-        return false;
-    };
 
-    true
+    HashType::from_bits(i32::from(vch_sig[vch_sig.len() - 1]), TxVersion::Zip225).is_ok()
 }
 
 fn check_signature_encoding(
@@ -1155,7 +1202,9 @@ pub fn eval_script(
     set_success(true)
 }
 
-/// All signature hashes are 32 bits, since they are necessarily produced by SHA256.
+/// All signature hashes are 32 bytes, since they are either:
+/// - a SHA-256 output (for v1 or v2 transactions).
+/// - a BLAKE2b-256 output (for v3 and above transactions).
 pub const SIGHASH_SIZE: usize = 32;
 
 /// A function which is called to obtain the sighash.
@@ -1184,9 +1233,8 @@ impl SignatureChecker for CallbackTransactionSignatureChecker<'_> {
         let mut vch_sig = vch_sig_in.to_vec();
         vch_sig
             .pop()
-            .and_then(|hash_type| {
-                (self.sighash)(script_code.0, HashType::from_bits_retain(hash_type.into()))
-            })
+            .and_then(|hash_type| HashType::from_bits(hash_type.into(), self.tx_version).ok())
+            .and_then(|hash_type| (self.sighash)(script_code.0, hash_type))
             .map(|sighash| Self::verify_signature(&vch_sig, &pubkey, &sighash))
             .unwrap_or(false)
     }

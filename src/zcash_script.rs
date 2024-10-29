@@ -1,5 +1,7 @@
 use std::num::TryFromIntError;
 
+use zcash_primitives::transaction::TxVersion;
+
 use super::interpreter::*;
 use super::script::*;
 use super::script_error::*;
@@ -8,15 +10,14 @@ use super::script_error::*;
 /// replicates the still-used cases, and then an `Unknown` bucket for anything else that might
 /// happen.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-#[repr(u32)]
 pub enum Error {
     /// Any failure that results in the script being invalid.
     ///
     /// __NB__: This is in `Option` because this type is used by both the C++ and Rust
     ///         implementations, but the C++ impl doesn’t yet expose the original error.
-    Ok(Option<ScriptError>) = 0,
+    Ok(Option<ScriptError>),
     /// An exception was caught.
-    VerifyScript = 7,
+    VerifyScript,
     /// The script size can’t fit in a `u32`, as required by the C++ code.
     InvalidScriptSize(TryFromIntError),
     /// Some other failure value recovered from C++.
@@ -35,7 +36,7 @@ pub trait ZcashScript {
     ///  the transaction itself. In particular, the sighash for the spend
     ///  is obtained using a callback function.
     ///
-    ///  - sighash_callback: a callback function which is called to obtain the sighash.
+    ///  - sighash: a callback function which is called to obtain the sighash.
     ///  - n_lock_time: the lock time of the transaction being validated.
     ///  - is_final: a boolean indicating whether the input being validated is final
     ///    (i.e. its sequence number is 0xFFFFFFFF).
@@ -51,6 +52,7 @@ pub trait ZcashScript {
         script_pub_key: &[u8],
         script_sig: &[u8],
         flags: VerificationFlags,
+        tx_version: TxVersion,
     ) -> Result<(), Error>;
 
     /// Returns the number of transparent signature operations in the input or
@@ -76,6 +78,7 @@ impl ZcashScript for RustInterpreter {
         script_pub_key: &[u8],
         script_sig: &[u8],
         flags: VerificationFlags,
+        tx_version: TxVersion,
     ) -> Result<(), Error> {
         let lock_time_num = ScriptNum(lock_time);
         verify_script(
@@ -86,6 +89,7 @@ impl ZcashScript for RustInterpreter {
                 sighash,
                 lock_time: &lock_time_num,
                 is_final,
+                tx_version,
             },
         )
         .map_err(|e| Error::Ok(Some(e)))

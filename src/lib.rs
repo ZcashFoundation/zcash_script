@@ -16,6 +16,7 @@ mod zcash_script;
 use std::os::raw::{c_int, c_uint, c_void};
 
 use log::warn;
+use zcash_primitives::transaction::TxVersion;
 
 pub use cxx::*;
 pub use interpreter::{HashType, SighashCalculator, VerificationFlags};
@@ -51,10 +52,13 @@ extern "C" fn sighash_callback(
     // function.
     let script_code_vec =
         unsafe { std::slice::from_raw_parts(script_code, checked_script_code_len) };
-    let ctx = ctx as *const SighashCalculator;
-    // SAFETY: `ctx` is a valid `SighashCalculator` passed to `verify_callback` which forwards it to
-    // the `CallbackTransactionSignatureChecker`.
-    if let Some(sighash) = unsafe { *ctx }(script_code_vec, HashType::from_bits_retain(hash_type)) {
+    // SAFETY: `ctx` is a valid `(SighashCalculator, TxVersion)` constructed in `verify_callback`
+    // which forwards it to the `CallbackTransactionSignatureChecker`.
+    let (callback, tx_version) = unsafe { *(ctx as *const (SighashCalculator, TxVersion)) };
+    if let Some(sighash) = HashType::from_bits(hash_type, tx_version)
+        .ok()
+        .and_then(|ht| callback(script_code_vec, ht))
+    {
         assert_eq!(sighash_out_len, sighash.len().try_into().unwrap());
         // SAFETY: `sighash_out` is a valid buffer created in
         // `CallbackTransactionSignatureChecker::CheckSig`.
@@ -71,13 +75,14 @@ impl ZcashScript for CxxInterpreter {
         script_pub_key: &[u8],
         signature_script: &[u8],
         flags: VerificationFlags,
+        tx_version: TxVersion,
     ) -> Result<(), Error> {
         let mut err = 0;
 
         // SAFETY: The `script` fields are created from a valid Rust `slice`.
         let ret = unsafe {
             zcash_script_verify_callback(
-                (&sighash as *const SighashCalculator) as *const c_void,
+                (&(sighash, tx_version) as *const (SighashCalculator, TxVersion)) as *const c_void,
                 Some(sighash_callback),
                 lock_time,
                 if is_final { 1 } else { 0 },
@@ -138,6 +143,7 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
     script_pub_key: &[u8],
     script_sig: &[u8],
     flags: VerificationFlags,
+    tx_version: TxVersion,
 ) -> (Result<(), Error>, Result<(), Error>) {
     (
         T::verify_callback(
@@ -147,6 +153,7 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
             script_pub_key,
             script_sig,
             flags,
+            tx_version,
         ),
         U::verify_callback(
             sighash,
@@ -155,6 +162,7 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
             script_pub_key,
             script_sig,
             flags,
+            tx_version,
         ),
     )
 }
@@ -185,6 +193,7 @@ impl ZcashScript for CxxRustComparisonInterpreter {
         script_pub_key: &[u8],
         script_sig: &[u8],
         flags: VerificationFlags,
+        tx_version: TxVersion,
     ) -> Result<(), Error> {
         let (cxx, rust) = check_verify_callback::<CxxInterpreter, RustInterpreter>(
             sighash,
@@ -193,6 +202,7 @@ impl ZcashScript for CxxRustComparisonInterpreter {
             script_pub_key,
             script_sig,
             flags,
+            tx_version,
         );
         if rust != cxx {
             // probably want to distinguish between
@@ -282,6 +292,7 @@ mod tests {
             script_pub_key,
             script_sig,
             flags,
+            TxVersion::Sapling,
         );
 
         assert_eq!(ret.0, ret.1.map_err(normalize_error));
@@ -303,6 +314,7 @@ mod tests {
             script_pub_key,
             script_sig,
             flags,
+            TxVersion::Sapling,
         );
 
         assert_eq!(ret.0, ret.1.map_err(normalize_error));
@@ -328,6 +340,7 @@ mod tests {
             script_pub_key,
             script_sig,
             flags,
+            TxVersion::Sapling,
         );
 
         assert_eq!(ret.0, ret.1.map_err(normalize_error));
@@ -360,6 +373,7 @@ mod tests {
                 &pub_key[..],
                 &sig[..],
                 repair_flags(VerificationFlags::from_bits_truncate(flags)),
+                TxVersion::Zip225,
             );
             prop_assert_eq!(ret.0, ret.1.map_err(normalize_error),
                             "original Rust result: {:?}", ret.1);
@@ -384,6 +398,7 @@ mod tests {
                 &sig[..],
                 repair_flags(VerificationFlags::from_bits_truncate(flags))
                     | VerificationFlags::SigPushOnly,
+                TxVersion::Zip225,
             );
             prop_assert_eq!(ret.0, ret.1.map_err(normalize_error),
                             "original Rust result: {:?}", ret.1);
