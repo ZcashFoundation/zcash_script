@@ -15,11 +15,11 @@ mod zcash_script;
 
 use std::os::raw::{c_int, c_uint, c_void};
 
-use log::warn;
+use tracing::warn;
 use zcash_primitives::transaction::TxVersion;
 
 pub use cxx::*;
-pub use interpreter::{HashType, SighashCalculator, VerificationFlags};
+pub use interpreter::{HashType, SighashCalculator, SignedOutputs, VerificationFlags};
 pub use zcash_script::*;
 
 /// A tag to indicate that the C++ implementation of zcash_script should be used.
