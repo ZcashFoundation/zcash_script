@@ -444,7 +444,7 @@ impl Neg for ScriptNum {
 #[derive(Clone, Debug)]
 pub struct Script<'a>(pub &'a [u8]);
 
-impl<'a> Script<'a> {
+impl Script<'_> {
     pub fn get_op(script: &mut &[u8]) -> Result<Opcode, ScriptError> {
         Self::get_op2(script, &mut vec![])
     }
