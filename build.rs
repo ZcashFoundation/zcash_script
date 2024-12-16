@@ -23,6 +23,10 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+// `bindgen::RustTarget::Stable_*` is deprecated in bindgen >= 0.71.0, but we are constrained
+// downstream by the version supported by librocksdb-sys. However, one of our CI jobs still manages
+// to pull a newer version, so this silences the deprecation on that job.
+#[allow(deprecated)]
 fn bindgen_headers() -> Result<()> {
     println!("cargo:rerun-if-changed=depend/zcash/src/script/zcash_script.h");
 
@@ -31,6 +35,9 @@ fn bindgen_headers() -> Result<()> {
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+        // This should not reference a version newer than rust-toolchain.toml. See
+        // rust-lang/rust-bindgen#3049 for a potential future solution.
+        .rust_target(bindgen::RustTarget::Stable_1_73)
         // Finish the builder and generate the bindings.
         .generate()
         .map_err(|_| Error::GenerateBindings)?;
