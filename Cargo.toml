@@ -81,7 +81,7 @@ cc = { version = "1.0.94", features = ["parallel"] }
 #
 # Treat minor versions with a zero major version as compatible (cargo doesn't by default).
 hex = ">= 0.4.3"
-lazy_static = "1.4.0"
+lazy_static = "1.5.0"
 
 [[package.metadata.release.pre-release-replacements]]
 file = "CHANGELOG.md"
