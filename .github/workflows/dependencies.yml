@@ -43,7 +43,7 @@ jobs:
       # this check also runs with optional features off
       # so we expect some warnings about "skip tree root was not found"
       - name: Check ${{ matrix.checks }} with features ${{ matrix.features }}
-        uses: EmbarkStudios/cargo-deny-action@v1
+        uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check ${{ matrix.checks }}
           arguments: --workspace ${{ matrix.features }}
