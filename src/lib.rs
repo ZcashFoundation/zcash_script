@@ -74,8 +74,8 @@ impl From<cxx::ScriptError> for Error {
                 Error::Ok(ScriptError::UnsatisfiedLockTime)
             }
 
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_HASHTYPE => Error::Ok(ScriptError::SigHashType),
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_DER => Error::Ok(ScriptError::SigDER),
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_HASHTYPE => Error::Ok(ScriptError::SigHashType(None)),
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_DER => Error::Ok(ScriptError::SigDER(None)),
             cxx::ScriptError_t_SCRIPT_ERR_MINIMALDATA => Error::Ok(ScriptError::MinimalData),
             cxx::ScriptError_t_SCRIPT_ERR_SIG_PUSHONLY => Error::Ok(ScriptError::SigPushOnly),
             cxx::ScriptError_t_SCRIPT_ERR_SIG_HIGH_S => Error::Ok(ScriptError::SigHighS),
@@ -212,6 +212,8 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
 pub fn normalize_error(err: Error) -> Error {
     match err {
         Error::Ok(serr) => Error::Ok(match serr {
+            ScriptError::SigHashType(Some(_)) => ScriptError::SigHashType(None),
+            ScriptError::SigDER(Some(_)) => ScriptError::SigDER(None),
             ScriptError::ReadError { .. } => ScriptError::BadOpcode,
             ScriptError::ScriptNumError(_) => ScriptError::UnknownError,
             _ => serr,
