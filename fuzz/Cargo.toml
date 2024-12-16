@@ -9,7 +9,6 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-zcash_primitives = "0.19"
 zcash_script = { path = "..", features = ["test-dependencies"] }
 
 [[bin]]

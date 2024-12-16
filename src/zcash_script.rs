@@ -1,7 +1,5 @@
 use std::num::TryFromIntError;
 
-use zcash_primitives::transaction::TxVersion;
-
 use super::interpreter::*;
 use super::script::*;
 use super::script_error::*;
@@ -52,7 +50,6 @@ pub trait ZcashScript {
         script_pub_key: &[u8],
         script_sig: &[u8],
         flags: VerificationFlags,
-        tx_version: TxVersion,
     ) -> Result<(), Error>;
 
     /// Returns the number of transparent signature operations in the input or
@@ -78,7 +75,6 @@ impl ZcashScript for RustInterpreter {
         script_pub_key: &[u8],
         script_sig: &[u8],
         flags: VerificationFlags,
-        tx_version: TxVersion,
     ) -> Result<(), Error> {
         let lock_time_num = ScriptNum(lock_time);
         verify_script(
@@ -89,7 +85,6 @@ impl ZcashScript for RustInterpreter {
                 sighash,
                 lock_time: &lock_time_num,
                 is_final,
-                tx_version,
             },
         )
         .map_err(|e| Error::Ok(Some(e)))

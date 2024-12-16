@@ -4,7 +4,6 @@ use std::slice::Iter;
 use ripemd::Ripemd160;
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
-use zcash_primitives::transaction::TxVersion;
 
 use super::external::pubkey::PubKey;
 use super::script::{Operation::*, PushValue::*, *};
@@ -58,9 +57,9 @@ impl HashType {
     ///
     /// [§4.10](https://zips.z.cash/protocol/protocol.pdf#sighash):
     /// - Any `HashType` in a v5 transaction must have no undefined bits set.
-    pub fn from_bits(bits: i32, tx_version: TxVersion) -> Result<Self, InvalidHashType> {
+    pub fn from_bits(bits: i32, is_strict: bool) -> Result<Self, InvalidHashType> {
         let unknown_bits = (bits | 0x83) ^ 0x83;
-        if tx_version == TxVersion::Zip225 && unknown_bits != 0 {
+        if is_strict && unknown_bits != 0 {
             Err(InvalidHashType::ExtraBitsSet(unknown_bits))
         } else {
             let msigned_outputs = match (bits & 2 != 0, bits & 1 != 0) {
@@ -149,7 +148,6 @@ pub struct CallbackTransactionSignatureChecker<'a> {
     pub sighash: SighashCalculator<'a>,
     pub lock_time: &'a ScriptNum,
     pub is_final: bool,
-    pub tx_version: TxVersion,
 }
 
 type ValType = Vec<u8>;
@@ -388,7 +386,7 @@ fn is_defined_hashtype_signature(vch_sig: &ValType) -> bool {
         return false;
     };
 
-    HashType::from_bits(i32::from(vch_sig[vch_sig.len() - 1]), TxVersion::Zip225).is_ok()
+    HashType::from_bits(i32::from(vch_sig[vch_sig.len() - 1]), true).is_ok()
 }
 
 fn check_signature_encoding(
@@ -1233,7 +1231,7 @@ impl SignatureChecker for CallbackTransactionSignatureChecker<'_> {
         let mut vch_sig = vch_sig_in.to_vec();
         vch_sig
             .pop()
-            .and_then(|hash_type| HashType::from_bits(hash_type.into(), self.tx_version).ok())
+            .and_then(|hash_type| HashType::from_bits(hash_type.into(), false).ok())
             .and_then(|hash_type| (self.sighash)(script_code.0, hash_type))
             .map(|sighash| Self::verify_signature(&vch_sig, &pubkey, &sighash))
             .unwrap_or(false)
