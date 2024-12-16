@@ -4,6 +4,7 @@ use std::{
 };
 
 use ripemd::Ripemd160;
+use secp256k1::ecdsa;
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
 
@@ -41,15 +42,6 @@ pub struct HashType {
     pub signed_outputs: SignedOutputs,
     /// Allows anyone to add transparent inputs to this transaction.
     pub anyone_can_pay: bool,
-}
-
-/// Things that can go wrong when constructing a `HashType` from bit flags.
-pub enum InvalidHashType {
-    /// Either or both of the two least-significant bits must be set.
-    UnknownSignedOutputs,
-    /// With v5 transactions, bits other than those specified for `HashType` must be 0. The `i32`
-    /// includes only the bits that are undefined by `HashType`.
-    ExtraBitsSet(i32),
 }
 
 impl HashType {
@@ -133,7 +125,12 @@ bitflags::bitflags! {
 }
 
 pub trait SignatureChecker {
-    fn check_sig(&self, _script_sig: &[u8], _vch_pub_key: &[u8], _script_code: &Script) -> bool {
+    fn check_sig(
+        &self,
+        _script_sig: &Signature,
+        _vch_pub_key: &[u8],
+        _script_code: &Script,
+    ) -> bool {
         false
     }
 
@@ -255,7 +252,7 @@ impl<T: Clone> Stack<T> {
     }
 }
 
-fn is_compressed_or_uncompressed_pub_key(vch_pub_key: &ValType) -> bool {
+fn is_compressed_or_uncompressed_pub_key(vch_pub_key: &[u8]) -> bool {
     if vch_pub_key.len() < PubKey::COMPRESSED_PUBLIC_KEY_SIZE {
         //  Non-canonical public key: too short
         return false;
@@ -277,157 +274,44 @@ fn is_compressed_or_uncompressed_pub_key(vch_pub_key: &ValType) -> bool {
     true
 }
 
-/**
- * A canonical signature consists of: <30> <total len> <02> <len R> <R> <02> <len S> <S> <hashtype>
- * Where R and S are not negative (their first byte has its highest bit not set), and not
- * excessively padded (do not start with a 0 byte, unless an otherwise negative number follows,
- * in which case a single 0 byte is necessary and even required).
- *
- * See https://bitcointalk.org/index.php?topic=8392.msg127623#msg127623
- *
- * This function is consensus-critical since BIP66.
- */
-fn is_valid_signature_encoding(sig: &[u8]) -> bool {
-    // Format: 0x30 [total-length] 0x02 [R-length] [R] 0x02 [S-length] [S] [sighash]
-    // * total-length: 1-byte length descriptor of everything that follows,
-    //   excluding the sighash byte.
-    // * R-length: 1-byte length descriptor of the R value that follows.
-    // * R: arbitrary-length big-endian encoded R value. It must use the shortest
-    //   possible encoding for a positive integer (which means no null bytes at
-    //   the start, except a single one when the next byte has its highest bit set).
-    // * S-length: 1-byte length descriptor of the S value that follows.
-    // * S: arbitrary-length big-endian encoded S value. The same rules apply.
-    // * sighash: 1-byte value indicating what data is hashed (not part of the DER
-    //   signature)
-
-    // Minimum and maximum size constraints.
-    if sig.len() < 9 {
-        return false;
-    };
-    if sig.len() > 73 {
-        return false;
-    };
-
-    // A signature is of type 0x30 (compound).
-    if sig[0] != 0x30 {
-        return false;
-    };
-
-    // Make sure the length covers the entire signature.
-    if usize::from(sig[1]) != sig.len() - 3 {
-        return false;
-    };
-
-    // Extract the length of the R element.
-    let len_r = usize::from(sig[3]);
-
-    // Make sure the length of the S element is still inside the signature.
-    if 5 + len_r >= sig.len() {
-        return false;
-    };
-
-    // Extract the length of the S element.
-    let len_s = usize::from(sig[5 + len_r]);
-
-    // Verify that the length of the signature matches the sum of the length
-    // of the elements.
-    if len_r + len_s + 7 != sig.len() {
-        return false;
-    };
-
-    // Check whether the R element is an integer.
-    if sig[2] != 0x02 {
-        return false;
-    };
-
-    // Zero-length integers are not allowed for R.
-    if len_r == 0 {
-        return false;
-    };
-
-    // Negative numbers are not allowed for R.
-    if sig[4] & 0x80 != 0 {
-        return false;
-    };
-
-    // Null bytes at the start of R are not allowed, unless R would
-    // otherwise be interpreted as a negative number.
-    if len_r > 1 && sig[4] == 0x00 && sig[5] & 0x80 == 0 {
-        return false;
-    };
-
-    // Check whether the S element is an integer.
-    if sig[len_r + 4] != 0x02 {
-        return false;
-    };
-
-    // Zero-length integers are not allowed for S.
-    if len_s == 0 {
-        return false;
-    };
-
-    // Negative numbers are not allowed for S.
-    if sig[len_r + 6] & 0x80 != 0 {
-        return false;
-    };
-
-    // Null bytes at the start of S are not allowed, unless S would otherwise be
-    // interpreted as a negative number.
-    if len_s > 1 && sig[len_r + 6] == 0x00 && sig[len_r + 7] & 0x80 == 0 {
-        return false;
-    };
-
-    true
+#[derive(Clone)]
+pub struct Signature {
+    sig: ecdsa::Signature,
+    sighash: HashType,
 }
 
-fn is_low_der_signature(vch_sig: &ValType) -> Result<bool, ScriptError> {
-    if !is_valid_signature_encoding(vch_sig) {
-        return Err(ScriptError::SigDER);
-    };
-    // https://bitcoin.stackexchange.com/a/12556:
-    //     Also note that inside transaction signatures, an extra hashtype byte
-    //     follows the actual signature data.
-    let (_, vch_sig_copy) = vch_sig
-        .split_last()
-        .expect("`is_valid_signature_encoding` checks that the length is at least 9");
-    // If the S value is above the order of the curve divided by two, its
-    // complement modulo the order could have been used instead, which is
-    // one byte shorter when encoded correctly.
-    // FIXME: This can return `false` without setting an error, which is not the expectation of the
-    //        caller.
-    Ok(PubKey::check_low_s(vch_sig_copy))
-}
-
-fn is_defined_hashtype_signature(vch_sig: &ValType) -> bool {
-    if vch_sig.is_empty() {
-        return false;
-    };
-
-    HashType::from_bits(i32::from(vch_sig[vch_sig.len() - 1]), true).is_ok()
+fn decode_signature(vch_sig_in: &[u8], is_strict: bool) -> Result<Option<Signature>, ScriptError> {
+    match vch_sig_in.split_last() {
+        // Empty signature. Not strictly DER encoded, but allowed to provide a compact way to
+        // provide an invalid signature for use with CHECK(MULTI)SIG
+        None => Ok(None),
+        Some((hash_type, vch_sig)) => Ok(Some(Signature {
+            sig: ecdsa::Signature::from_der(vch_sig).map_err(|e| ScriptError::SigDER(Some(e)))?,
+            sighash: HashType::from_bits((*hash_type).into(), is_strict)
+                .map_err(|e| ScriptError::SigHashType(Some(e)))?,
+        })),
+    }
 }
 
 fn check_signature_encoding(
-    vch_sig: &Vec<u8>,
+    vch_sig: &[u8],
     flags: VerificationFlags,
-) -> Result<(), ScriptError> {
-    // Empty signature. Not strictly DER encoded, but allowed to provide a
-    // compact way to provide an invalid signature for use with CHECK(MULTI)SIG
-    if vch_sig.is_empty() {
-        return Ok(());
-    };
-    if !is_valid_signature_encoding(vch_sig) {
-        return Err(ScriptError::SigDER);
-    } else if flags.contains(VerificationFlags::LowS) && !is_low_der_signature(vch_sig)? {
-        return Err(ScriptError::SigHighS);
-    } else if flags.contains(VerificationFlags::StrictEnc)
-        && !is_defined_hashtype_signature(vch_sig)
-    {
-        return Err(ScriptError::SigHashType);
-    };
-    Ok(())
+) -> Result<Option<Signature>, ScriptError> {
+    decode_signature(vch_sig, flags.contains(VerificationFlags::StrictEnc)).and_then(
+        |sig| match sig {
+            None => Ok(None),
+            Some(sig0) => {
+                if flags.contains(VerificationFlags::LowS) && !PubKey::check_low_s(&sig0.sig) {
+                    Err(ScriptError::SigHighS)
+                } else {
+                    Ok(Some(sig0))
+                }
+            }
+        },
+    )
 }
 
-fn check_pub_key_encoding(vch_sig: &ValType, flags: VerificationFlags) -> Result<(), ScriptError> {
+fn check_pub_key_encoding(vch_sig: &[u8], flags: VerificationFlags) -> Result<(), ScriptError> {
     if flags.contains(VerificationFlags::StrictEnc)
         && !is_compressed_or_uncompressed_pub_key(vch_sig)
     {
@@ -457,6 +341,20 @@ fn check_minimal_push(data: &[u8], opcode: PushValue) -> bool {
         return opcode == OP_PUSHDATA2;
     }
     true
+}
+
+fn is_sig_valid(
+    vch_sig: &[u8],
+    vch_pub_key: &[u8],
+    flags: VerificationFlags,
+    script: &Script<'_>,
+    checker: &dyn SignatureChecker,
+) -> Result<bool, ScriptError> {
+    let sig = check_signature_encoding(vch_sig, flags)?;
+    check_pub_key_encoding(vch_pub_key, flags).map(|()| {
+        sig.map(|sig0| checker.check_sig(&sig0, vch_pub_key, script))
+            .unwrap_or(false)
+    })
 }
 
 fn unop<T: Clone>(
@@ -1080,9 +978,8 @@ pub fn eval_step<'a>(
                         let vch_sig = stack.rget(1)?.clone();
                         let vch_pub_key = stack.rget(0)?.clone();
 
-                        check_signature_encoding(&vch_sig, flags)?;
-                        check_pub_key_encoding(&vch_pub_key, flags)?;
-                        let success = checker.check_sig(&vch_sig, &vch_pub_key, script);
+                        let success =
+                            is_sig_valid(&vch_sig, &vch_pub_key, flags, script, &checker)?;
 
                         stack.pop()?;
                         stack.pop()?;
@@ -1147,11 +1044,8 @@ pub fn eval_step<'a>(
                             // Note how this makes the exact order of pubkey/signature evaluation
                             // distinguishable by CHECKMULTISIG NOT if the STRICTENC flag is set.
                             // See the script_(in)valid tests for details.
-                            check_signature_encoding(vch_sig, flags)?;
-                            check_pub_key_encoding(vch_pub_key, flags)?;
-
-                            // Check signature
-                            let ok: bool = checker.check_sig(vch_sig, vch_pub_key, script);
+                            let ok: bool =
+                                is_sig_valid(vch_sig, vch_pub_key, flags, script, &checker)?;
 
                             if ok {
                                 isig += 1;
@@ -1292,27 +1186,23 @@ pub const SIGHASH_SIZE: usize = 32;
 pub type SighashCalculator<'a> = &'a dyn Fn(&[u8], HashType) -> Option<[u8; SIGHASH_SIZE]>;
 
 impl CallbackTransactionSignatureChecker<'_> {
-    pub fn verify_signature(vch_sig: &[u8], pubkey: &PubKey, sighash: &[u8; SIGHASH_SIZE]) -> bool {
-        pubkey.verify(sighash, vch_sig)
+    pub fn verify_signature(
+        sig: &ecdsa::Signature,
+        pubkey: &PubKey,
+        sighash: &[u8; SIGHASH_SIZE],
+    ) -> bool {
+        pubkey.verify(sighash, sig)
     }
 }
 
 impl SignatureChecker for CallbackTransactionSignatureChecker<'_> {
-    fn check_sig(&self, vch_sig_in: &[u8], vch_pub_key: &[u8], script_code: &Script) -> bool {
+    fn check_sig(&self, sig: &Signature, vch_pub_key: &[u8], script_code: &Script) -> bool {
         let pubkey = PubKey(vch_pub_key);
-        if !pubkey.is_valid() {
-            return false;
-        };
 
-        // Hash type is one byte tacked on to the end of the signature
-        match vch_sig_in.split_last() {
-            None => false,
-            Some((hash_type, vch_sig)) => HashType::from_bits((*hash_type).into(), false)
-                .ok()
-                .and_then(|hash_type| (self.sighash)(script_code.0, hash_type))
-                .map(|sighash| Self::verify_signature(vch_sig, &pubkey, &sighash))
-                .unwrap_or(false),
-        }
+        pubkey.is_valid()
+            && (self.sighash)(script_code.0, sig.sighash)
+                .map(|sighash| Self::verify_signature(&sig.sig, &pubkey, &sighash))
+                .unwrap_or(false)
     }
 
     fn check_lock_time(&self, lock_time: i64) -> bool {
