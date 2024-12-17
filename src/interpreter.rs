@@ -447,6 +447,29 @@ fn check_minimal_push(data: &[u8], opcode: PushValue) -> bool {
 const VCH_FALSE: ValType = Vec::new();
 const VCH_TRUE: [u8; 1] = [1];
 
+pub struct State<'a> {
+    stack: &'a mut Stack<Vec<u8>>,
+    altstack: Stack<Vec<u8>>,
+    // We keep track of how many operations have executed so far to prevent expensive-to-verify
+    // scripts
+    op_count: u8,
+    // This keeps track of the conditional flags at each nesting level during execution. If we're in
+    // a branch of execution where *any* of these conditionals are false, we ignore opcodes unless
+    // those opcodes direct control flow (OP_IF, OP_ELSE, etc.).
+    vexec: Stack<bool>,
+}
+
+impl<'a> State<'a> {
+    pub fn initial(stack: &'a mut Stack<Vec<u8>>) -> Self {
+        State {
+            stack,
+            altstack: Stack(vec![]),
+            op_count: 0,
+            vexec: Stack(vec![]),
+        }
+    }
+}
+
 /// Run a single step of the interpreter.
 ///
 /// This is useful for testing & debugging, as we can set up the exact state we want in order to
@@ -456,12 +479,13 @@ pub fn eval_step(
     script: &Script,
     flags: VerificationFlags,
     checker: &dyn SignatureChecker,
-    stack: &mut Stack<Vec<u8>>,
-    altstack: &mut Stack<Vec<u8>>,
-    op_count: &mut u8,
-    vexec: &mut Stack<bool>,
+    state: &mut State,
 ) -> Result<(), ScriptError> {
+    let stack = &mut state.stack;
+    let op_count = &mut state.op_count;
     let require_minimal = flags.contains(VerificationFlags::MinimalData);
+    let vexec = &mut state.vexec;
+    let altstack = &mut state.altstack;
 
     // Are we in an executing branch of the script?
     let exec = vexec.iter().all(|value| *value);
@@ -1175,33 +1199,14 @@ pub fn eval_script(
 
     let mut pc = script.0;
 
-    // We keep track of how many operations have executed so far to prevent
-    // expensive-to-verify scripts
-    let mut op_count: u8 = 0;
-
-    // This keeps track of the conditional flags at each nesting level
-    // during execution. If we're in a branch of execution where *any*
-    // of these conditionals are false, we ignore opcodes unless those
-    // opcodes direct control flow (OP_IF, OP_ELSE, etc.).
-    let mut vexec: Stack<bool> = Stack(vec![]);
-
-    let mut altstack: Stack<Vec<u8>> = Stack(vec![]);
+    let mut state = State::initial(stack);
 
     // Main execution loop
     while !pc.is_empty() {
-        eval_step(
-            &mut pc,
-            script,
-            flags,
-            checker,
-            stack,
-            &mut altstack,
-            &mut op_count,
-            &mut vexec,
-        )?;
+        eval_step(&mut pc, script, flags, checker, &mut state)?;
     }
 
-    if !vexec.empty() {
+    if !state.vexec.empty() {
         return set_error(ScriptError::UnbalancedConditional);
     }
 
