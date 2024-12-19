@@ -478,7 +478,7 @@ pub fn eval_step(
     pc: &mut &[u8],
     script: &Script,
     flags: VerificationFlags,
-    checker: &dyn SignatureChecker,
+    checker: &impl SignatureChecker,
     state: &mut State,
 ) -> Result<(), ScriptError> {
     let stack = &mut state.stack;
@@ -1186,11 +1186,19 @@ pub fn eval_step(
     }
 }
 
-pub fn eval_script(
+/// Produces the default stepper, which carries no payload and runs the script as before.
+pub fn eval_step2<'a>(
+    flags: VerificationFlags,
+    checker: &'a impl SignatureChecker,
+) -> impl Fn(&mut &[u8], &Script, &mut State, &mut ()) -> Result<(), ScriptError> + 'a {
+    move |pc, script: &Script, state, _payload| eval_step(pc, script, flags, checker, state)
+}
+
+pub fn eval_script<T>(
     stack: &mut Stack<Vec<u8>>,
     script: &Script,
-    flags: VerificationFlags,
-    checker: &dyn SignatureChecker,
+    payload: &mut T,
+    eval_step: &impl Fn(&mut &[u8], &Script, &mut State, &mut T) -> Result<(), ScriptError>,
 ) -> Result<(), ScriptError> {
     // There's a limit on how large scripts can be.
     if script.0.len() > MAX_SCRIPT_SIZE {
@@ -1203,7 +1211,7 @@ pub fn eval_script(
 
     // Main execution loop
     while !pc.is_empty() {
-        eval_step(&mut pc, script, flags, checker, &mut state)?;
+        eval_step(&mut pc, script, &mut state, payload)?;
     }
 
     if !state.vexec.empty() {
@@ -1282,11 +1290,12 @@ impl SignatureChecker for CallbackTransactionSignatureChecker<'_> {
     }
 }
 
-pub fn verify_script(
+pub fn verify_script<T>(
     script_sig: &Script,
     script_pub_key: &Script,
     flags: VerificationFlags,
-    checker: &dyn SignatureChecker,
+    payload: &mut T,
+    stepper: &impl Fn(&mut &[u8], &Script, &mut State, &mut T) -> Result<(), ScriptError>,
 ) -> Result<(), ScriptError> {
     if flags.contains(VerificationFlags::SigPushOnly) && !script_sig.is_push_only() {
         return set_error(ScriptError::SigPushOnly);
@@ -1294,11 +1303,11 @@ pub fn verify_script(
 
     let mut stack = Stack(Vec::new());
     let mut stack_copy = Stack(Vec::new());
-    eval_script(&mut stack, script_sig, flags, checker)?;
+    eval_script(&mut stack, script_sig, payload, stepper)?;
     if flags.contains(VerificationFlags::P2SH) {
         stack_copy = stack.clone()
     }
-    eval_script(&mut stack, script_pub_key, flags, checker)?;
+    eval_script(&mut stack, script_pub_key, payload, stepper)?;
     if stack.empty() {
         return set_error(ScriptError::EvalFalse);
     }
@@ -1325,7 +1334,7 @@ pub fn verify_script(
         let pub_key_2 = Script(pub_key_serialized.as_slice());
         stack.pop()?;
 
-        eval_script(&mut stack, &pub_key_2, flags, checker)?;
+        eval_script(&mut stack, &pub_key_2, payload, stepper)?;
         if stack.empty() {
             return set_error(ScriptError::EvalFalse);
         }

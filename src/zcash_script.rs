@@ -57,6 +57,25 @@ pub trait ZcashScript {
 /// A tag to indicate that the Rust implementation of zcash_script should be used.
 pub enum RustInterpreter {}
 
+impl RustInterpreter {
+    fn verify<T>(
+        script_sig: &[u8],
+        script_pub_key: &[u8],
+        flags: VerificationFlags,
+        payload: &mut T,
+        stepper: &impl Fn(&mut &[u8], &Script, &mut State, &mut T) -> Result<(), ScriptError>,
+    ) -> Result<(), Error> {
+        verify_script(
+            &Script(script_sig),
+            &Script(script_pub_key),
+            flags,
+            payload,
+            stepper,
+        )
+        .map_err(Error::Ok)
+    }
+}
+
 impl ZcashScript for RustInterpreter {
     /// Returns the number of transparent signature operations in the
     /// transparent inputs and outputs of this transaction.
@@ -74,16 +93,12 @@ impl ZcashScript for RustInterpreter {
         flags: VerificationFlags,
     ) -> Result<(), Error> {
         let lock_time_num = lock_time.into();
-        verify_script(
-            &Script(script_sig),
-            &Script(script_pub_key),
-            flags,
-            &CallbackTransactionSignatureChecker {
-                sighash,
-                lock_time: &lock_time_num,
-                is_final,
-            },
-        )
-        .map_err(Error::Ok)
+        let checker = CallbackTransactionSignatureChecker {
+            sighash,
+            lock_time: &lock_time_num,
+            is_final,
+        };
+        let stepper = eval_step2(flags, &checker);
+        Self::verify(script_sig, script_pub_key, flags, &mut (), &stepper)
     }
 }
