@@ -1,4 +1,3 @@
-use std::mem::swap;
 use std::slice::Iter;
 
 use ripemd::Ripemd160;
@@ -144,6 +143,7 @@ pub struct BaseSignatureChecker();
 
 impl SignatureChecker for BaseSignatureChecker {}
 
+#[derive(Copy, Clone)]
 pub struct CallbackTransactionSignatureChecker<'a> {
     pub sighash: SighashCalculator<'a>,
     pub lock_time: &'a ScriptNum,
@@ -182,7 +182,7 @@ pub struct Stack<T>(Vec<T>);
 
 /// Wraps a Vec (or whatever underlying implementation we choose in a way that matches the C++ impl
 /// and provides us some decent chaining)
-impl<T> Stack<T> {
+impl<T: Clone> Stack<T> {
     fn reverse_index(&self, i: isize) -> Result<usize, ScriptError> {
         usize::try_from(-i)
             .map(|a| self.0.len() - a)
@@ -223,6 +223,17 @@ impl<T> Stack<T> {
 
     pub fn back(&mut self) -> Result<&mut T, ScriptError> {
         self.0.last_mut().ok_or(ScriptError::InvalidStackOperation)
+    }
+
+    pub fn last(&self) -> Result<&T, ScriptError> {
+        self.0.last().ok_or(ScriptError::InvalidStackOperation)
+    }
+
+    pub fn split_last(&self) -> Result<(&T, Stack<T>), ScriptError> {
+        self.0
+            .split_last()
+            .ok_or(ScriptError::InvalidStackOperation)
+            .map(|(last, rem)| (last, Stack(rem.to_vec())))
     }
 
     pub fn erase(&mut self, start: usize, end: Option<usize>) {
@@ -447,20 +458,21 @@ fn check_minimal_push(data: &[u8], opcode: PushValue) -> bool {
 const VCH_FALSE: ValType = Vec::new();
 const VCH_TRUE: [u8; 1] = [1];
 
-pub struct State<'a> {
-    stack: &'a mut Stack<Vec<u8>>,
-    altstack: Stack<Vec<u8>>,
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct State {
+    pub stack: Stack<Vec<u8>>,
+    pub altstack: Stack<Vec<u8>>,
     // We keep track of how many operations have executed so far to prevent expensive-to-verify
     // scripts
-    op_count: u8,
+    pub op_count: u8,
     // This keeps track of the conditional flags at each nesting level during execution. If we're in
     // a branch of execution where *any* of these conditionals are false, we ignore opcodes unless
     // those opcodes direct control flow (OP_IF, OP_ELSE, etc.).
-    vexec: Stack<bool>,
+    pub vexec: Stack<bool>,
 }
 
-impl<'a> State<'a> {
-    pub fn initial(stack: &'a mut Stack<Vec<u8>>) -> Self {
+impl State {
+    pub fn initial(stack: Stack<Vec<u8>>) -> Self {
         State {
             stack,
             altstack: Stack(vec![]),
@@ -474,13 +486,13 @@ impl<'a> State<'a> {
 ///
 /// This is useful for testing & debugging, as we can set up the exact state we want in order to
 /// trigger some behavior.
-pub fn eval_step(
-    pc: &mut &[u8],
+pub fn eval_step<'a>(
+    pc: &'a [u8],
     script: &Script,
     flags: VerificationFlags,
-    checker: &impl SignatureChecker,
+    checker: impl SignatureChecker,
     state: &mut State,
-) -> Result<(), ScriptError> {
+) -> Result<&'a [u8], ScriptError> {
     let stack = &mut state.stack;
     let op_count = &mut state.op_count;
     let require_minimal = flags.contains(VerificationFlags::MinimalData);
@@ -494,7 +506,6 @@ pub fn eval_step(
     // Read instruction
     //
     let (opcode, vch_push_value, new_pc) = Script::get_op2(pc)?;
-    *pc = new_pc;
     if vch_push_value.len() > MAX_SCRIPT_ELEMENT_SIZE {
         return set_error(ScriptError::PushSize);
     }
@@ -1180,26 +1191,52 @@ pub fn eval_step(
 
     // Size limits
     if stack.size() + altstack.size() > 1000 {
-        set_error(ScriptError::StackSize)
-    } else {
-        Ok(())
+        return set_error(ScriptError::StackSize);
     }
+
+    set_success(new_pc)
+}
+
+pub trait StepFn {
+    type Payload;
+    fn call<'a>(
+        &self,
+        pc: &'a [u8],
+        script: &Script,
+        state: &mut State,
+        payload: &mut Self::Payload,
+    ) -> Result<&'a [u8], ScriptError>;
 }
 
 /// Produces the default stepper, which carries no payload and runs the script as before.
-pub fn eval_step2<'a>(
-    flags: VerificationFlags,
-    checker: &'a impl SignatureChecker,
-) -> impl Fn(&mut &[u8], &Script, &mut State, &mut ()) -> Result<(), ScriptError> + 'a {
-    move |pc, script: &Script, state, _payload| eval_step(pc, script, flags, checker, state)
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct DefaultStepEvaluator<C> {
+    pub flags: VerificationFlags,
+    pub checker: C,
 }
 
-pub fn eval_script<T>(
-    stack: &mut Stack<Vec<u8>>,
+impl<C: SignatureChecker + Copy> StepFn for DefaultStepEvaluator<C> {
+    type Payload = ();
+    fn call<'a>(
+        &self,
+        pc: &'a [u8],
+        script: &Script,
+        state: &mut State,
+        _payload: &mut (),
+    ) -> Result<&'a [u8], ScriptError> {
+        eval_step(pc, script, self.flags, self.checker, state)
+    }
+}
+
+pub fn eval_script<F>(
+    stack: Stack<Vec<u8>>,
     script: &Script,
-    payload: &mut T,
-    eval_step: &impl Fn(&mut &[u8], &Script, &mut State, &mut T) -> Result<(), ScriptError>,
-) -> Result<(), ScriptError> {
+    payload: &mut F::Payload,
+    eval_step: &F,
+) -> Result<Stack<Vec<u8>>, ScriptError>
+where
+    F: StepFn,
+{
     // There's a limit on how large scripts can be.
     if script.0.len() > MAX_SCRIPT_SIZE {
         return set_error(ScriptError::ScriptSize);
@@ -1211,14 +1248,14 @@ pub fn eval_script<T>(
 
     // Main execution loop
     while !pc.is_empty() {
-        eval_step(&mut pc, script, &mut state, payload)?;
+        pc = eval_step.call(pc, script, &mut state, payload)?;
     }
 
     if !state.vexec.empty() {
         return set_error(ScriptError::UnbalancedConditional);
     }
 
-    set_success(())
+    set_success(state.stack)
 }
 
 /// All signature hashes are 32 bytes, since they are either:
@@ -1290,58 +1327,62 @@ impl SignatureChecker for CallbackTransactionSignatureChecker<'_> {
     }
 }
 
-pub fn verify_script<T>(
+pub fn verify_script<F>(
     script_sig: &Script,
     script_pub_key: &Script,
     flags: VerificationFlags,
-    payload: &mut T,
-    stepper: &impl Fn(&mut &[u8], &Script, &mut State, &mut T) -> Result<(), ScriptError>,
-) -> Result<(), ScriptError> {
+    payload: &mut F::Payload,
+    stepper: &F,
+) -> Result<(), ScriptError>
+where
+    F: StepFn,
+{
     if flags.contains(VerificationFlags::SigPushOnly) && !script_sig.is_push_only() {
         return set_error(ScriptError::SigPushOnly);
     }
 
-    let mut stack = Stack(Vec::new());
-    let mut stack_copy = Stack(Vec::new());
-    eval_script(&mut stack, script_sig, payload, stepper)?;
-    if flags.contains(VerificationFlags::P2SH) {
-        stack_copy = stack.clone()
-    }
-    eval_script(&mut stack, script_pub_key, payload, stepper)?;
-    if stack.empty() {
+    let data_stack = eval_script(Stack(Vec::new()), script_sig, payload, stepper)?;
+    let pub_key_stack = eval_script(data_stack.clone(), script_pub_key, payload, stepper)?;
+    if pub_key_stack.empty() {
         return set_error(ScriptError::EvalFalse);
     }
-    if !cast_to_bool(stack.back()?) {
+    if !cast_to_bool(pub_key_stack.last()?) {
         return set_error(ScriptError::EvalFalse);
     }
 
     // Additional validation for spend-to-script-hash transactions:
-    if flags.contains(VerificationFlags::P2SH) && script_pub_key.is_pay_to_script_hash() {
+    let result_stack = if flags.contains(VerificationFlags::P2SH)
+        && script_pub_key.is_pay_to_script_hash()
+    {
         // script_sig must be literals-only or validation fails
         if !script_sig.is_push_only() {
             return set_error(ScriptError::SigPushOnly);
         };
 
-        // Restore stack.
-        swap(&mut stack, &mut stack_copy);
-
         // stack cannot be empty here, because if it was the
         // P2SH  HASH <> EQUAL  scriptPubKey would be evaluated with
         // an empty stack and the `eval_script` above would return false.
-        assert!(!stack.empty());
+        assert!(!data_stack.empty());
 
-        let pub_key_serialized = stack.back()?.clone();
-        let pub_key_2 = Script(pub_key_serialized.as_slice());
-        stack.pop()?;
+        data_stack
+            .split_last()
+            .map_err(|_| ScriptError::InvalidStackOperation)
+            .and_then(|(pub_key_serialized, remaining_stack)| {
+                let pub_key_2 = Script(pub_key_serialized);
 
-        eval_script(&mut stack, &pub_key_2, payload, stepper)?;
-        if stack.empty() {
-            return set_error(ScriptError::EvalFalse);
-        }
-        if !cast_to_bool(stack.back()?) {
-            return set_error(ScriptError::EvalFalse);
-        }
-    }
+                eval_script(remaining_stack, &pub_key_2, payload, stepper).and_then(|p2sh_stack| {
+                    if p2sh_stack.empty() {
+                        return set_error(ScriptError::EvalFalse);
+                    }
+                    if !cast_to_bool(p2sh_stack.last()?) {
+                        return set_error(ScriptError::EvalFalse);
+                    }
+                    Ok(p2sh_stack)
+                })
+            })?
+    } else {
+        pub_key_stack
+    };
 
     // The CLEANSTACK check is only performed after potential P2SH evaluation,
     // as the non-P2SH evaluation of a P2SH script will obviously not result in
@@ -1349,7 +1390,7 @@ pub fn verify_script<T>(
     if flags.contains(VerificationFlags::CleanStack) {
         // Disallow CLEANSTACK without P2SH, because Bitcoin did.
         assert!(flags.contains(VerificationFlags::P2SH));
-        if stack.size() != 1 {
+        if result_stack.size() != 1 {
             return set_error(ScriptError::CleanStack);
         }
     };
