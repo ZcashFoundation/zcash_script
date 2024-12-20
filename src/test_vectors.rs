@@ -118,40 +118,43 @@ impl TestVector {
 
 mod bad {
     use crate::script::{
+        Control::*,
+        Normal::*,
         Opcode::{self, *},
         Operation::*,
         PushValue::*,
     };
 
     pub const RESERVED: Opcode = PushValue(OP_RESERVED);
-    pub const VERIF: Opcode = Operation(OP_VERIF);
-    pub const VERNOTIF: Opcode = Operation(OP_VERNOTIF);
-    pub const VER: Opcode = Operation(OP_VER);
-    pub const RESERVED1: Opcode = Operation(OP_RESERVED1);
-    pub const RESERVED2: Opcode = Operation(OP_RESERVED2);
+    pub const VERIF: Opcode = Operation(Control(OP_VERIF));
+    pub const VERNOTIF: Opcode = Operation(Control(OP_VERNOTIF));
+    pub const VER: Opcode = Operation(Normal(OP_VER));
+    pub const RESERVED1: Opcode = Operation(Normal(OP_RESERVED1));
+    pub const RESERVED2: Opcode = Operation(Normal(OP_RESERVED2));
 }
 
 mod disabled {
     use crate::script::{
+        Control::*,
         Opcode::{self, *},
         Operation::*,
     };
 
-    pub const CAT: Opcode = Operation(OP_CAT);
-    pub const SUBSTR: Opcode = Operation(OP_SUBSTR);
-    pub const LEFT: Opcode = Operation(OP_LEFT);
-    pub const RIGHT: Opcode = Operation(OP_RIGHT);
-    pub const INVERT: Opcode = Operation(OP_INVERT);
-    pub const AND: Opcode = Operation(OP_AND);
-    pub const OR: Opcode = Operation(OP_OR);
-    pub const XOR: Opcode = Operation(OP_XOR);
-    pub const _2MUL: Opcode = Operation(OP_2MUL);
-    pub const _2DIV: Opcode = Operation(OP_2DIV);
-    pub const MUL: Opcode = Operation(OP_MUL);
-    pub const DIV: Opcode = Operation(OP_DIV);
-    pub const MOD: Opcode = Operation(OP_MOD);
-    pub const LSHIFT: Opcode = Operation(OP_LSHIFT);
-    pub const RSHIFT: Opcode = Operation(OP_RSHIFT);
+    pub const CAT: Opcode = Operation(Control(OP_CAT));
+    pub const SUBSTR: Opcode = Operation(Control(OP_SUBSTR));
+    pub const LEFT: Opcode = Operation(Control(OP_LEFT));
+    pub const RIGHT: Opcode = Operation(Control(OP_RIGHT));
+    pub const INVERT: Opcode = Operation(Control(OP_INVERT));
+    pub const AND: Opcode = Operation(Control(OP_AND));
+    pub const OR: Opcode = Operation(Control(OP_OR));
+    pub const XOR: Opcode = Operation(Control(OP_XOR));
+    pub const _2MUL: Opcode = Operation(Control(OP_2MUL));
+    pub const _2DIV: Opcode = Operation(Control(OP_2DIV));
+    pub const MUL: Opcode = Operation(Control(OP_MUL));
+    pub const DIV: Opcode = Operation(Control(OP_DIV));
+    pub const MOD: Opcode = Operation(Control(OP_MOD));
+    pub const LSHIFT: Opcode = Operation(Control(OP_LSHIFT));
+    pub const RSHIFT: Opcode = Operation(Control(OP_RSHIFT));
 }
 
 const DEFAULT_FLAGS: VerificationFlags =

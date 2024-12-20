@@ -51,19 +51,65 @@ pub enum PushValue {
 
 use PushValue::*;
 
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum Operation {
+    /// - always evaluated
+    /// - can be cast to its discriminant
+    Control(Control),
+    /// - only evaluated on active branch
+    /// - can be cast to its discriminant
+    Normal(Normal),
+    /// `Unknown` is a bit odd. It is executed in the same cases as `Normal`, but making it part of
+    /// `Normal` complicated the byte mapping implementation. It also takes any byte, but if you
+    /// create one with a byte that represents some other opcode, the interpretation will behave
+    /// differently than if you serialize and re-parse it.
+    Unknown(u8),
+}
+
 enum_from_primitive! {
+/// Control operations are evaluated regardless of whether the current branch is active.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[repr(u8)]
-pub enum Operation {
-    // control
-    OP_NOP = 0x61,
-    OP_VER = 0x62,
+pub enum Control {
     OP_IF = 0x63,
     OP_NOTIF = 0x64,
     OP_VERIF = 0x65,
     OP_VERNOTIF = 0x66,
     OP_ELSE = 0x67,
     OP_ENDIF = 0x68,
+
+    // splice ops
+    OP_CAT = 0x7e,
+    OP_SUBSTR = 0x7f,
+    OP_LEFT = 0x80,
+    OP_RIGHT = 0x81,
+        // bit logic
+    OP_INVERT = 0x83,
+    OP_AND = 0x84,
+    OP_OR = 0x85,
+    OP_XOR = 0x86,
+    // numeric
+    OP_2MUL = 0x8d,
+    OP_2DIV = 0x8e,
+    OP_MUL = 0x95,
+    OP_DIV = 0x96,
+    OP_MOD = 0x97,
+    OP_LSHIFT = 0x98,
+    OP_RSHIFT = 0x99,
+
+    //crypto
+    OP_CODESEPARATOR = 0xab,
+}
+}
+
+enum_from_primitive! {
+/// Normal operations are only executed when they are on an active branch.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[repr(u8)]
+pub enum Normal {
+    // control
+    OP_NOP = 0x61,
+    OP_VER = 0x62,
     OP_VERIFY = 0x69,
     OP_RETURN = 0x6a,
 
@@ -89,17 +135,9 @@ pub enum Operation {
     OP_TUCK = 0x7d,
 
     // splice ops
-    OP_CAT = 0x7e,
-    OP_SUBSTR = 0x7f,
-    OP_LEFT = 0x80,
-    OP_RIGHT = 0x81,
     OP_SIZE = 0x82,
 
     // bit logic
-    OP_INVERT = 0x83,
-    OP_AND = 0x84,
-    OP_OR = 0x85,
-    OP_XOR = 0x86,
     OP_EQUAL = 0x87,
     OP_EQUALVERIFY = 0x88,
     OP_RESERVED1 = 0x89,
@@ -108,8 +146,6 @@ pub enum Operation {
     // numeric
     OP_1ADD = 0x8b,
     OP_1SUB = 0x8c,
-    OP_2MUL = 0x8d,
-    OP_2DIV = 0x8e,
     OP_NEGATE = 0x8f,
     OP_ABS = 0x90,
     OP_NOT = 0x91,
@@ -117,11 +153,6 @@ pub enum Operation {
 
     OP_ADD = 0x93,
     OP_SUB = 0x94,
-    OP_MUL = 0x95,
-    OP_DIV = 0x96,
-    OP_MOD = 0x97,
-    OP_LSHIFT = 0x98,
-    OP_RSHIFT = 0x99,
 
     OP_BOOLAND = 0x9a,
     OP_BOOLOR = 0x9b,
@@ -143,7 +174,6 @@ pub enum Operation {
     OP_SHA256 = 0xa8,
     OP_HASH160 = 0xa9,
     OP_HASH256 = 0xaa,
-    OP_CODESEPARATOR = 0xab,
     OP_CHECKSIG = 0xac,
     OP_CHECKSIGVERIFY = 0xad,
     OP_CHECKMULTISIG = 0xae,
@@ -160,12 +190,10 @@ pub enum Operation {
     OP_NOP8 = 0xb7,
     OP_NOP9 = 0xb8,
     OP_NOP10 = 0xb9,
-
-    OP_INVALIDOPCODE = 0xff,
 }
 }
 
-use Operation::*;
+use Normal::*;
 
 impl From<Opcode> for u8 {
     fn from(value: Opcode) -> Self {
@@ -178,10 +206,26 @@ impl From<Opcode> for u8 {
 
 impl From<u8> for Opcode {
     fn from(value: u8) -> Self {
-        Operation::from_u8(value).map_or(
-            PushValue::try_from(value)
-                .map_or(Opcode::Operation(OP_INVALIDOPCODE), Opcode::PushValue),
-            Opcode::Operation,
+        PushValue::try_from(value)
+            .map_or(Opcode::Operation(Operation::from(value)), Opcode::PushValue)
+    }
+}
+
+impl From<Operation> for u8 {
+    fn from(value: Operation) -> Self {
+        match value {
+            Operation::Control(op) => op.into(),
+            Operation::Normal(op) => op.into(),
+            Operation::Unknown(byte) => byte,
+        }
+    }
+}
+
+impl From<u8> for Operation {
+    fn from(value: u8) -> Self {
+        Control::from_u8(value).map_or(
+            Normal::from_u8(value).map_or(Operation::Unknown(value), Operation::Normal),
+            Operation::Control,
         )
     }
 }
@@ -253,8 +297,15 @@ impl TryFrom<u8> for PushValue {
     }
 }
 
-impl From<Operation> for u8 {
-    fn from(value: Operation) -> Self {
+impl From<Normal> for u8 {
+    fn from(value: Normal) -> Self {
+        // This is how you get the discriminant, but using `as` everywhere is too much code smell
+        value as u8
+    }
+}
+
+impl From<Control> for u8 {
+    fn from(value: Control) -> Self {
         // This is how you get the discriminant, but using `as` everywhere is too much code smell
         value as u8
     }
@@ -437,7 +488,7 @@ impl Script<'_> {
     pub fn get_sig_op_count(&self, accurate: bool) -> u32 {
         let mut n = 0;
         let mut pc = self.0;
-        let mut last_opcode = Opcode::Operation(OP_INVALIDOPCODE);
+        let mut last_opcode = None;
         while !pc.is_empty() {
             let (opcode, new_pc) = match Self::get_op(pc) {
                 Ok(o) => o,
@@ -445,12 +496,12 @@ impl Script<'_> {
                 Err(_) => break,
             };
             pc = new_pc;
-            if let Opcode::Operation(op) = opcode {
+            if let Opcode::Operation(Operation::Normal(op)) = opcode {
                 if op == OP_CHECKSIG || op == OP_CHECKSIGVERIFY {
                     n += 1;
                 } else if op == OP_CHECKMULTISIG || op == OP_CHECKMULTISIGVERIFY {
                     match last_opcode {
-                        Opcode::PushValue(pv) => {
+                        Some(Opcode::PushValue(pv)) => {
                             if accurate && pv >= OP_1 && pv <= OP_16 {
                                 n += Self::decode_op_n(pv);
                             } else {
@@ -461,7 +512,7 @@ impl Script<'_> {
                     }
                 }
             }
-            last_opcode = opcode;
+            last_opcode = Some(opcode);
         }
         n
     }
