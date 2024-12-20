@@ -313,7 +313,7 @@ pub mod testing {
     use super::*;
     use crate::{
         interpreter::{State, StepFn},
-        script::{Operation, Script},
+        script::{Normal, Script},
         test_vectors::TestVector,
     };
 
@@ -347,7 +347,7 @@ pub mod testing {
             payload: &mut T::Payload,
         ) -> Result<&'a [u8], ScriptError> {
             self.0.call(
-                if pc[0] == Operation::OP_EQUAL.into() {
+                if pc[0] == Normal::OP_EQUAL.into() {
                     &pc[1..]
                 } else {
                     pc
