@@ -2,36 +2,48 @@
 
 use crate::script::{
     Control::*,
+    LargeValue::*,
     Normal::*,
     Opcode::{self, *},
     Operation::*,
-    PushValue::*,
+    PushValue::{LargeValue, SmallValue},
+    SmallValue::*,
 };
 
-pub const _0: Opcode = PushValue(OP_0);
-pub fn pushdata_bytelength(size: u8) -> Opcode {
-    PushValue(PushdataBytelength(size))
+pub const _0: Opcode = PushValue(SmallValue(OP_0));
+pub const _1NEGATE: Opcode = PushValue(SmallValue(OP_1NEGATE));
+pub const _1: Opcode = PushValue(SmallValue(OP_1));
+pub const _2: Opcode = PushValue(SmallValue(OP_2));
+pub const _3: Opcode = PushValue(SmallValue(OP_3));
+pub const _4: Opcode = PushValue(SmallValue(OP_4));
+pub const _5: Opcode = PushValue(SmallValue(OP_5));
+pub const _6: Opcode = PushValue(SmallValue(OP_6));
+pub const _7: Opcode = PushValue(SmallValue(OP_7));
+pub const _8: Opcode = PushValue(SmallValue(OP_8));
+pub const _9: Opcode = PushValue(SmallValue(OP_9));
+pub const _10: Opcode = PushValue(SmallValue(OP_10));
+pub const _11: Opcode = PushValue(SmallValue(OP_11));
+pub const _12: Opcode = PushValue(SmallValue(OP_12));
+pub const _13: Opcode = PushValue(SmallValue(OP_13));
+pub const _14: Opcode = PushValue(SmallValue(OP_14));
+pub const _15: Opcode = PushValue(SmallValue(OP_15));
+pub const _16: Opcode = PushValue(SmallValue(OP_16));
+
+pub fn pushdata_bytelength(value: Vec<u8>) -> Opcode {
+    PushValue(LargeValue(PushdataBytelength(value)))
 }
-pub const PUSHDATA1: Opcode = PushValue(OP_PUSHDATA1);
-pub const PUSHDATA2: Opcode = PushValue(OP_PUSHDATA2);
-pub const PUSHDATA4: Opcode = PushValue(OP_PUSHDATA4);
-pub const _1NEGATE: Opcode = PushValue(OP_1NEGATE);
-pub const _1: Opcode = PushValue(OP_1);
-pub const _2: Opcode = PushValue(OP_2);
-pub const _3: Opcode = PushValue(OP_3);
-pub const _4: Opcode = PushValue(OP_4);
-pub const _5: Opcode = PushValue(OP_5);
-pub const _6: Opcode = PushValue(OP_6);
-pub const _7: Opcode = PushValue(OP_7);
-pub const _8: Opcode = PushValue(OP_8);
-pub const _9: Opcode = PushValue(OP_9);
-pub const _10: Opcode = PushValue(OP_10);
-pub const _11: Opcode = PushValue(OP_11);
-pub const _12: Opcode = PushValue(OP_12);
-pub const _13: Opcode = PushValue(OP_13);
-pub const _14: Opcode = PushValue(OP_14);
-pub const _15: Opcode = PushValue(OP_15);
-pub const _16: Opcode = PushValue(OP_16);
+
+pub fn pushdata1(value: Vec<u8>) -> Opcode {
+    PushValue(LargeValue(OP_PUSHDATA1(value)))
+}
+
+pub fn pushdata2(value: Vec<u8>) -> Opcode {
+    PushValue(LargeValue(OP_PUSHDATA2(value)))
+}
+
+pub fn pushdata4(value: Vec<u8>) -> Opcode {
+    PushValue(LargeValue(OP_PUSHDATA4(value)))
+}
 
 pub const NOP: Opcode = Operation(Normal(OP_NOP));
 pub const IF: Opcode = Operation(Control(OP_IF));

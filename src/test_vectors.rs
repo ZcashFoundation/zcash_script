@@ -69,7 +69,7 @@ impl Entry {
 
     fn serialize(&self) -> Result<Vec<u8>, FromHexError> {
         match self {
-            Entry::O(opcode) => Ok(vec![(*opcode).into()]),
+            Entry::O(opcode) => Ok(vec![opcode.clone().into()]),
             Entry::H(bytes) => <Vec<u8>>::from_hex(*bytes),
             Entry::A(string) => Ok(Self::val_to_pv(string.as_bytes())),
             Entry::N(num) => Ok(Self::val_to_pv(&serialize_num(*num))),
@@ -122,10 +122,11 @@ mod bad {
         Normal::*,
         Opcode::{self, *},
         Operation::*,
-        PushValue::*,
+        PushValue::SmallValue,
+        SmallValue::*,
     };
 
-    pub const RESERVED: Opcode = PushValue(OP_RESERVED);
+    pub const RESERVED: Opcode = PushValue(SmallValue(OP_RESERVED));
     pub const VERIF: Opcode = Operation(Control(OP_VERIF));
     pub const VERNOTIF: Opcode = Operation(Control(OP_VERNOTIF));
     pub const VER: Opcode = Operation(Normal(OP_VER));
