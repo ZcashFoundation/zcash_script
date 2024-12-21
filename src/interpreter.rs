@@ -9,7 +9,7 @@ use sha1::Sha1;
 use sha2::{Digest, Sha256};
 
 use super::external::pubkey::PubKey;
-use super::script::{Control::*, Normal::*, PushValue::*, *};
+use super::script::{Control::*, Normal::*, *};
 use super::script_error::*;
 
 /// The ways in which a transparent input may commit to the transparent outputs of its
@@ -94,7 +94,7 @@ bitflags::bitflags! {
         const SigPushOnly = 1 << 5;
 
         /// Require minimal encodings for all push operations (OP_0... OP_16, OP_1NEGATE where possible, direct
-        /// pushes up to 75 bytes, OP_PUSHDATA up to 255 bytes, OP_PUSHDATA2 for anything larger). Evaluating
+        /// pushes up to 75 bytes, OP_PUSHDATA1 up to 255 bytes, OP_PUSHDATA2 for anything larger). Evaluating
         /// any other push causes the script to fail ([BIP62](https://github.com/bitcoin/bips/blob/master/bip-0062.mediawiki) rule 3).
         /// In addition, whenever a stack element is interpreted as a number, it must be of minimal length ([BIP62](https://github.com/bitcoin/bips/blob/master/bip-0062.mediawiki) rule 4).
         /// (softfork safe)
@@ -320,29 +320,6 @@ fn check_pub_key_encoding(vch_sig: &[u8], flags: VerificationFlags) -> Result<()
     Ok(())
 }
 
-fn check_minimal_push(data: &[u8], opcode: PushValue) -> bool {
-    if data.is_empty() {
-        // Could have used OP_0.
-        return opcode == OP_0;
-    } else if data.len() == 1 && data[0] >= 1 && data[0] <= 16 {
-        // Could have used OP_1 .. OP_16.
-        return u8::from(opcode) == u8::from(OP_1) + (data[0] - 1);
-    } else if data.len() == 1 && data[0] == 0x81 {
-        // Could have used OP_1NEGATE.
-        return opcode == OP_1NEGATE;
-    } else if data.len() <= 75 {
-        // Could have used a direct push (opcode indicating number of bytes pushed + those bytes).
-        return usize::from(u8::from(opcode)) == data.len();
-    } else if data.len() <= 255 {
-        // Could have used OP_PUSHDATA.
-        return opcode == OP_PUSHDATA1;
-    } else if data.len() <= 65535 {
-        // Could have used OP_PUSHDATA2.
-        return opcode == OP_PUSHDATA2;
-    }
-    true
-}
-
 fn is_sig_valid(
     vch_sig: &[u8],
     vch_pub_key: &[u8],
@@ -472,15 +449,14 @@ pub fn eval_step<'a>(
     //
     // Read instruction
     //
-    Script::get_op2(pc).and_then(|(opcode, vch_push_value, new_pc)| {
-        eval_opcode(flags, opcode, vch_push_value, script, &checker, state).map(|()| new_pc)
+    Script::get_op(pc).and_then(|(opcode, new_pc)| {
+        eval_opcode(flags, opcode, script, &checker, state).map(|()| new_pc)
     })
 }
 
 fn eval_opcode(
     flags: VerificationFlags,
     opcode: Opcode,
-    vch_push_value: &[u8],
     script: &Script,
     checker: &dyn SignatureChecker,
     state: &mut State,
@@ -492,14 +468,9 @@ fn eval_opcode(
 
     (match opcode {
         Opcode::PushValue(pv) => {
-            if vch_push_value.len() <= MAX_SCRIPT_ELEMENT_SIZE {
+            if pv.value().map_or(0, |v| v.len()) <= MAX_SCRIPT_ELEMENT_SIZE {
                 if should_exec(vexec) {
-                    eval_push_value(
-                        pv,
-                        vch_push_value,
-                        flags.contains(VerificationFlags::MinimalData),
-                        stack,
-                    )
+                    eval_push_value(&pv, flags.contains(VerificationFlags::MinimalData), stack)
                 } else {
                     Ok(())
                 }
@@ -546,35 +517,18 @@ fn eval_opcode(
 }
 
 fn eval_push_value(
-    pv: PushValue,
-    vch_push_value: &[u8],
+    pv: &PushValue,
     require_minimal: bool,
     stack: &mut Stack<Vec<u8>>,
 ) -> Result<(), ScriptError> {
-    match pv {
-        //
-        // Push value
-        //
-        OP_1NEGATE | OP_1 | OP_2 | OP_3 | OP_4 | OP_5 | OP_6 | OP_7 | OP_8 | OP_9 | OP_10
-        | OP_11 | OP_12 | OP_13 | OP_14 | OP_15 | OP_16 => {
-            // ( -- value)
-            let bn = i64::from(u8::from(pv)) - i64::from(u8::from(OP_RESERVED));
-            stack.push(serialize_num(bn));
-            // The result of these opcodes should always be the minimal way to push the data
-            // they push, so no need for a CheckMinimalPush here.
-        }
-        _ => {
-            if pv <= OP_PUSHDATA4 {
-                if require_minimal && !check_minimal_push(vch_push_value, pv) {
-                    return Err(ScriptError::MinimalData);
-                }
-                stack.push(vch_push_value.to_vec());
-            } else {
-                return Err(ScriptError::BadOpcode);
-            }
-        }
+    if require_minimal && !pv.is_minimal_push() {
+        Err(ScriptError::MinimalData)
+    } else {
+        pv.value().map_or(Err(ScriptError::BadOpcode), |v| {
+            stack.push(v);
+            Ok(())
+        })
     }
-    Ok(())
 }
 
 // Are we in an executing branch of the script?

@@ -14,21 +14,62 @@ pub const MAX_SCRIPT_SIZE: usize = 10000;
 pub const LOCKTIME_THRESHOLD: i64 = 500000000; // Tue Nov  5 00:53:20 1985 UTC
 
 /** Script opcodes */
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Opcode {
     PushValue(PushValue),
     Operation(Operation),
 }
 
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum LargeValue {
+    // push value
+    PushdataBytelength(Vec<u8>),
+    OP_PUSHDATA1(Vec<u8>),
+    OP_PUSHDATA2(Vec<u8>),
+    OP_PUSHDATA4(Vec<u8>),
+}
+
+use LargeValue::*;
+
+impl LargeValue {
+    pub fn value(&self) -> Vec<u8> {
+        match self {
+            PushdataBytelength(v) | OP_PUSHDATA1(v) | OP_PUSHDATA2(v) | OP_PUSHDATA4(v) => {
+                v.clone()
+            }
+        }
+    }
+
+    pub fn is_minimal_push(&self) -> bool {
+        match self {
+            PushdataBytelength(data) => match data.len() {
+                1 => data[0] != 0x81 && (data[0] < 1 || 16 < data[0]),
+                _ => true,
+            },
+            OP_PUSHDATA1(data) => 0x4c <= data.len(),
+            OP_PUSHDATA2(data) => 0x100 <= data.len(),
+            OP_PUSHDATA4(data) => 0x10000 <= data.len(),
+        }
+    }
+}
+
+impl From<LargeValue> for u8 {
+    fn from(lv: LargeValue) -> Self {
+        match lv {
+            PushdataBytelength(value) => value.len().try_into().unwrap(),
+            OP_PUSHDATA1(_) => 0x4c,
+            OP_PUSHDATA2(_) => 0x4d,
+            OP_PUSHDATA4(_) => 0x4e,
+        }
+    }
+}
+
+enum_from_primitive! {
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[repr(u8)]
-pub enum PushValue {
+pub enum SmallValue {
     // push value
     OP_0 = 0x00,
-    PushdataBytelength(u8),
-    OP_PUSHDATA1 = 0x4c,
-    OP_PUSHDATA2 = 0x4d,
-    OP_PUSHDATA4 = 0x4e,
     OP_1NEGATE = 0x4f,
     OP_RESERVED = 0x50,
     OP_1 = 0x51,
@@ -48,8 +89,49 @@ pub enum PushValue {
     OP_15 = 0x5f,
     OP_16 = 0x60,
 }
+}
 
-use PushValue::*;
+use SmallValue::*;
+
+impl SmallValue {
+    pub fn value(&self) -> Option<Vec<u8>> {
+        match self {
+            OP_0 => Some(vec![]),
+            OP_1NEGATE => Some(vec![0x81]),
+            OP_RESERVED => None,
+            _ => Some(vec![u8::from(*self) - (u8::from(OP_1) - 1)]),
+        }
+    }
+}
+
+impl From<SmallValue> for u8 {
+    fn from(value: SmallValue) -> Self {
+        // This is how you get the discriminant, but using `as` everywhere is too much code smell
+        value as u8
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum PushValue {
+    SmallValue(SmallValue),
+    LargeValue(LargeValue),
+}
+
+impl PushValue {
+    pub fn value(&self) -> Option<Vec<u8>> {
+        match self {
+            PushValue::LargeValue(pv) => Some(pv.value()),
+            PushValue::SmallValue(pv) => pv.value(),
+        }
+    }
+
+    pub fn is_minimal_push(&self) -> bool {
+        match self {
+            PushValue::LargeValue(lv) => lv.is_minimal_push(),
+            PushValue::SmallValue(_) => true,
+        }
+    }
+}
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Operation {
@@ -204,13 +286,6 @@ impl From<Opcode> for u8 {
     }
 }
 
-impl From<u8> for Opcode {
-    fn from(value: u8) -> Self {
-        PushValue::try_from(value)
-            .map_or(Opcode::Operation(Operation::from(value)), Opcode::PushValue)
-    }
-}
-
 impl From<Operation> for u8 {
     fn from(value: Operation) -> Self {
         match value {
@@ -233,66 +308,8 @@ impl From<u8> for Operation {
 impl From<PushValue> for u8 {
     fn from(value: PushValue) -> Self {
         match value {
-            OP_0 => 0x00,
-            PushdataBytelength(byte) => byte,
-            OP_PUSHDATA1 => 0x4c,
-            OP_PUSHDATA2 => 0x4d,
-            OP_PUSHDATA4 => 0x4e,
-            OP_1NEGATE => 0x4f,
-            OP_RESERVED => 0x50,
-            OP_1 => 0x51,
-            OP_2 => 0x52,
-            OP_3 => 0x53,
-            OP_4 => 0x54,
-            OP_5 => 0x55,
-            OP_6 => 0x56,
-            OP_7 => 0x57,
-            OP_8 => 0x58,
-            OP_9 => 0x59,
-            OP_10 => 0x5a,
-            OP_11 => 0x5b,
-            OP_12 => 0x5c,
-            OP_13 => 0x5d,
-            OP_14 => 0x5e,
-            OP_15 => 0x5f,
-            OP_16 => 0x60,
-        }
-    }
-}
-
-impl TryFrom<u8> for PushValue {
-    type Error = ();
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0x00 => Ok(OP_0),
-            0x4c => Ok(OP_PUSHDATA1),
-            0x4d => Ok(OP_PUSHDATA2),
-            0x4e => Ok(OP_PUSHDATA4),
-            0x4f => Ok(OP_1NEGATE),
-            0x50 => Ok(OP_RESERVED),
-            0x51 => Ok(OP_1),
-            0x52 => Ok(OP_2),
-            0x53 => Ok(OP_3),
-            0x54 => Ok(OP_4),
-            0x55 => Ok(OP_5),
-            0x56 => Ok(OP_6),
-            0x57 => Ok(OP_7),
-            0x58 => Ok(OP_8),
-            0x59 => Ok(OP_9),
-            0x5a => Ok(OP_10),
-            0x5b => Ok(OP_11),
-            0x5c => Ok(OP_12),
-            0x5d => Ok(OP_13),
-            0x5e => Ok(OP_14),
-            0x5f => Ok(OP_15),
-            0x60 => Ok(OP_16),
-            _ => {
-                if value <= 0x60 {
-                    Ok(PushdataBytelength(value))
-                } else {
-                    Err(())
-                }
-            }
+            PushValue::SmallValue(pv) => pv.into(),
+            PushValue::LargeValue(pv) => pv.into(),
         }
     }
 }
@@ -425,8 +442,16 @@ pub fn serialize_num(value: i64) -> Vec<u8> {
 pub struct Script<'a>(pub &'a [u8]);
 
 impl Script<'_> {
-    pub fn get_op(script: &[u8]) -> Result<(Opcode, &[u8]), ScriptError> {
-        Self::get_op2(script).map(|(op, _, remainder)| (op, remainder))
+    pub fn parse(&self) -> Result<Vec<Opcode>, ScriptError> {
+        let mut pc = self.0;
+        let mut result = vec![];
+        while !pc.is_empty() {
+            Self::get_op(pc).map(|(op, new_pc)| {
+                pc = new_pc;
+                result.push(op)
+            })?;
+        }
+        Ok(result)
     }
 
     fn split_value(script: &[u8], needed_bytes: usize) -> Result<(&[u8], &[u8]), ScriptError> {
@@ -451,28 +476,54 @@ impl Script<'_> {
         })
     }
 
-    pub fn get_op2(script: &[u8]) -> Result<(Opcode, &[u8], &[u8]), ScriptError> {
+    pub fn get_lv(script: &[u8]) -> Result<Option<(LargeValue, &[u8])>, ScriptError> {
         match script.split_first() {
             None => Err(ScriptError::ReadError {
                 expected_bytes: 1,
                 available_bytes: 0,
             }),
-            Some((leading_byte, script)) => match Opcode::from(*leading_byte) {
-                op @ Opcode::PushValue(pv) => match pv {
-                    OP_PUSHDATA1 => Script::split_tagged_value(script, 1),
-                    OP_PUSHDATA2 => Script::split_tagged_value(script, 2),
-                    OP_PUSHDATA4 => Script::split_tagged_value(script, 4),
-                    PushdataBytelength(size_byte) => Script::split_value(script, size_byte.into()),
-                    _ => Ok((&[][..], script)),
+            Some((leading_byte, script)) => match leading_byte {
+                0x4c => Self::split_tagged_value(script, 1)
+                    .map(|(v, script)| Some((OP_PUSHDATA1(v.to_vec()), script))),
+                0x4d => Self::split_tagged_value(script, 2)
+                    .map(|(v, script)| Some((OP_PUSHDATA2(v.to_vec()), script))),
+                0x4e => Self::split_tagged_value(script, 4)
+                    .map(|(v, script)| Some((OP_PUSHDATA4(v.to_vec()), script))),
+                _ => {
+                    if 0x01 <= *leading_byte && *leading_byte < 0x4c {
+                        Self::split_value(script, (*leading_byte).into())
+                            .map(|(v, script)| Some((PushdataBytelength(v.to_vec()), script)))
+                    } else {
+                        Ok(None)
+                    }
                 }
-                .map(|(value, script)| (op, value, script)),
-                op => Ok((op, &[], script)),
             },
         }
     }
 
+    pub fn get_op(script: &[u8]) -> Result<(Opcode, &[u8]), ScriptError> {
+        Self::get_lv(script).and_then(|r| {
+            r.map_or(
+                match script.split_first() {
+                    None => Err(ScriptError::ReadError {
+                        expected_bytes: 1,
+                        available_bytes: 0,
+                    }),
+                    Some((leading_byte, script)) => Ok((
+                        SmallValue::from_u8(*leading_byte)
+                            .map_or(Opcode::Operation(Operation::from(*leading_byte)), |sv| {
+                                Opcode::PushValue(PushValue::SmallValue(sv))
+                            }),
+                        script,
+                    )),
+                },
+                |(v, script)| Ok((Opcode::PushValue(PushValue::LargeValue(v)), script)),
+            )
+        })
+    }
+
     /** Encode/decode small integers: */
-    pub fn decode_op_n(opcode: PushValue) -> u32 {
+    pub fn decode_op_n(opcode: SmallValue) -> u32 {
         if opcode == OP_0 {
             return 0;
         }
@@ -501,7 +552,7 @@ impl Script<'_> {
                     n += 1;
                 } else if op == OP_CHECKMULTISIG || op == OP_CHECKMULTISIGVERIFY {
                     match last_opcode {
-                        Some(Opcode::PushValue(pv)) => {
+                        Some(Opcode::PushValue(PushValue::SmallValue(pv))) => {
                             if accurate && pv >= OP_1 && pv <= OP_16 {
                                 n += Self::decode_op_n(pv);
                             } else {
@@ -519,10 +570,13 @@ impl Script<'_> {
 
     /// Returns true iff this script is P2SH.
     pub fn is_pay_to_script_hash(&self) -> bool {
-        self.0.len() == 23
-            && self.0[0] == OP_HASH160.into()
-            && self.0[1] == 0x14
-            && self.0[22] == OP_EQUAL.into()
+        self.parse().map_or(false, |ops| match &ops[..] {
+            [ Opcode::Operation(Operation::Normal(OP_HASH160)),
+              Opcode::PushValue(PushValue::LargeValue(PushdataBytelength(v))),
+              Opcode::Operation(Operation::Normal(OP_EQUAL))
+            ] => v.len() == 0x14,
+            _ => false
+        })
     }
 
     /// Called by `IsStandardTx` and P2SH/BIP62 VerifyScript (which makes it consensus-critical).
