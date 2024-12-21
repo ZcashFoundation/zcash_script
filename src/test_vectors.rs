@@ -69,7 +69,7 @@ impl Entry {
 
     pub(crate) fn serialize(&self) -> Result<Vec<u8>, FromHexError> {
         match self {
-            Entry::O(opcode) => Ok(vec![(*opcode).into()]),
+            Entry::O(opcode) => Ok(vec![opcode.clone().into()]),
             Entry::H(bytes) => <Vec<u8>>::from_hex(*bytes),
             Entry::A(string) => Ok(Self::val_to_pv(string.as_bytes())),
             Entry::N(num) => Ok(Self::val_to_pv(&serialize_num(*num))),
