@@ -42,7 +42,7 @@ in 0.2.0 release (based on zcashd 5.9.0) with the following changes:
   verification.
 
 The simplified API now mostly require files that are truly required for script
-verification. These are unlikely to change so this crate no longers need to keep
+verification. These are unlikely to change so this crate no longer needs to keep
 the zcashd source in sync, unless there was some bug fix in script verification.
 
 If updating zcashd source is required, you will need to manually update the
@@ -72,7 +72,7 @@ and add it to a  `file()` call inside `build.rs`.
 #### "fatal error: `file`: No such file or directory"
 
 This likely means that a `.h` file is not being found.
-Seach for a file with the given name and add its folder to a `.include()`
+Search for a file with the given name and add its folder to a `.include()`
 call in `build.rs`. If the file does not exist there it's likely from
 a 3rd-party dependency that is downloaded at build time. Search for
 the file name on some search engine to attempt to find what project

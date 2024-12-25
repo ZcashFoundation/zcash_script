@@ -158,7 +158,7 @@ pub extern "C" fn metrics_key(
     labels_len: usize,
 ) -> *mut FfiKey {
     if try_recorder().is_none() {
-        // No recorder is currently installed, so don't genenerate a key. We check for
+        // No recorder is currently installed, so don't generate a key. We check for
         // null inside each API that consumes an FfiKey, just in case a recorder was
         // installed in a racy way.
         ptr::null_mut()
