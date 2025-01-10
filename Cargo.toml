@@ -60,7 +60,7 @@ path = "src/lib.rs"
 external-secp = []
 
 [dependencies]
-bitflags = "2.5"
+bitflags = "2.7"
 zcash_primitives = "0.17"
 
 [build-dependencies]
