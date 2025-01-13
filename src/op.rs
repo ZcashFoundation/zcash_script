@@ -28,20 +28,10 @@ pub const _14: Opcode = PushValue(pv::_14);
 pub const _15: Opcode = PushValue(pv::_15);
 pub const _16: Opcode = PushValue(pv::_16);
 
-pub fn pushdata_bytelength(value: Vec<u8>) -> Opcode {
-    PushValue(pv::pushdata_bytelength(value))
-}
-
-pub fn pushdata1(value: Vec<u8>) -> Opcode {
-    PushValue(pv::pushdata1(value))
-}
-
-pub fn pushdata2(value: Vec<u8>) -> Opcode {
-    PushValue(pv::pushdata2(value))
-}
-
-pub fn pushdata4(value: Vec<u8>) -> Opcode {
-    PushValue(pv::pushdata4(value))
+/// Produces a minimally-encoded data value. It fails if the slice is larger than
+/// `MAX_SCRIPT_ELEMENT_SIZE`.
+pub fn push_value(value: &[u8]) -> Option<Opcode> {
+    pv::push_value(value).map(PushValue)
 }
 
 pub const NOP: Opcode = Operation(OP_NOP);

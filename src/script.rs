@@ -2,7 +2,7 @@
 
 use enum_primitive::FromPrimitive;
 
-use super::script_error::*;
+use crate::script_error::*;
 
 pub const MAX_SCRIPT_ELEMENT_SIZE: usize = 520; // bytes
 
@@ -25,6 +25,16 @@ pub enum Opcode {
     Operation(Operation),
 }
 
+impl From<&Opcode> for Vec<u8> {
+    fn from(value: &Opcode) -> Self {
+        match value {
+            Opcode::PushValue(v) => v.into(),
+            Opcode::Control(v) => vec![(*v).into()],
+            Opcode::Operation(v) => vec![(*v).into()],
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum LargeValue {
     // push value
@@ -36,6 +46,34 @@ pub enum LargeValue {
 
 use LargeValue::*;
 
+impl From<&LargeValue> for Vec<u8> {
+    fn from(value: &LargeValue) -> Self {
+        let bytes = value.value();
+        match value {
+            PushdataBytelength(_) => {
+                [serialize_num(bytes.len().try_into().unwrap()), bytes].concat()
+            }
+            OP_PUSHDATA1(_) => [
+                vec![0x4c],
+                serialize_num(bytes.len().try_into().unwrap()),
+                bytes,
+            ]
+            .concat(),
+            OP_PUSHDATA2(_) => [
+                vec![0x4d],
+                serialize_num(bytes.len().try_into().unwrap()),
+                bytes,
+            ]
+            .concat(),
+            OP_PUSHDATA4(_) => [
+                vec![0x4e],
+                serialize_num(bytes.len().try_into().unwrap()),
+                bytes,
+            ]
+            .concat(),
+        }
+    }
+}
 impl LargeValue {
     pub fn value(&self) -> Vec<u8> {
         match self {
@@ -123,6 +161,48 @@ pub enum PushValue {
 }
 
 impl PushValue {
+    /// Produce a minimal `PushValue` for the given data.
+    pub fn from_slice(v: &[u8]) -> Option<PushValue> {
+        match v {
+            [] => Some(PushValue::SmallValue(OP_0)),
+            [byte] => Some(match byte {
+                0x81 => PushValue::SmallValue(OP_1NEGATE),
+                1 => PushValue::SmallValue(OP_1),
+                2 => PushValue::SmallValue(OP_2),
+                3 => PushValue::SmallValue(OP_3),
+                4 => PushValue::SmallValue(OP_4),
+                5 => PushValue::SmallValue(OP_5),
+                6 => PushValue::SmallValue(OP_6),
+                7 => PushValue::SmallValue(OP_7),
+                8 => PushValue::SmallValue(OP_8),
+                9 => PushValue::SmallValue(OP_9),
+                10 => PushValue::SmallValue(OP_10),
+                11 => PushValue::SmallValue(OP_11),
+                12 => PushValue::SmallValue(OP_12),
+                13 => PushValue::SmallValue(OP_13),
+                14 => PushValue::SmallValue(OP_14),
+                15 => PushValue::SmallValue(OP_15),
+                16 => PushValue::SmallValue(OP_16),
+                _ => PushValue::LargeValue(PushdataBytelength(v.to_vec())),
+            }),
+            _ => {
+                let len = v.len();
+                let vec = v.to_vec();
+                if len <= 0x4b {
+                    Some(PushValue::LargeValue(PushdataBytelength(vec)))
+                } else if len <= u8::MAX.into() {
+                    Some(PushValue::LargeValue(OP_PUSHDATA1(vec)))
+                } else if len <= u16::MAX.into() {
+                    Some(PushValue::LargeValue(OP_PUSHDATA2(vec)))
+                } else if u32::MAX.try_into().map_or(true, |max| len <= max) {
+                    Some(PushValue::LargeValue(OP_PUSHDATA4(vec)))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
     pub fn value(&self) -> Option<Vec<u8>> {
         match self {
             PushValue::LargeValue(pv) => Some(pv.value()),
@@ -134,6 +214,15 @@ impl PushValue {
         match self {
             PushValue::LargeValue(lv) => lv.is_minimal_push(),
             PushValue::SmallValue(_) => true,
+        }
+    }
+}
+
+impl From<&PushValue> for Vec<u8> {
+    fn from(value: &PushValue) -> Self {
+        match value {
+            PushValue::SmallValue(v) => vec![(*v).into()],
+            PushValue::LargeValue(v) => v.into(),
         }
     }
 }
@@ -513,6 +602,12 @@ impl Script<'_> {
                 |(v, script)| Ok((Ok(Opcode::PushValue(PushValue::LargeValue(v))), script)),
             )
         })
+    }
+
+    pub fn serialize(script: &[Opcode]) -> Vec<u8> {
+        script
+            .iter()
+            .fold(Vec::new(), |acc, op| [acc, op.into()].concat())
     }
 
     /** Encode/decode small integers: */

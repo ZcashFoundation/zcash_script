@@ -1,9 +1,9 @@
 //! Convenience definitions for all push values.
 
 use crate::script::{
-    LargeValue::*,
     PushValue::{self, *},
     SmallValue::*,
+    MAX_SCRIPT_ELEMENT_SIZE,
 };
 
 pub const _0: PushValue = SmallValue(OP_0);
@@ -25,18 +25,12 @@ pub const _14: PushValue = SmallValue(OP_14);
 pub const _15: PushValue = SmallValue(OP_15);
 pub const _16: PushValue = SmallValue(OP_16);
 
-pub fn pushdata_bytelength(value: Vec<u8>) -> PushValue {
-    LargeValue(PushdataBytelength(value))
-}
-
-pub fn pushdata1(value: Vec<u8>) -> PushValue {
-    LargeValue(OP_PUSHDATA1(value))
-}
-
-pub fn pushdata2(value: Vec<u8>) -> PushValue {
-    LargeValue(OP_PUSHDATA2(value))
-}
-
-pub fn pushdata4(value: Vec<u8>) -> PushValue {
-    LargeValue(OP_PUSHDATA4(value))
+/// Produces a minimally-encoded data value. It fails if the slice is larger than
+/// `MAX_SCRIPT_ELEMENT_SIZE`.
+pub fn push_value(value: &[u8]) -> Option<PushValue> {
+    if value.len() <= MAX_SCRIPT_ELEMENT_SIZE {
+        PushValue::from_slice(value)
+    } else {
+        None
+    }
 }
