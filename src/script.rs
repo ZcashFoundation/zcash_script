@@ -27,6 +27,16 @@ pub enum Opcode {
     Operation(Operation),
 }
 
+impl From<&Opcode> for Vec<u8> {
+    fn from(value: &Opcode) -> Self {
+        match value {
+            Opcode::PushValue(v) => v.into(),
+            Opcode::Control(v) => vec![(*v).into()],
+            Opcode::Operation(v) => vec![(*v).into()],
+        }
+    }
+}
+
 /// Data values that aren’t represented within their opcode byte.
 ///
 /// TODO: These should have lower bounds that can prevent non-minimal encodings, but that requires
@@ -42,6 +52,33 @@ pub enum LargeValue {
 }
 use LargeValue::*;
 
+impl From<LargeValue> for Vec<u8> {
+    fn from(value: LargeValue) -> Self {
+        match value {
+            PushdataBytelength(bv) => {
+                [serialize_num(bv.len().try_into().unwrap()), bv.to_vec()].concat()
+            }
+            OP_PUSHDATA1(bv) => [
+                vec![0x4c],
+                serialize_num(bv.as_slice().len().try_into().unwrap()),
+                bv.to_vec(),
+            ]
+            .concat(),
+            OP_PUSHDATA2(bv) => [
+                vec![0x4d],
+                serialize_num(bv.as_slice().len().try_into().unwrap()),
+                bv.to_vec(),
+            ]
+            .concat(),
+            OP_PUSHDATA4(bv) => [
+                vec![0x4e],
+                serialize_num(bv.as_slice().len().try_into().unwrap()),
+                bv.to_vec(),
+            ]
+            .concat(),
+        }
+    }
+}
 impl LargeValue {
     const PUSHDATA1_BYTE: u8 = 0x4c;
     const PUSHDATA2_BYTE: u8 = 0x4d;
@@ -199,6 +236,15 @@ impl PushValue {
         match self {
             PushValue::LargeValue(lv) => lv.is_minimal_push(),
             PushValue::SmallValue(_) => true,
+        }
+    }
+}
+
+impl From<&PushValue> for Vec<u8> {
+    fn from(value: &PushValue) -> Self {
+        match value {
+            PushValue::SmallValue(v) => vec![(*v).into()],
+            PushValue::LargeValue(v) => v.clone().into(),
         }
     }
 }
@@ -692,6 +738,12 @@ impl Script<'_> {
                 remaining_code,
             }),
         }
+    }
+
+    pub fn serialize(script: &[Opcode]) -> Vec<u8> {
+        script
+            .iter()
+            .fold(Vec::new(), |acc, op| [acc, op.into()].concat())
     }
 
     /** Encode/decode small integers: */
