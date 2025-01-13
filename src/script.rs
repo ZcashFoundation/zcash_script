@@ -20,6 +20,15 @@ pub enum Opcode {
     Operation(Operation),
 }
 
+impl From<&Opcode> for Vec<u8> {
+    fn from(value: &Opcode) -> Self {
+        match value {
+            Opcode::PushValue(v) => v.into(),
+            Opcode::Operation(v) => vec![(*v).into()],
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum LargeValue {
     // push value
@@ -31,6 +40,34 @@ pub enum LargeValue {
 
 use LargeValue::*;
 
+impl From<&LargeValue> for Vec<u8> {
+    fn from(value: &LargeValue) -> Self {
+        let bytes = value.value();
+        match value {
+            PushdataBytelength(_) => {
+                [serialize_num(bytes.len().try_into().unwrap()), bytes].concat()
+            }
+            OP_PUSHDATA1(_) => [
+                vec![0x4c],
+                serialize_num(bytes.len().try_into().unwrap()),
+                bytes,
+            ]
+            .concat(),
+            OP_PUSHDATA2(_) => [
+                vec![0x4d],
+                serialize_num(bytes.len().try_into().unwrap()),
+                bytes,
+            ]
+            .concat(),
+            OP_PUSHDATA4(_) => [
+                vec![0x4e],
+                serialize_num(bytes.len().try_into().unwrap()),
+                bytes,
+            ]
+            .concat(),
+        }
+    }
+}
 impl LargeValue {
     pub fn value(&self) -> Vec<u8> {
         match self {
@@ -146,6 +183,15 @@ pub enum Operation {
     /// create one with a byte that represents some other opcode, the interpretation will behave
     /// differently than if you serialize and re-parse it.
     Unknown(u8),
+}
+
+impl From<&PushValue> for Vec<u8> {
+    fn from(value: &PushValue) -> Self {
+        match value {
+            PushValue::SmallValue(v) => vec![(*v).into()],
+            PushValue::LargeValue(v) => v.into(),
+        }
+    }
 }
 
 enum_from_primitive! {
@@ -520,6 +566,12 @@ impl Script<'_> {
                 |(v, script)| Ok((Opcode::PushValue(PushValue::LargeValue(v)), script)),
             )
         })
+    }
+
+    pub fn serialize(script: &[Opcode]) -> Vec<u8> {
+        script
+            .iter()
+            .fold(Vec::new(), |acc, op| [acc, op.into()].concat())
     }
 
     /** Encode/decode small integers: */
