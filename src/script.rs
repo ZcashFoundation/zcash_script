@@ -406,7 +406,7 @@ pub fn parse_num(
                     // An example of this is +-255, which have minimal encodings [0xff, 0x00] and
                     // [0xff, 0x80] respectively.
                     if vch.len() <= 1 || (vch[vch.len() - 2] & 0x80) == 0 {
-                        return Err(ScriptNumError::NonMinimalEncoding);
+                        return Err(ScriptNumError::NonMinimalEncoding(Some(vch.clone())));
                     }
                 }
             }

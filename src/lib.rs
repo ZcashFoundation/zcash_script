@@ -45,72 +45,76 @@ impl From<cxx::ScriptError> for Error {
     fn from(err_code: cxx::ScriptError) -> Self {
         match err_code {
             cxx::ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR => {
-                Error::Script(zcash_script::AMBIGUOUS_UNKNOWN_NUM_HIGHS_ERROR)
+                Self::Script(ScriptError::AMBIGUOUS_UNKNOWN_NUM_HIGHS)
             }
-            cxx::ScriptError_t_SCRIPT_ERR_EVAL_FALSE => Error::Script(ScriptError::EvalFalse),
-            cxx::ScriptError_t_SCRIPT_ERR_OP_RETURN => Error::Script(ScriptError::OpReturn),
+            cxx::ScriptError_t_SCRIPT_ERR_EVAL_FALSE => Self::Script(ScriptError::EvalFalse),
+            cxx::ScriptError_t_SCRIPT_ERR_OP_RETURN => Self::Script(ScriptError::OpReturn),
 
-            cxx::ScriptError_t_SCRIPT_ERR_SCRIPT_SIZE => Error::Script(ScriptError::ScriptSize),
-            cxx::ScriptError_t_SCRIPT_ERR_PUSH_SIZE => Error::Script(ScriptError::PushSize),
-            cxx::ScriptError_t_SCRIPT_ERR_OP_COUNT => Error::Script(ScriptError::OpCount),
-            cxx::ScriptError_t_SCRIPT_ERR_STACK_SIZE => Error::Script(ScriptError::StackSize),
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_COUNT => Error::Script(ScriptError::SigCount),
-            cxx::ScriptError_t_SCRIPT_ERR_PUBKEY_COUNT => Error::Script(ScriptError::PubKeyCount),
+            cxx::ScriptError_t_SCRIPT_ERR_SCRIPT_SIZE => {
+                Self::Script(ScriptError::ScriptSize(None))
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_PUSH_SIZE => Self::Script(ScriptError::PushSize(None)),
+            cxx::ScriptError_t_SCRIPT_ERR_OP_COUNT => Self::Script(ScriptError::OpCount),
+            cxx::ScriptError_t_SCRIPT_ERR_STACK_SIZE => Self::Script(ScriptError::StackSize(None)),
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_COUNT => Self::Script(ScriptError::SigCount(None)),
+            cxx::ScriptError_t_SCRIPT_ERR_PUBKEY_COUNT => {
+                Self::Script(ScriptError::PubKeyCount(None))
+            }
 
-            cxx::ScriptError_t_SCRIPT_ERR_VERIFY => Error::Script(ScriptError::Verify),
-            cxx::ScriptError_t_SCRIPT_ERR_EQUALVERIFY => Error::Script(ScriptError::EqualVerify),
+            cxx::ScriptError_t_SCRIPT_ERR_VERIFY => Self::Script(ScriptError::Verify),
+            cxx::ScriptError_t_SCRIPT_ERR_EQUALVERIFY => Self::Script(ScriptError::EqualVerify),
             cxx::ScriptError_t_SCRIPT_ERR_CHECKMULTISIGVERIFY => {
-                Error::Script(ScriptError::CheckMultisigVerify)
+                Self::Script(ScriptError::CheckMultisigVerify)
             }
             cxx::ScriptError_t_SCRIPT_ERR_CHECKSIGVERIFY => {
-                Error::Script(ScriptError::CheckSigVerify)
+                Self::Script(ScriptError::CheckSigVerify)
             }
             cxx::ScriptError_t_SCRIPT_ERR_NUMEQUALVERIFY => {
-                Error::Script(ScriptError::NumEqualVerify)
+                Self::Script(ScriptError::NumEqualVerify)
             }
 
-            cxx::ScriptError_t_SCRIPT_ERR_BAD_OPCODE => Error::Script(ScriptError::BadOpcode(None)),
+            cxx::ScriptError_t_SCRIPT_ERR_BAD_OPCODE => Self::Script(ScriptError::BadOpcode(None)),
             cxx::ScriptError_t_SCRIPT_ERR_DISABLED_OPCODE => {
-                Error::Script(ScriptError::DisabledOpcode(None))
+                Self::Script(ScriptError::DisabledOpcode(None))
             }
             cxx::ScriptError_t_SCRIPT_ERR_INVALID_STACK_OPERATION => {
-                Error::Script(ScriptError::InvalidStackOperation)
+                Self::Script(ScriptError::InvalidStackOperation(None))
             }
             cxx::ScriptError_t_SCRIPT_ERR_INVALID_ALTSTACK_OPERATION => {
-                Error::Script(ScriptError::InvalidAltstackOperation)
+                Self::Script(ScriptError::InvalidAltstackOperation(None))
             }
             cxx::ScriptError_t_SCRIPT_ERR_UNBALANCED_CONDITIONAL => {
-                Error::Script(ScriptError::UnbalancedConditional)
+                Self::Script(ScriptError::UnbalancedConditional)
             }
 
             cxx::ScriptError_t_SCRIPT_ERR_NEGATIVE_LOCKTIME => {
-                Error::Script(ScriptError::NegativeLockTime)
+                Self::Script(ScriptError::NegativeLockTime)
             }
             cxx::ScriptError_t_SCRIPT_ERR_UNSATISFIED_LOCKTIME => {
-                Error::Script(ScriptError::UnsatisfiedLockTime)
+                Self::Script(ScriptError::UnsatisfiedLockTime)
             }
 
             cxx::ScriptError_t_SCRIPT_ERR_SIG_HASHTYPE => {
-                Error::Script(signature::Error::SigHashType(None).into())
+                Self::Script(signature::Error::SigHashType(None).into())
             }
             cxx::ScriptError_t_SCRIPT_ERR_SIG_DER => {
-                Error::Script(signature::Error::SigDER(None).into())
+                Self::Script(signature::Error::SigDER(None).into())
             }
-            cxx::ScriptError_t_SCRIPT_ERR_MINIMALDATA => Error::Script(ScriptError::MinimalData),
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_PUSHONLY => Error::Script(ScriptError::SigPushOnly),
+            cxx::ScriptError_t_SCRIPT_ERR_MINIMALDATA => Self::Script(ScriptError::MinimalData),
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_PUSHONLY => Self::Script(ScriptError::SigPushOnly),
             cxx::ScriptError_t_SCRIPT_ERR_SIG_HIGH_S => {
-                Error::Script(signature::Error::SigHighS.into())
+                Self::Script(signature::Error::SigHighS.into())
             }
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_NULLDUMMY => Error::Script(ScriptError::SigNullDummy),
-            cxx::ScriptError_t_SCRIPT_ERR_PUBKEYTYPE => Error::Script(ScriptError::PubKeyType),
-            cxx::ScriptError_t_SCRIPT_ERR_CLEANSTACK => Error::Script(ScriptError::CleanStack),
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_NULLDUMMY => Self::Script(ScriptError::SigNullDummy),
+            cxx::ScriptError_t_SCRIPT_ERR_PUBKEYTYPE => Self::Script(ScriptError::PubKeyType),
+            cxx::ScriptError_t_SCRIPT_ERR_CLEANSTACK => Self::Script(ScriptError::CleanStack),
 
             cxx::ScriptError_t_SCRIPT_ERR_DISCOURAGE_UPGRADABLE_NOPS => {
-                Error::Script(ScriptError::DiscourageUpgradableNOPs)
+                Self::Script(ScriptError::DiscourageUpgradableNOPs)
             }
 
-            cxx::ScriptError_t_SCRIPT_ERR_VERIFY_SCRIPT => Error::CaughtException,
-            unknown => Error::Unknown(unknown.into()),
+            cxx::ScriptError_t_SCRIPT_ERR_VERIFY_SCRIPT => Self::CaughtException,
+            unknown => Self::Unknown(unknown.into()),
         }
     }
 }
@@ -233,14 +237,6 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
     )
 }
 
-/// Convert errors that don’t exist in the C++ code into the cases that do.
-pub fn normalize_error(err: Error) -> Error {
-    match err {
-        Error::Script(serr) => Error::Script(zcash_script::normalize_error(serr)),
-        _ => err,
-    }
-}
-
 /// A tag to indicate that both the C++ and Rust implementations of zcash_script should be used,
 /// with their results compared.
 pub struct ComparisonInterpreter<T, U> {
@@ -296,7 +292,7 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U>
     ) -> Result<(), Error> {
         let (cxx, rust) =
             check_verify_callback(&self.first, &self.second, script_pub_key, script_sig, flags);
-        if rust.clone().map_err(normalize_error) != cxx.clone().map_err(normalize_error) {
+        if rust.clone().map_err(|e| e.normalize()) != cxx.clone().map_err(|e| e.normalize()) {
             // probably want to distinguish between
             // - one succeeding when the other fails (bad), and
             // - differing error codes (maybe not bad).
@@ -319,7 +315,7 @@ pub mod testing {
         script_error::ScriptError,
         signature::HashType,
         test_vectors::TestVector,
-        zcash_script, Error,
+        Error,
     };
     use hex::FromHex;
 
@@ -416,8 +412,7 @@ pub mod testing {
             Ok(()) => (),
             Err(actual) => {
                 if try_normalized_error
-                    && tv.result.clone().map_err(zcash_script::normalize_error)
-                        == actual.clone().map_err(zcash_script::normalize_error)
+                    && tv.result.clone().normalized() == actual.clone().map_err(|e| e.normalize())
                 {
                     ()
                 } else {
@@ -439,7 +434,7 @@ mod tests {
     use proptest::prelude::{prop, prop_assert_eq, proptest, ProptestConfig};
 
     use super::{
-        check_verify_callback, normalize_error, rust_interpreter,
+        check_verify_callback, rust_interpreter,
         test_vectors::test_vectors,
         testing::{
             invalid_sighash, missing_sighash, repair_flags, run_test_vector, sighash,
@@ -480,8 +475,8 @@ mod tests {
         );
 
         assert_eq!(
-            ret.0.clone().map_err(normalize_error),
-            ret.1.map_err(normalize_error)
+            ret.0.clone().map_err(|e| e.normalize()),
+            ret.1.map_err(|e| e.normalize())
         );
         assert!(ret.0.is_ok());
     }
@@ -513,8 +508,8 @@ mod tests {
         );
 
         assert_eq!(
-            ret.0.clone().map_err(normalize_error),
-            ret.1.map_err(normalize_error)
+            ret.0.clone().map_err(|e| e.normalize()),
+            ret.1.map_err(|e| e.normalize())
         );
         assert_eq!(ret.0, Err(Error::Script(ScriptError::EvalFalse)));
     }
@@ -547,8 +542,8 @@ mod tests {
         );
 
         assert_eq!(
-            ret.0.clone().map_err(normalize_error),
-            ret.1.map_err(normalize_error)
+            ret.0.clone().map_err(|e| e.normalize()),
+            ret.1.map_err(|e| e.normalize())
         );
         assert_eq!(ret.0, Err(Error::Script(ScriptError::EvalFalse)));
     }
@@ -616,7 +611,7 @@ mod tests {
                 &sig[..],
                 flags,
             );
-            prop_assert_eq!(ret.0.map_err(normalize_error), ret.1.clone().map_err(normalize_error),
+            prop_assert_eq!(ret.0.map_err(|e| e.normalize()), ret.1.clone().map_err(|e| e.normalize()),
                             "original Rust result: {:?}", ret.1);
         }
 
@@ -651,7 +646,7 @@ mod tests {
                 &sig[..],
                 flags,
             );
-            prop_assert_eq!(ret.0.map_err(normalize_error), ret.1.clone().map_err(normalize_error),
+            prop_assert_eq!(ret.0.map_err(|e| e.normalize()), ret.1.clone().map_err(|e| e.normalize()),
                             "original Rust result: {:?}", ret.1);
         }
 

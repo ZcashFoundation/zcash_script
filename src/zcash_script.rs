@@ -8,7 +8,6 @@ use crate::{
     },
     script::Script,
     script_error::ScriptError,
-    signature,
 };
 
 /// This extends `ScriptError` with cases that can only occur when using the C++ implementation.
@@ -32,6 +31,16 @@ pub enum Error {
     ///         hold either.
     #[error("unknown error code: {0}")]
     Unknown(i64),
+}
+
+impl Error {
+    /// Convert errors that don’t exist in the C++ code into the cases that do.
+    pub fn normalize(&self) -> Self {
+        match self {
+            Error::Script(serr) => Error::Script(serr.normalize()),
+            _ => self.clone(),
+        }
+    }
 }
 
 /// The external API of zcash_script. This is defined to make it possible to compare the C++ and
@@ -111,41 +120,6 @@ impl<T, U> StepResults<T, U> {
             payload_l,
             payload_r,
         }
-    }
-}
-
-/// This case is only generated in comparisons. It merges the `interpreter::Error::OpCount` case
-/// with the `opcode::Error::DisabledOpcode` case. This is because there is an edge case when there
-/// is a disabled opcode as the `MAX_OP_COUNT + 1` operation (not opcode) in a script. In this case,
-/// the C++ implementation checks the op_count first, while the Rust implementation fails on
-/// disabled opcodes as soon as they’re read (since the script is guaranteed to fail if they occur,
-/// even in an inactive branch). To allow comparison tests to pass (especially property & fuzz
-/// tests), we need these two failure cases to be seen as identical.
-pub const AMBIGUOUS_COUNT_DISABLED_ERROR: ScriptError =
-    ScriptError::ExternalError("ambiguous OpCount or DisabledOpcode error");
-
-/// This case is only generated in comparisons. It merges `ScriptError::ScriptNumError` and
-/// `ScriptError::SigHighS`, which can only come from the Rust implementation, with
-/// `ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR`, which can only come from the C++ implementation, but
-/// in at least all of the cases that either of the Rust error cases would happen.
-pub const AMBIGUOUS_UNKNOWN_NUM_HIGHS_ERROR: ScriptError =
-    ScriptError::ExternalError("ambiguous Unknown, or ScriptNum, or HighS error");
-
-/// Convert errors that don’t exist in the C++ code into the cases that do.
-pub fn normalize_error(err: ScriptError) -> ScriptError {
-    match err {
-        ScriptError::OpCount => AMBIGUOUS_COUNT_DISABLED_ERROR,
-        ScriptError::BadOpcode(Some(_)) => ScriptError::BadOpcode(None),
-        ScriptError::DisabledOpcode(_) => AMBIGUOUS_COUNT_DISABLED_ERROR,
-        ScriptError::SignatureEncoding(sig_err) => match sig_err {
-            signature::Error::SigHashType(Some(_)) => signature::Error::SigHashType(None).into(),
-            signature::Error::SigDER(Some(_)) => signature::Error::SigDER(None).into(),
-            signature::Error::SigHighS => AMBIGUOUS_UNKNOWN_NUM_HIGHS_ERROR,
-            _ => sig_err.into(),
-        },
-        ScriptError::ReadError { .. } => ScriptError::BadOpcode(None),
-        ScriptError::ScriptNumError(_) => AMBIGUOUS_UNKNOWN_NUM_HIGHS_ERROR,
-        _ => err,
     }
 }
 
