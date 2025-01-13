@@ -42,11 +42,11 @@ impl From<cxx::ScriptError> for Error {
             cxx::ScriptError_t_SCRIPT_ERR_OP_RETURN => Error::Ok(ScriptError::OpReturn),
 
             cxx::ScriptError_t_SCRIPT_ERR_SCRIPT_SIZE => Error::Ok(ScriptError::ScriptSize),
-            cxx::ScriptError_t_SCRIPT_ERR_PUSH_SIZE => Error::Ok(ScriptError::PushSize),
+            cxx::ScriptError_t_SCRIPT_ERR_PUSH_SIZE => Error::Ok(ScriptError::PushSize(None)),
             cxx::ScriptError_t_SCRIPT_ERR_OP_COUNT => Error::Ok(ScriptError::OpCount),
-            cxx::ScriptError_t_SCRIPT_ERR_STACK_SIZE => Error::Ok(ScriptError::StackSize),
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_COUNT => Error::Ok(ScriptError::SigCount),
-            cxx::ScriptError_t_SCRIPT_ERR_PUBKEY_COUNT => Error::Ok(ScriptError::PubKeyCount),
+            cxx::ScriptError_t_SCRIPT_ERR_STACK_SIZE => Error::Ok(ScriptError::StackSize(None)),
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_COUNT => Error::Ok(ScriptError::SigCount(None)),
+            cxx::ScriptError_t_SCRIPT_ERR_PUBKEY_COUNT => Error::Ok(ScriptError::PubKeyCount(None)),
 
             cxx::ScriptError_t_SCRIPT_ERR_VERIFY => Error::Ok(ScriptError::Verify),
             cxx::ScriptError_t_SCRIPT_ERR_EQUALVERIFY => Error::Ok(ScriptError::EqualVerify),
@@ -56,8 +56,10 @@ impl From<cxx::ScriptError> for Error {
             cxx::ScriptError_t_SCRIPT_ERR_CHECKSIGVERIFY => Error::Ok(ScriptError::CheckSigVerify),
             cxx::ScriptError_t_SCRIPT_ERR_NUMEQUALVERIFY => Error::Ok(ScriptError::NumEqualVerify),
 
-            cxx::ScriptError_t_SCRIPT_ERR_BAD_OPCODE => Error::Ok(ScriptError::BadOpcode),
-            cxx::ScriptError_t_SCRIPT_ERR_DISABLED_OPCODE => Error::Ok(ScriptError::DisabledOpcode),
+            cxx::ScriptError_t_SCRIPT_ERR_BAD_OPCODE => Error::Ok(ScriptError::BadOpcode(None)),
+            cxx::ScriptError_t_SCRIPT_ERR_DISABLED_OPCODE => {
+                Error::Ok(ScriptError::DisabledOpcode(None))
+            }
             cxx::ScriptError_t_SCRIPT_ERR_INVALID_STACK_OPERATION => {
                 Error::Ok(ScriptError::InvalidStackOperation)
             }
@@ -213,10 +215,14 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
 pub fn normalize_error(err: Error) -> Error {
     match err {
         Error::Ok(serr) => Error::Ok(match serr {
-            ScriptError::SigHashType(Some(_)) => ScriptError::SigHashType(None),
-            ScriptError::SigDER(Some(_)) => ScriptError::SigDER(None),
-            ScriptError::ReadError { .. } => ScriptError::BadOpcode,
+            ScriptError::BadOpcode(Some(_)) => ScriptError::BadOpcode(None),
+            ScriptError::DisabledOpcode(Some(_)) => ScriptError::DisabledOpcode(None),
+            ScriptError::PubKeyCount(Some(_)) => ScriptError::PubKeyCount(None),
+            ScriptError::SigCount(Some(_)) => ScriptError::SigCount(None),
+            ScriptError::ReadError { .. } => ScriptError::BadOpcode(None),
             ScriptError::ScriptNumError(_) => ScriptError::UnknownError,
+            ScriptError::SigDER(Some(_)) => ScriptError::SigDER(None),
+            ScriptError::SigHashType(Some(_)) => ScriptError::SigHashType(None),
             _ => serr,
         }),
         _ => err,
