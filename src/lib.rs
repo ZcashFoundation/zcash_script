@@ -130,7 +130,7 @@ mod tests {
             .unwrap()
             .as_slice()
             .first_chunk::<32>()
-            .map(|hash| *hash)
+            .copied()
     }
 
     fn invalid_sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
@@ -138,7 +138,7 @@ mod tests {
             .unwrap()
             .as_slice()
             .first_chunk::<32>()
-            .map(|hash| *hash)
+            .copied()
     }
 
     fn missing_sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
