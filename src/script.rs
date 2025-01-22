@@ -7,11 +7,11 @@ use super::script_error::*;
 pub const MAX_SCRIPT_ELEMENT_SIZE: usize = 520; // bytes
 
 /// Maximum script length in bytes
-pub const MAX_SCRIPT_SIZE: usize = 10000;
+pub const MAX_SCRIPT_SIZE: usize = 10_000;
 
 // Threshold for lock_time: below this value it is interpreted as block number,
 // otherwise as UNIX timestamp.
-pub const LOCKTIME_THRESHOLD: i64 = 500000000; // Tue Nov  5 00:53:20 1985 UTC
+pub const LOCKTIME_THRESHOLD: i64 = 500_000_000; // Tue Nov  5 00:53:20 1985 UTC
 
 /** Script opcodes */
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
