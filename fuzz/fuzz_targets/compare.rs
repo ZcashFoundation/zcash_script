@@ -22,7 +22,7 @@ fuzz_target!(|tup: (i64, bool, &[u8], &[u8], u32)| {
     );
     assert_eq!(
         ret.0,
-        ret.1.clone().map_err(testing::normalize_error),
+        ret.1.map_err(normalize_error),
         "original Rust result: {:?}",
         ret.1
     );

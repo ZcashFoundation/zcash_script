@@ -163,6 +163,14 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
     )
 }
 
+/// Convert errors that don’t exist in the C++ code into the cases that do.
+pub fn normalize_error(err: Error) -> Error {
+    match err {
+        Error::Ok(Some(_)) => Error::Ok(None),
+        _ => err,
+    }
+}
+
 /// A tag to indicate that both the C++ and Rust implementations of zcash_script should be used,
 /// with their results compared.
 pub enum CxxRustComparisonInterpreter {}
@@ -198,7 +206,7 @@ impl ZcashScript for CxxRustComparisonInterpreter {
             script_sig,
             flags,
         );
-        if rust != cxx {
+        if rust.map_err(normalize_error) != cxx {
             // probably want to distinguish between
             // - C++ succeeding when Rust fails (bad),
             // - Rust succeeding when C++ fals (worse), and
@@ -215,14 +223,6 @@ impl ZcashScript for CxxRustComparisonInterpreter {
 #[cfg(any(test, feature = "test-dependencies"))]
 pub mod testing {
     use super::*;
-
-    /// Convert errors that don’t exist in the C++ code into the cases that do.
-    pub fn normalize_error(err: Error) -> Error {
-        match err {
-            Error::Ok(Some(_)) => Error::Ok(None),
-            _ => err,
-        }
-    }
 
     /// Ensures that flags represent a supported state. This avoids crashes in the C++ code, which
     /// break various tests.
