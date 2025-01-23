@@ -249,25 +249,11 @@ impl<T: Clone> Stack<T> {
 }
 
 fn is_compressed_or_uncompressed_pub_key(vch_pub_key: &[u8]) -> bool {
-    if vch_pub_key.len() < PubKey::COMPRESSED_PUBLIC_KEY_SIZE {
-        //  Non-canonical public key: too short
-        return false;
+    match vch_pub_key.first() {
+        Some(0x02 | 0x03) => vch_pub_key.len() == PubKey::COMPRESSED_SIZE,
+        Some(0x04) => vch_pub_key.len() == PubKey::SIZE,
+        _ => false, // not a public key
     }
-    if vch_pub_key[0] == 0x04 {
-        if vch_pub_key.len() != PubKey::PUBLIC_KEY_SIZE {
-            //  Non-canonical public key: invalid length for uncompressed key
-            return false;
-        }
-    } else if vch_pub_key[0] == 0x02 || vch_pub_key[0] == 0x03 {
-        if vch_pub_key.len() != PubKey::COMPRESSED_PUBLIC_KEY_SIZE {
-            //  Non-canonical public key: invalid length for compressed key
-            return false;
-        }
-    } else {
-        //  Non-canonical public key: neither compressed nor uncompressed
-        return false;
-    }
-    true
 }
 
 #[derive(Clone)]
