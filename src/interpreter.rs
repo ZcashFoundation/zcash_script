@@ -263,7 +263,7 @@ fn is_compressed_or_uncompressed_pub_key(vch_pub_key: &ValType) -> bool {
 }
 
 /**
- * A canonical signature exists of: <30> <total len> <02> <len R> <R> <02> <len S> <S> <hashtype>
+ * A canonical signature consists of: <30> <total len> <02> <len R> <R> <02> <len S> <S> <hashtype>
  * Where R and S are not negative (their first byte has its highest bit not set), and not
  * excessively padded (do not start with a 0 byte, unless an otherwise negative number follows,
  * in which case a single 0 byte is necessary and even required).
@@ -401,7 +401,8 @@ fn check_signature_encoding(
     if !is_valid_signature_encoding(vch_sig) {
         return set_error(ScriptError::SigDER);
     } else if flags.contains(VerificationFlags::LowS) && !is_low_der_signature(vch_sig)? {
-        // serror is set
+        // TODO: The C++ impl claims that `serror` is set here, but it isn’t, so this eventually
+        //       ends up as `UnknownError`, when it should probably be `SigHighS`.
         return Ok(false);
     } else if flags.contains(VerificationFlags::StrictEnc)
         && !is_defined_hashtype_signature(vch_sig)
@@ -580,13 +581,12 @@ pub fn eval_script(
                                 // to 5-byte bignums, which are good until 2**39-1, well
                                 // beyond the 2**32-1 limit of the `lock_time` field itself.
                                 let lock_time =
-                                    ScriptNum::new(stack.top(-1)?, require_minimal, Some(5))
-                                      .map_err(ScriptError::ScriptNumError)?;
+                                    ScriptNum::new(stack.top(-1)?, require_minimal, Some(5))?;
 
                                 // In the rare event that the argument may be < 0 due to
                                 // some arithmetic being done first, you can always use
                                 // 0 MAX CHECKLOCKTIMEVERIFY.
-                                if lock_time < ScriptNum(0) {
+                                if lock_time < bn_zero {
                                     return set_error(ScriptError::NegativeLockTime);
                                 }
 
@@ -801,8 +801,7 @@ pub fn eval_script(
                                 return set_error(ScriptError::InvalidStackOperation);
                             }
                             let n =
-                                u16::try_from(ScriptNum::new(stack.top(-1)?, require_minimal, None)
-                                      .map_err(ScriptError::ScriptNumError)?.getint())
+                                u16::try_from(ScriptNum::new(stack.top(-1)?, require_minimal, None)?.getint())
                                 .map_err(|_| ScriptError::InvalidStackOperation)?;
                             stack.pop()?;
                             if usize::from(n) >= stack.size() {
@@ -904,8 +903,7 @@ pub fn eval_script(
                             if stack.size() < 1 {
                                 return set_error(ScriptError::InvalidStackOperation);
                             }
-                            let mut bn = ScriptNum::new(stack.top(-1)?, require_minimal, None)
-                                      .map_err(ScriptError::ScriptNumError)?;
+                            let mut bn = ScriptNum::new(stack.top(-1)?, require_minimal, None)?;
                             match op {
                                 OP_1ADD => bn = bn + bn_one,
                                 OP_1SUB => bn = bn - bn_one,
@@ -940,10 +938,8 @@ pub fn eval_script(
                             if stack.size() < 2 {
                                 return set_error(ScriptError::InvalidStackOperation);
                             }
-                            let bn1 = ScriptNum::new(stack.top(-2)?, require_minimal, None)
-                                      .map_err(ScriptError::ScriptNumError)?;
-                            let bn2 = ScriptNum::new(stack.top(-1)?, require_minimal, None)
-                                      .map_err(ScriptError::ScriptNumError)?;
+                            let bn1 = ScriptNum::new(stack.top(-2)?, require_minimal, None)?;
+                            let bn2 = ScriptNum::new(stack.top(-1)?, require_minimal, None)?;
                             let bn = match op {
                                 OP_ADD =>
                                     bn1 + bn2,
@@ -982,12 +978,9 @@ pub fn eval_script(
                             if stack.size() < 3 {
                                 return set_error(ScriptError::InvalidStackOperation);
                             }
-                            let bn1 = ScriptNum::new(stack.top(-3)?, require_minimal, None)
-                                      .map_err(ScriptError::ScriptNumError)?;
-                            let bn2 = ScriptNum::new(stack.top(-2)?, require_minimal, None)
-                                      .map_err(ScriptError::ScriptNumError)?;
-                            let bn3 = ScriptNum::new(stack.top(-1)?, require_minimal, None)
-                                      .map_err(ScriptError::ScriptNumError)?;
+                            let bn1 = ScriptNum::new(stack.top(-3)?, require_minimal, None)?;
+                            let bn2 = ScriptNum::new(stack.top(-2)?, require_minimal, None)?;
+                            let bn3 = ScriptNum::new(stack.top(-1)?, require_minimal, None)?;
                             let value = bn2 <= bn1 && bn1 < bn3;
                             stack.pop()?;
                             stack.pop()?;
@@ -1076,8 +1069,7 @@ pub fn eval_script(
                             };
 
                             let mut keys_count =
-                                u8::try_from(ScriptNum::new(stack.top(-isize::from(i))?, require_minimal, None)
-                                      .map_err(ScriptError::ScriptNumError)?.getint())
+                                u8::try_from(ScriptNum::new(stack.top(-isize::from(i))?, require_minimal, None)?.getint())
                                   .map_err(|_| ScriptError::PubKeyCount)?;
                             if keys_count > 20 {
                                 return set_error(ScriptError::PubKeyCount);
@@ -1094,8 +1086,7 @@ pub fn eval_script(
                             }
 
                             let mut sigs_count =
-                                u8::try_from(ScriptNum::new(stack.top(-isize::from(i))?, require_minimal, None)
-                                      .map_err(ScriptError::ScriptNumError)?.getint())
+                                u8::try_from(ScriptNum::new(stack.top(-isize::from(i))?, require_minimal, None)?.getint())
                                   .map_err(|_| ScriptError::SigCount)?;
                             if sigs_count > keys_count {
                                 return set_error(ScriptError::SigCount);
@@ -1228,13 +1219,14 @@ impl SignatureChecker for CallbackTransactionSignatureChecker<'_> {
         };
 
         // Hash type is one byte tacked on to the end of the signature
-        let mut vch_sig = vch_sig_in.to_vec();
-        vch_sig
-            .pop()
-            .and_then(|hash_type| HashType::from_bits(hash_type.into(), false).ok())
-            .and_then(|hash_type| (self.sighash)(script_code.0, hash_type))
-            .map(|sighash| Self::verify_signature(&vch_sig, &pubkey, &sighash))
-            .unwrap_or(false)
+        match vch_sig_in.split_last() {
+            None => false,
+            Some((hash_type, vch_sig)) => HashType::from_bits((*hash_type).into(), false)
+                .ok()
+                .and_then(|hash_type| (self.sighash)(script_code.0, hash_type))
+                .map(|sighash| Self::verify_signature(vch_sig, &pubkey, &sighash))
+                .unwrap_or(false),
+        }
     }
 
     fn check_lock_time(&self, lock_time: &ScriptNum) -> bool {

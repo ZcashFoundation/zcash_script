@@ -60,3 +60,9 @@ pub enum ScriptError {
     /// Corresponds to the `scriptnum_error` exception in C++.
     ScriptNumError(ScriptNumError),
 }
+
+impl From<ScriptNumError> for ScriptError {
+    fn from(value: ScriptNumError) -> Self {
+        ScriptError::ScriptNumError(value)
+    }
+}
