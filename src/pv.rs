@@ -1,9 +1,8 @@
 //! Convenience definitions for all push values.
 
-use crate::script::{
-    LargeValue::*,
-    PushValue::{self, *},
-    SmallValue::*,
+use crate::opcode::{
+    push_value::{LargeValue::*, SmallValue::*},
+    PushValue::{self, LargeValue, SmallValue},
 };
 
 pub const _0: PushValue = SmallValue(OP_0);
@@ -42,9 +41,9 @@ pub fn pushdata4(value: Vec<u8>) -> PushValue {
 }
 
 pub mod bad {
-    use crate::script::{
-        PushValue::{self, *},
-        SmallValue::*,
+    use crate::opcode::{
+        push_value::SmallValue::*,
+        PushValue::{self, SmallValue},
     };
 
     pub const RESERVED: PushValue = SmallValue(OP_RESERVED);

@@ -2,12 +2,13 @@
 //! https://gist.github.com/str4d/9d80f1b60e6787310897044502cb025b
 
 use crate::{
-    op, pv,
-    script::{
+    op,
+    opcode::{
         self,
         Opcode::{self, PushValue},
-        Script,
     },
+    pv,
+    script::{num, Script},
 };
 
 pub const EMPTY_STACK_CHECK: [Opcode; 3] = [op::DEPTH, op::_0, op::EQUAL];
@@ -54,7 +55,7 @@ pub fn check_multisig(sig_count: u8, pks: &[&[u8]], verify: bool) -> Vec<Opcode>
     .concat()
 }
 
-pub fn equals(expected: script::PushValue, verify: bool) -> [Opcode; 2] {
+pub fn equals(expected: opcode::PushValue, verify: bool) -> [Opcode; 2] {
     [
         PushValue(expected),
         if verify { op::EQUALVERIFY } else { op::EQUAL },
@@ -82,18 +83,18 @@ pub fn htlc(pos_check: &[Opcode], lt: &[u8], hash: &[u8; 20]) -> Vec<Opcode> {
 }
 
 /// Produce a minimal `PushValue` that encodes the provided number.
-pub fn push_num(n: i64) -> script::PushValue {
-    push_vec(&script::serialize_num(n))
+pub fn push_num(n: i64) -> opcode::PushValue {
+    push_vec(&num::serialize(n))
 }
 
 /// Produce a minimal `PushValue` that encodes the provided script. This is particularly useful with
 /// P2SH.
-pub fn push_script(script: &[Opcode]) -> script::PushValue {
+pub fn push_script(script: &[Opcode]) -> opcode::PushValue {
     push_vec(&Script::serialize(script))
 }
 
 /// Produce a minimal `PushValue` for the given data.
-pub fn push_vec(v: &[u8]) -> script::PushValue {
+pub fn push_vec(v: &[u8]) -> opcode::PushValue {
     match v {
         [] => pv::_0,
         [byte] => match byte {
