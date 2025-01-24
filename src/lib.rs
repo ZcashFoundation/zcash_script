@@ -10,7 +10,9 @@ extern crate enum_primitive;
 pub mod cxx;
 mod external;
 pub mod interpreter;
+mod num;
 pub mod op;
+mod opcode;
 pub mod pattern;
 pub mod pv;
 mod script;
@@ -23,6 +25,7 @@ pub mod test_vectors;
 
 use std::os::raw::{c_int, c_uint, c_void};
 
+use enum_primitive::FromPrimitive;
 use tracing::warn;
 
 use interpreter::{
@@ -33,6 +36,69 @@ use signature::HashType;
 pub use zcash_script::{
     rust_interpreter, ComparisonStepEvaluator, Error, StepResults, StepwiseInterpreter, ZcashScript,
 };
+
+/** Script opcodes */
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum Opcode {
+    /// Opcodes that represent constants to be pushed onto the stack.
+    PushValue(opcode::PushValue),
+    /// - always evaluated
+    /// - can be cast to its discriminant
+    Control(opcode::Control),
+    /// - only evaluated on active branch
+    /// - can be cast to its discriminant
+    Operation(opcode::Operation),
+}
+
+impl Opcode {
+    /// This parses a single opcode from a byte stream.
+    pub fn parse(script: &[u8]) -> Result<opcode::Parsed<'_>, ScriptError> {
+        match opcode::push_value::LargeValue::parse(script)? {
+            None => match script.split_first() {
+                None => Err(ScriptError::ReadError {
+                    expected_bytes: 1,
+                    available_bytes: 0,
+                }),
+                Some((leading_byte, remaining_code)) => opcode::Disabled::from_u8(*leading_byte)
+                    .map_or(
+                        Ok(opcode::Parsed {
+                            opcode: if let Some(sv) =
+                                opcode::push_value::SmallValue::from_u8(*leading_byte)
+                            {
+                                opcode::PossiblyBad::Good(Opcode::PushValue(
+                                    opcode::PushValue::SmallValue(sv),
+                                ))
+                            } else if let Some(ctl) = opcode::Control::from_u8(*leading_byte) {
+                                opcode::PossiblyBad::Good(Opcode::Control(ctl))
+                            } else if let Some(op) = opcode::Operation::from_u8(*leading_byte) {
+                                opcode::PossiblyBad::Good(Opcode::Operation(op))
+                            } else {
+                                opcode::PossiblyBad::Bad(opcode::Bad::from(*leading_byte))
+                            },
+                            remaining_code,
+                        }),
+                        |disabled| Err(ScriptError::DisabledOpcode(Some(disabled))),
+                    ),
+            },
+            Some((v, remaining_code)) => Ok(opcode::Parsed {
+                opcode: opcode::PossiblyBad::Good(Opcode::PushValue(
+                    opcode::PushValue::LargeValue(v),
+                )),
+                remaining_code,
+            }),
+        }
+    }
+}
+
+impl From<&Opcode> for Vec<u8> {
+    fn from(value: &Opcode) -> Self {
+        match value {
+            Opcode::PushValue(v) => v.into(),
+            Opcode::Control(v) => vec![(*v).into()],
+            Opcode::Operation(v) => vec![(*v).into()],
+        }
+    }
+}
 
 pub struct CxxInterpreter<'a> {
     pub sighash: SighashCalculator<'a>,
@@ -309,13 +375,14 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U>
 pub mod testing {
     use crate::{
         interpreter::{State, StepFn, VerificationFlags},
-        pattern::{check_multisig, pay_to_script_hash, push_num, push_script},
-        pv,
-        script::{self, Opcode, Operation, Script},
+        opcode::Operation,
+        pattern::*,
+        pv, script,
         script_error::ScriptError,
         signature::HashType,
         test_vectors::TestVector,
-        Error,
+        zcash_script::Error,
+        Opcode,
     };
     use hex::FromHex;
 
@@ -332,7 +399,7 @@ pub mod testing {
     }
 
     /// A `usize` one larger than the longest allowed script, for testing bounds.
-    pub const OVERFLOW_SCRIPT_SIZE: usize = script::MAX_SCRIPT_SIZE + 1;
+    pub const OVERFLOW_SCRIPT_SIZE: usize = script::Code::MAX_SIZE + 1;
 
     /// This is the same as `DefaultStepEvaluator`, except that it skips `OP_EQUAL`, allowing us to
     /// test comparison failures.
@@ -344,7 +411,7 @@ pub mod testing {
         fn call<'a>(
             &self,
             pc: &'a [u8],
-            script: &Script,
+            script: &script::Code,
             state: &mut State,
             payload: &mut T::Payload,
         ) -> Result<&'a [u8], ScriptError> {
@@ -372,9 +439,9 @@ pub mod testing {
             ],
             false).expect("all keys are valid and there’s not more than 20 of them");
         /// The scriptPubkey used for the static test case.
-        pub static ref SCRIPT_PUBKEY: Vec<u8> = Script::serialize(&pay_to_script_hash(&REDEEM_SCRIPT));
+        pub static ref SCRIPT_PUBKEY: Vec<u8> = script::Code::serialize(&pay_to_script_hash(&REDEEM_SCRIPT));
         /// The scriptSig used for the static test case.
-        pub static ref SCRIPT_SIG: Vec<u8> = Script::serialize(&[
+        pub static ref SCRIPT_SIG: Vec<u8> = script::Code::serialize(&[
             push_num(0),
             pv::push_value(&<[u8; 0x48]>::from_hex("3045022100d2ab3e6258fe244fa442cfb38f6cef9ac9a18c54e70b2f508e83fa87e20d040502200eead947521de943831d07a350e45af8e36c2166984a8636f0a8811ff03ed09401").expect("valid sig")).expect("fits into a PushValue"),
             pv::push_value(&<[u8; 0x47]>::from_hex("3044022013e15d865010c257eef133064ef69a780b4bc7ebe6eda367504e806614f940c3022062fdbc8c2d049f91db2042d6c9771de6f1ef0b3b1fea76c1ab5542e44ed29ed801").expect("valid sig")).expect("fits into a PushValue"),

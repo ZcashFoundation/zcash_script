@@ -9,15 +9,15 @@ use hex::{FromHex, FromHexError};
 
 use crate::{
     interpreter::VerificationFlags,
+    num,
     op::*,
-    script::{
-        serialize_num,
+    opcode::{
         Bad::{self, *},
         Disabled::{self, *},
-        Opcode, PushValue,
+        PushValue,
     },
-    script_error::{ScriptError, ScriptNumError},
-    signature,
+    script_error::ScriptError,
+    signature, Opcode,
 };
 
 /// A shorthand syntax for writing possibly-incorrect scripts.
@@ -44,12 +44,12 @@ impl Entry {
 
     fn serialize(&self) -> Result<Vec<u8>, FromHexError> {
         match self {
-            Entry::O(opcode) => Ok(vec![opcode.clone().into()]),
+            Entry::O(opcode) => Ok(opcode.into()),
             Entry::B(bad) => Ok(vec![(*bad).into()]),
             Entry::D(disabled) => Ok(vec![(*disabled).into()]),
             Entry::H(bytes) => <Vec<u8>>::from_hex(*bytes),
             Entry::A(string) => Ok(Self::val_to_pv(string.as_bytes())),
-            Entry::N(num) => Ok(Self::val_to_pv(&serialize_num(*num))),
+            Entry::N(num) => Ok(Self::val_to_pv(&num::serialize(*num))),
         }
     }
 }
@@ -8088,28 +8088,28 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[N(2147483648), N(0), O(ADD)],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::Overflow { max_num_size: 4, actual: 5 })),
+            result: err(ScriptError::NumError(num::Error::Overflow { max_size: 4, actual: 5 })),
         },
         // arithmetic operands must be in range TestVector [-2^31...2^31]
         TestVector {
             script_sig: &[N(-2147483648), N(0), O(ADD)],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::Overflow { max_num_size: 4, actual: 5 })),
+            result: err(ScriptError::NumError(num::Error::Overflow { max_size: 4, actual: 5 })),
         },
         // NUMEQUAL must be in numeric range
         TestVector {
             script_sig: &[N(2147483647), O(DUP), O(ADD)],
             script_pubkey: &[N(4294967294), O(NUMEQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::Overflow { max_num_size: 4, actual: 5 })),
+            result: err(ScriptError::NumError(num::Error::Overflow { max_size: 4, actual: 5 })),
         },
         // NOT is an arithmetic operand
         TestVector {
             script_sig: &[A("abcdef"), O(NOT)],
             script_pubkey: &[N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::Overflow { max_num_size: 4, actual: 6 })),
+            result: err(ScriptError::NumError(num::Error::Overflow { max_size: 4, actual: 6 })),
         },
         // disabled
         TestVector {
@@ -8969,49 +8969,49 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[N(2147483648)],
             script_pubkey: &[O(_1ADD), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::Overflow { max_num_size: 4, actual: 5 })),
+            result: err(ScriptError::NumError(num::Error::Overflow { max_size: 4, actual: 5 })),
         },
         // We cannot do math on 5-byte integers
         TestVector {
             script_sig: &[N(2147483648)],
             script_pubkey: &[O(NEGATE), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::Overflow { max_num_size: 4, actual: 5 })),
+            result: err(ScriptError::NumError(num::Error::Overflow { max_size: 4, actual: 5 })),
         },
         // Because we use a sign bit, -2147483648 is also 5 bytes
         TestVector {
             script_sig: &[N(-2147483648)],
             script_pubkey: &[O(_1ADD), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::Overflow { max_num_size: 4, actual: 5 })),
+            result: err(ScriptError::NumError(num::Error::Overflow { max_size: 4, actual: 5 })),
         },
         // We cannot do math on 5-byte integers, even if the result is 4-bytes
         TestVector {
             script_sig: &[N(2147483647)],
             script_pubkey: &[O(_1ADD), O(_1SUB), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::Overflow { max_num_size: 4, actual: 5 })),
+            result: err(ScriptError::NumError(num::Error::Overflow { max_size: 4, actual: 5 })),
         },
         // We cannot do math on 5-byte integers, even if the result is 4-bytes
         TestVector {
             script_sig: &[N(2147483648)],
             script_pubkey: &[O(_1SUB), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::Overflow { max_num_size: 4, actual: 5 })),
+            result: err(ScriptError::NumError(num::Error::Overflow { max_size: 4, actual: 5 })),
         },
         // We cannot do BOOLOR on 5-byte integers (but we can still do IF etc)
         TestVector {
             script_sig: &[N(2147483648), N(1)],
             script_pubkey: &[O(BOOLOR), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::Overflow { max_num_size: 4, actual: 5 })),
+            result: err(ScriptError::NumError(num::Error::Overflow { max_size: 4, actual: 5 })),
         },
         // We cannot do BOOLAND on 5-byte integers
         TestVector {
             script_sig: &[N(2147483648), N(1)],
             script_pubkey: &[O(BOOLAND), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::Overflow { max_num_size: 4, actual: 5 })),
+            result: err(ScriptError::NumError(num::Error::Overflow { max_size: 4, actual: 5 })),
         },
         // ENDIF without IF
         TestVector {
@@ -11365,337 +11365,337 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[H("01"), H("00")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0])))),
         },
         // numequals 0
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         // 0x80 (negative zero) numequals 0
         TestVector {
             script_sig: &[H("01"), H("80")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![128])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![128])))),
         },
         // numequals 0
         TestVector {
             script_sig: &[H("02"), H("0080")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 128])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 128])))),
         },
         // numequals 5
         TestVector {
             script_sig: &[H("02"), H("0500")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![5, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![5, 0])))),
         },
         // numequals 5
         TestVector {
             script_sig: &[H("03"), H("050000")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![5, 0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![5, 0, 0])))),
         },
         // numequals -5
         TestVector {
             script_sig: &[H("02"), H("0580")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![5, 128])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![5, 128])))),
         },
         // numequals -5
         TestVector {
             script_sig: &[H("03"), H("050080")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![5, 0, 128])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![5, 0, 128])))),
         },
         // Minimal encoding is 0xffff
         TestVector {
             script_sig: &[H("03"), H("ff7f80")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![255, 127, 128])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![255, 127, 128])))),
         },
         // Minimal encoding is 0xff7f
         TestVector {
             script_sig: &[H("03"), H("ff7f00")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![255, 127, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![255, 127, 0])))),
         },
         // Minimal encoding is 0xffffff
         TestVector {
             script_sig: &[H("04"), H("ffff7f80")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![255, 255, 127, 128])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![255, 255, 127, 128])))),
         },
         // Minimal encoding is 0xffff7f
         TestVector {
             script_sig: &[H("04"), H("ffff7f00")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![255, 255, 127, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![255, 255, 127, 0])))),
         },
         // Test every numeric-accepting opcode for correct handling of the numeric minimal encoding rule
         TestVector {
             script_sig: &[N(1), H("02"), H("0000")],
             script_pubkey: &[O(PICK), O(DROP)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[N(1), H("02"), H("0000")],
             script_pubkey: &[O(ROLL), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(_1ADD), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(_1SUB), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(NEGATE), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(ABS), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(_0NOTEQUAL), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(ADD), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(ADD), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(SUB), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(SUB), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(BOOLAND), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(BOOLAND), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(BOOLOR), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(BOOLOR), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(NUMEQUAL), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(1)],
             script_pubkey: &[O(NUMEQUAL), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(NUMEQUALVERIFY), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(NUMEQUALVERIFY), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(NUMNOTEQUAL), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(NUMNOTEQUAL), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(LESSTHAN), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(LESSTHAN), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(GREATERTHAN), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(GREATERTHAN), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(LESSTHANOREQUAL), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(LESSTHANOREQUAL), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(GREATERTHANOREQUAL), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(GREATERTHANOREQUAL), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(MIN), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(MIN), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(MAX), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(MAX), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0), N(0)],
             script_pubkey: &[O(WITHIN), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000"), N(0)],
             script_pubkey: &[O(WITHIN), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[N(0), N(0), H("02"), H("0000")],
             script_pubkey: &[O(WITHIN), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[N(0), N(0), H("02"), H("0000")],
             script_pubkey: &[O(CHECKMULTISIG), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000"), N(0)],
             script_pubkey: &[O(CHECKMULTISIG), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000"), N(0), N(1)],
             script_pubkey: &[O(CHECKMULTISIG), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[N(0), N(0), H("02"), H("0000")],
             script_pubkey: &[O(CHECKMULTISIGVERIFY), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000"), N(0)],
             script_pubkey: &[O(CHECKMULTISIGVERIFY), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(ScriptError::ScriptNumError(ScriptNumError::NonMinimalEncoding(Some(vec![0, 0])))),
+            result: err(ScriptError::NumError(num::Error::NonMinimalEncoding(Some(vec![0, 0])))),
         },
         // Order of CHECKMULTISIG evaluation tests, inverted by swapping the order of
         // pubkeys/signatures so they fail due to the STRICTENC rules on validly encoded

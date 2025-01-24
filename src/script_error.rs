@@ -2,20 +2,7 @@ use std::num::TryFromIntError;
 
 use thiserror::Error;
 
-use crate::{
-    interpreter,
-    script::{self, Bad, Disabled},
-    signature,
-};
-
-#[derive(Clone, PartialEq, Eq, Debug, Error)]
-pub enum ScriptNumError {
-    #[error("non-minimal encoding of script number")]
-    NonMinimalEncoding(Option<Vec<u8>>),
-
-    #[error("script number overflow: max: {max_num_size}, actual: {actual}")]
-    Overflow { max_num_size: usize, actual: usize },
-}
+use crate::{interpreter, num, opcode, script, signature};
 
 #[derive(Clone, PartialEq, Eq, Debug, Error)]
 pub enum ScriptError {
@@ -36,14 +23,14 @@ pub enum ScriptError {
     #[error(
         "Script size{} exceeded maxmimum ({} bytes)",
         .0.map_or("", |size| " ({size} bytes)"),
-        script::MAX_SCRIPT_SIZE
+        script::Code::MAX_SIZE
     )]
     ScriptSize(Option<usize>),
 
     #[error(
         "push size{} exceeded maxmimum ({} bytes)",
         .0.map_or("", |size| " ({size} bytes)"),
-        script::MAX_SCRIPT_ELEMENT_SIZE
+        opcode::push_value::LargeValue::MAX_SIZE
     )]
     PushSize(Option<usize>),
 
@@ -86,11 +73,11 @@ pub enum ScriptError {
 
     // Logical/Format/Canonical errors
     #[error("bad opcode encountered: {}", .0.map_or("unknown".to_owned(), |op| format!("{:?}", op)))]
-    BadOpcode(Option<Bad>),
+    BadOpcode(Option<opcode::Bad>),
 
     /// __TODO__: `Option` can go away once C++ support is removed.
     #[error("disabled opcode encountered: {}", .0.map_or("unknown".to_owned(), |op| format!("{:?}", op)))]
-    DisabledOpcode(Option<Disabled>),
+    DisabledOpcode(Option<opcode::Disabled>),
 
     #[error("{}", .0.map_or("invalid stack operation encountered", |(elem, max)| "tried to retrieve element {elem} from a stack with {max} elements"))]
     InvalidStackOperation(Option<(usize, usize)>),
@@ -141,7 +128,7 @@ pub enum ScriptError {
 
     /// Corresponds to the `scriptnum_error` exception in C++.
     #[error("script number error: {0}")]
-    ScriptNumError(ScriptNumError),
+    NumError(num::Error),
 }
 
 impl ScriptError {
@@ -184,15 +171,15 @@ impl ScriptError {
                 _ => sig_err.clone().into(),
             },
             Self::ReadError { .. } => Self::BadOpcode(None),
-            Self::ScriptNumError(_) => Self::AMBIGUOUS_UNKNOWN_NUM_HIGHS,
+            Self::NumError(_) => Self::AMBIGUOUS_UNKNOWN_NUM_HIGHS,
             _ => self.clone(),
         }
     }
 }
 
-impl From<ScriptNumError> for ScriptError {
-    fn from(value: ScriptNumError) -> Self {
-        Self::ScriptNumError(value)
+impl From<num::Error> for ScriptError {
+    fn from(value: num::Error) -> Self {
+        ScriptError::NumError(value)
     }
 }
 

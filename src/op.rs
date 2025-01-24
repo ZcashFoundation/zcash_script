@@ -1,12 +1,9 @@
 //! Convenience definitions for all opcodes.
 
 use crate::{
+    opcode::{Control::*, Operation::*},
     pv,
-    script::{
-        Control::*,
-        Opcode::{self, *},
-        Operation::*,
-    },
+    Opcode::{self, Control, Operation, PushValue},
 };
 
 pub const _0: Opcode = PushValue(pv::_0);

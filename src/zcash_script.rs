@@ -2,13 +2,7 @@ use std::num::TryFromIntError;
 
 use thiserror::Error;
 
-use crate::{
-    interpreter::{
-        verify_script, DefaultStepEvaluator, SignatureChecker, State, StepFn, VerificationFlags,
-    },
-    script::Script,
-    script_error::ScriptError,
-};
+use crate::{interpreter::*, script, script_error::*};
 
 /// This extends `ScriptError` with cases that can only occur when using the C++ implementation.
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
@@ -86,8 +80,8 @@ where
     F: StepFn,
 {
     verify_script(
-        &Script(script_sig),
-        &Script(script_pub_key),
+        &script::Code(script_sig),
+        &script::Code(script_pub_key),
         flags,
         payload,
         stepper,
@@ -140,7 +134,7 @@ impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
     fn call<'b>(
         &self,
         pc: &'b [u8],
-        script: &Script,
+        script: &script::Code,
         state: &mut State,
         payload: &mut StepResults<T, U>,
     ) -> Result<&'b [u8], ScriptError> {
@@ -207,7 +201,7 @@ impl<F: StepFn> ZcashScript for StepwiseInterpreter<F> {
     /// Returns the number of transparent signature operations in the
     /// transparent inputs and outputs of this transaction.
     fn legacy_sigop_count_script(&self, script: &[u8]) -> Result<u32, Error> {
-        let cscript = Script(script);
+        let cscript = script::Code(script);
         Ok(cscript.get_sig_op_count(false))
     }
 
