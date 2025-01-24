@@ -8,9 +8,22 @@ use secp256k1::ecdsa;
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
 
-use super::external::pubkey::PubKey;
-use super::script::{Control::*, Normal::*, *};
-use super::script_error::*;
+use crate::{
+    external::pubkey::PubKey,
+    opcode::{
+        operation::{
+            Control::{self, *},
+            Normal::{self, *},
+        },
+        Opcode, Operation, PushValue,
+    },
+    script::{self, num, Script},
+    script_error::*,
+};
+
+// Threshold for lock_time: below this value it is interpreted as block number,
+// otherwise as UNIX timestamp.
+pub const LOCKTIME_THRESHOLD: i64 = 500_000_000; // Tue Nov  5 00:53:20 1985 UTC
 
 /// The ways in which a transparent input may commit to the transparent outputs of its
 /// transaction.
@@ -343,8 +356,8 @@ fn binbasic_num<R>(
     op: impl Fn(i64, i64) -> Result<R, ScriptError>,
 ) -> Result<R, ScriptError> {
     binfn(stack, |x1, x2| {
-        let bn2 = parse_num(&x2, require_minimal, None).map_err(ScriptError::ScriptNumError)?;
-        let bn1 = parse_num(&x1, require_minimal, None).map_err(ScriptError::ScriptNumError)?;
+        let bn2 = num::parse(&x2, require_minimal, None).map_err(ScriptError::NumError)?;
+        let bn1 = num::parse(&x1, require_minimal, None).map_err(ScriptError::NumError)?;
         op(bn1, bn2)
     })
 }
@@ -454,7 +467,7 @@ fn eval_opcode(
 
     (match opcode {
         Opcode::PushValue(pv) => {
-            if pv.value().map_or(0, |v| v.len()) <= MAX_SCRIPT_ELEMENT_SIZE {
+            if pv.value().map_or(0, |v| v.len()) <= script::MAX_SCRIPT_ELEMENT_SIZE {
                 if should_exec(vexec) {
                     eval_push_value(&pv, flags.contains(VerificationFlags::MinimalData), stack)
                 } else {
@@ -580,15 +593,16 @@ fn eval_operation(
     let unfn_num =
         |stackin: &mut Stack<Vec<u8>>, op: &dyn Fn(i64) -> Vec<u8>| -> Result<(), ScriptError> {
             unop(stackin, |vch| {
-                parse_num(&vch, require_minimal, None)
-                    .map_err(ScriptError::ScriptNumError)
+                num::parse(&vch, require_minimal, None)
+                    .map_err(ScriptError::NumError)
                     .map(op)
             })
         };
 
-    let unop_num = |stack: &mut Stack<Vec<u8>>,
-                    op: &dyn Fn(i64) -> i64|
-     -> Result<(), ScriptError> { unfn_num(stack, &|bn| serialize_num(op(bn))) };
+    let unop_num =
+        |stack: &mut Stack<Vec<u8>>, op: &dyn Fn(i64) -> i64| -> Result<(), ScriptError> {
+            unfn_num(stack, &|bn| num::serialize(op(bn)))
+        };
 
     let binfn_num = |stack: &mut Stack<Vec<u8>>,
                      op: &dyn Fn(i64, i64) -> Vec<u8>|
@@ -598,7 +612,7 @@ fn eval_operation(
 
     let binop_num =
         |stack: &mut Stack<Vec<u8>>, op: &dyn Fn(i64, i64) -> i64| -> Result<(), ScriptError> {
-            binfn_num(stack, &|bn1, bn2| serialize_num(op(bn1, bn2)))
+            binfn_num(stack, &|bn1, bn2| num::serialize(op(bn1, bn2)))
         };
 
     let binrel =
@@ -650,7 +664,7 @@ fn eval_operation(
                 // Thus as a special case we tell `ScriptNum` to accept up
                 // to 5-byte bignums, which are good until 2**39-1, well
                 // beyond the 2**32-1 limit of the `lock_time` field itself.
-                let lock_time = parse_num(stack.rget(0)?, require_minimal, Some(5))?;
+                let lock_time = num::parse(stack.rget(0)?, require_minimal, Some(5))?;
 
                 // In the rare event that the argument may be < 0 due to
                 // some arithmetic being done first, you can always use
@@ -790,7 +804,7 @@ fn eval_operation(
         OP_DEPTH => {
             // -- stacksize
             let bn = i64::try_from(stack.len()).map_err(|err| ScriptError::StackSize(Some(err)))?;
-            stack.push(serialize_num(bn))
+            stack.push(num::serialize(bn))
         }
 
         OP_DROP => {
@@ -834,7 +848,7 @@ fn eval_operation(
             if stack.len() < 2 {
                 return Err(ScriptError::InvalidStackOperation);
             }
-            let n = u16::try_from(parse_num(stack.rget(0)?, require_minimal, None)?)
+            let n = u16::try_from(num::parse(stack.rget(0)?, require_minimal, None)?)
                 .map_err(|_| ScriptError::InvalidStackOperation)?;
             stack.pop()?;
             if usize::from(n) >= stack.len() {
@@ -882,7 +896,7 @@ fn eval_operation(
             }
             let bn = i64::try_from(stack.rget(0)?.len())
                 .expect("stack element size <= MAX_SCRIPT_ELEMENT_SIZE");
-            stack.push(serialize_num(bn))
+            stack.push(num::serialize(bn))
         }
 
         //
@@ -936,9 +950,9 @@ fn eval_operation(
             if stack.len() < 3 {
                 return Err(ScriptError::InvalidStackOperation);
             }
-            let bn1 = parse_num(stack.rget(2)?, require_minimal, None)?;
-            let bn2 = parse_num(stack.rget(1)?, require_minimal, None)?;
-            let bn3 = parse_num(stack.rget(0)?, require_minimal, None)?;
+            let bn1 = num::parse(stack.rget(2)?, require_minimal, None)?;
+            let bn2 = num::parse(stack.rget(1)?, require_minimal, None)?;
+            let bn3 = num::parse(stack.rget(0)?, require_minimal, None)?;
             let value = bn2 <= bn1 && bn1 < bn3;
             stack.pop()?;
             stack.pop()?;
@@ -1008,7 +1022,7 @@ fn eval_operation(
             };
 
             let mut keys_count =
-                u8::try_from(parse_num(stack.rget(i.into())?, require_minimal, None)?)
+                u8::try_from(num::parse(stack.rget(i.into())?, require_minimal, None)?)
                     .map_err(|err| ScriptError::PubKeyCount(Some(err)))?;
             if keys_count > 20 {
                 return Err(ScriptError::PubKeyCount(None));
@@ -1026,7 +1040,7 @@ fn eval_operation(
             }
 
             let mut sigs_count =
-                u8::try_from(parse_num(stack.rget(i.into())?, require_minimal, None)?)
+                u8::try_from(num::parse(stack.rget(i.into())?, require_minimal, None)?)
                     .map_err(|err| ScriptError::SigCount(Some(err)))?;
             if sigs_count > keys_count {
                 return Err(ScriptError::SigCount(None));
@@ -1142,7 +1156,7 @@ where
     F: StepFn,
 {
     // There's a limit on how large scripts can be.
-    if script.0.len() > MAX_SCRIPT_SIZE {
+    if script.0.len() > script::MAX_SCRIPT_SIZE {
         return Err(ScriptError::ScriptSize);
     }
 

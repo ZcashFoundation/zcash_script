@@ -1,13 +1,12 @@
 //! Convenience definitions for all opcodes.
 
 use crate::{
-    pv,
-    script::{
-        Control::*,
-        Normal::*,
-        Opcode::{self, *},
-        Operation::*,
+    opcode::{
+        operation::{Control::*, Normal::*},
+        Opcode::{self, Operation, PushValue},
+        Operation::{Control, Normal},
     },
+    pv,
 };
 
 pub const _0: Opcode = PushValue(pv::_0);
@@ -114,13 +113,12 @@ pub const NOP10: Opcode = Operation(Normal(OP_NOP10));
 
 pub mod bad {
     use crate::{
-        pv,
-        script::{
-            Control::*,
-            Normal::*,
-            Opcode::{self, *},
-            Operation::*,
+        opcode::{
+            operation::{Control::*, Normal::*},
+            Opcode::{self, Operation, PushValue},
+            Operation::{Control, Normal},
         },
+        pv,
     };
 
     pub const RESERVED: Opcode = PushValue(pv::bad::RESERVED);
@@ -132,10 +130,10 @@ pub mod bad {
 }
 
 pub mod disabled {
-    use crate::script::{
-        Control::*,
-        Opcode::{self, *},
-        Operation::*,
+    use crate::opcode::{
+        operation::Control::*,
+        Opcode::{self, Operation},
+        Operation::Control,
     };
 
     pub const CAT: Opcode = Operation(Control(OP_CAT));

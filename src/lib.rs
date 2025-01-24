@@ -11,6 +11,7 @@ pub mod cxx;
 mod external;
 pub mod interpreter;
 pub mod op;
+mod opcode;
 pub mod pattern;
 pub mod pv;
 mod script;
@@ -222,7 +223,7 @@ pub fn normalize_error(err: Error) -> Error {
             ScriptError::PubKeyCount(Some(_)) => ScriptError::PubKeyCount(None),
             ScriptError::SigCount(Some(_)) => ScriptError::SigCount(None),
             ScriptError::ReadError { .. } => ScriptError::BadOpcode(None),
-            ScriptError::ScriptNumError(_) => ScriptError::UnknownError,
+            ScriptError::NumError(_) => ScriptError::UnknownError,
             ScriptError::SigDER(Some(_)) => ScriptError::SigDER(None),
             ScriptError::SigHashType(Some(_)) => ScriptError::SigHashType(None),
             _ => serr,
@@ -304,8 +305,9 @@ pub mod testing {
     use super::*;
     use crate::{
         interpreter::{State, StepFn},
+        opcode::{operation::Normal, Opcode},
         pattern::*,
-        script::{Normal, Opcode, Script},
+        script::{self, Script},
     };
     use hex::FromHex;
 

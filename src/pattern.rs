@@ -28,12 +28,13 @@ use ripemd::Ripemd160;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    op, pv,
-    script::{
+    op,
+    opcode::{
         self,
         Opcode::{self, PushValue},
-        Script,
     },
+    pv,
+    script::{num, Script},
 };
 
 /// Pushes a value onto the stack that indicates whether the stack was previously empty.
@@ -44,7 +45,7 @@ pub const EMPTY_STACK_CHECK: [Opcode; 3] = [op::DEPTH, op::_0, op::EQUAL];
 /// Pushes a value onto the stack, then immediately drops it.
 ///
 /// type: `[] -> []`
-pub fn ignored_value(v: script::PushValue) -> [Opcode; 2] {
+pub fn ignored_value(v: opcode::PushValue) -> [Opcode; 2] {
     [PushValue(v), op::DROP]
 }
 
@@ -101,7 +102,7 @@ pub fn check_multisig(sig_count: u8, pks: &[&[u8]], verify: bool) -> Vec<Opcode>
 /// if `verify`
 ///   type: `[_] -> 💥?`
 ///   type: `[_] -> [Bool]`
-pub fn equals(expected: script::PushValue, verify: bool) -> [Opcode; 2] {
+pub fn equals(expected: opcode::PushValue, verify: bool) -> [Opcode; 2] {
     [
         PushValue(expected),
         if verify { op::EQUALVERIFY } else { op::EQUAL },
@@ -145,18 +146,18 @@ pub fn check_lock_time_verify(lt: u32) -> [Opcode; 3] {
 }
 
 /// Produce a minimal `PushValue` that encodes the provided number.
-pub fn push_num(n: i64) -> script::PushValue {
-    push_vec(&script::serialize_num(n))
+pub fn push_num(n: i64) -> opcode::PushValue {
+    push_vec(&num::serialize(n))
 }
 
 /// Produce a minimal `PushValue` that encodes the provided script. This is particularly useful with
 /// P2SH.
-pub fn push_script(script: &[Opcode]) -> script::PushValue {
+pub fn push_script(script: &[Opcode]) -> opcode::PushValue {
     push_vec(&Script::serialize(script))
 }
 
 /// Produce a minimal `PushValue` for the given data.
-pub fn push_vec(v: &[u8]) -> script::PushValue {
+pub fn push_vec(v: &[u8]) -> opcode::PushValue {
     match v {
         [] => pv::_0,
         [byte] => match byte {
@@ -238,7 +239,7 @@ pub fn pay_to_script_hash(redeem_script: &[Opcode]) -> Vec<Opcode> {
 ///   check
 ///
 /// type: `n*Signature -> [Bool] ∪  💥`
-pub fn check_multisig_empty(n: u8, x: &[&[u8]], ignored: script::PushValue) -> Vec<Opcode> {
+pub fn check_multisig_empty(n: u8, x: &[&[u8]], ignored: opcode::PushValue) -> Vec<Opcode> {
     [
         &check_multisig(n, x, true),
         &ignored_value(ignored)[..],
@@ -267,7 +268,7 @@ pub fn combined_multisig(m: u8, x: &[&[u8]], n: u8, y: &[&[u8]]) -> Vec<Opcode> 
 /// - P2PKH inside P2SH with a zero-value placeholder ignored data value
 ///
 /// type: [Signature, PubKey] -> [Bool] ∪  💥
-pub fn p2pkh_ignored(ignored: script::PushValue, pk: &[u8]) -> Vec<Opcode> {
+pub fn p2pkh_ignored(ignored: opcode::PushValue, pk: &[u8]) -> Vec<Opcode> {
     [&ignored_value(ignored)[..], &pay_to_pubkey_hash(pk)].concat()
 }
 
@@ -276,7 +277,7 @@ pub fn p2pkh_ignored(ignored: script::PushValue, pk: &[u8]) -> Vec<Opcode> {
 /// label: Pay-to-(compressed-)pubkey inside P2SH with an empty stack check
 ///
 /// type: `Signature -> [Bool] ∪  💥`
-pub fn p2pk_empty(recipient_pk: &[u8], ignored: script::PushValue) -> Vec<Opcode> {
+pub fn p2pk_empty(recipient_pk: &[u8], ignored: opcode::PushValue) -> Vec<Opcode> {
     [
         &check_sig(recipient_pk, true)[..],
         &ignored_value(ignored)[..],
