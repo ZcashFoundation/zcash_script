@@ -451,7 +451,10 @@ impl Script<'_> {
 
     pub fn get_op2(script: &mut &[u8], buffer: &mut Vec<u8>) -> Result<Opcode, ScriptError> {
         if script.is_empty() {
-            panic!("attempting to parse an opcode from an empty script");
+            return Err(ScriptError::ReadError {
+                expected_bytes: 1,
+                available_bytes: 0,
+            });
         }
 
         // Empty the provided buffer, if any
