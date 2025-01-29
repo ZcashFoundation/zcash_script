@@ -15,6 +15,7 @@ include = [
     "/README.md",
     "build.rs",
     "src/*.rs",
+    "src/*/*.rs",
     "/depend/check_uint128_t.c",
     "/depend/zcash/src/amount.cpp",
     "/depend/zcash/src/amount.h",
@@ -58,10 +59,16 @@ path = "src/lib.rs"
 
 [features]
 external-secp = []
+test-dependencies = []
 
 [dependencies]
 bitflags = "2.5"
-zcash_primitives = "0.17"
+enum_primitive = "0.1"
+ripemd = "0.1"
+secp256k1 = "0.29"
+sha-1 = "0.10"
+sha2 = "0.10"
+tracing = "0.1.39"
 
 [build-dependencies]
 # The `bindgen` dependency should automatically upgrade to match the version used by zebra-state's `rocksdb` dependency in:
@@ -82,6 +89,10 @@ cc = { version = "1.1.10", features = ["parallel"] }
 # Treat minor versions with a zero major version as compatible (cargo doesn't by default).
 hex = ">= 0.4.3"
 lazy_static = "1.5.0"
+proptest = "0.9"
+
+[target.'cfg(linux)'.dev-dependencies]
+libfuzzer-sys = "0.4"
 
 [[package.metadata.release.pre-release-replacements]]
 file = "CHANGELOG.md"
