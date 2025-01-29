@@ -1,6 +1,9 @@
 #![allow(non_camel_case_types)]
 
-use std::ops::{Add, Neg, Sub};
+use std::{
+    num::TryFromIntError,
+    ops::{Add, Neg, Sub},
+};
 
 use enum_primitive::FromPrimitive;
 
@@ -265,7 +268,7 @@ impl From<Operation> for u8 {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct ScriptNum(pub i64);
+pub struct ScriptNum(i64);
 
 impl ScriptNum {
     const DEFAULT_MAX_NUM_SIZE: usize = 4;
@@ -303,20 +306,6 @@ impl ScriptNum {
             }
         }
         Self::set_vch(vch).map(ScriptNum)
-    }
-
-    pub fn getint(&self) -> i32 {
-        if self.0 > i32::MAX.into() {
-            i32::MAX
-        } else if self.0 < i32::MIN.into() {
-            i32::MIN
-        } else {
-            self.0.try_into().unwrap()
-        }
-    }
-
-    pub fn getvch(&self) -> Vec<u8> {
-        Self::serialize(&self.0)
     }
 
     pub fn serialize(value: &i64) -> Vec<u8> {
@@ -400,6 +389,72 @@ impl ScriptNum {
                 Ok(result)
             }
         }
+    }
+}
+
+impl From<i64> for ScriptNum {
+    fn from(value: i64) -> Self {
+        ScriptNum(value)
+    }
+}
+
+impl From<i32> for ScriptNum {
+    fn from(value: i32) -> Self {
+        ScriptNum(value.into())
+    }
+}
+
+impl From<u8> for ScriptNum {
+    fn from(value: u8) -> Self {
+        ScriptNum(value.into())
+    }
+}
+
+/// TODO: This instance will be obsolete if we convert bool directly to a `Vec<u8>`, which is also
+///       more efficient.
+impl From<bool> for ScriptNum {
+    fn from(value: bool) -> Self {
+        ScriptNum(value.into())
+    }
+}
+
+impl TryFrom<usize> for ScriptNum {
+    type Error = TryFromIntError;
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        value.try_into().map(ScriptNum)
+    }
+}
+
+/// This is the primary extractor for numbers from `Script`, all other extractors should call this.
+impl From<ScriptNum> for i32 {
+    fn from(value: ScriptNum) -> Self {
+        if value.0 > i32::MAX.into() {
+            i32::MAX
+        } else if value.0 < i32::MIN.into() {
+            i32::MIN
+        } else {
+            value.0.try_into().unwrap()
+        }
+    }
+}
+
+impl TryFrom<ScriptNum> for u16 {
+    type Error = TryFromIntError;
+    fn try_from(value: ScriptNum) -> Result<Self, Self::Error> {
+        i32::from(value).try_into()
+    }
+}
+
+impl TryFrom<ScriptNum> for u8 {
+    type Error = TryFromIntError;
+    fn try_from(value: ScriptNum) -> Result<Self, Self::Error> {
+        i32::from(value).try_into()
+    }
+}
+
+impl From<ScriptNum> for Vec<u8> {
+    fn from(value: ScriptNum) -> Self {
+        ScriptNum::serialize(&value.0)
     }
 }
 

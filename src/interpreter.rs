@@ -450,8 +450,8 @@ pub fn eval_script(
     flags: VerificationFlags,
     checker: &dyn SignatureChecker,
 ) -> Result<bool, ScriptError> {
-    let bn_zero = ScriptNum(0);
-    let bn_one = ScriptNum(1);
+    let bn_zero = ScriptNum::from(0);
+    let bn_one = ScriptNum::from(1);
     let vch_false: ValType = vec![];
     let vch_true: ValType = vec![1];
 
@@ -499,9 +499,9 @@ pub fn eval_script(
                         OP_1NEGATE | OP_1 | OP_2 | OP_3 | OP_4 | OP_5 | OP_6 | OP_7 | OP_8
                         | OP_9 | OP_10 | OP_11 | OP_12 | OP_13 | OP_14 | OP_15 | OP_16 => {
                             // ( -- value)
-                            let bn =
-                                ScriptNum(i64::from(u8::from(pv)) - i64::from(u8::from(OP_1) - 1));
-                            stack.push_back(bn.getvch());
+                            let bn = ScriptNum::from(u8::from(pv))
+                                - (ScriptNum::from(u8::from(OP_1) - 1));
+                            stack.push_back(bn.into());
                             // The result of these opcodes should always be the minimal way to push the data
                             // they push, so no need for a CheckMinimalPush here.
                         }
@@ -752,9 +752,8 @@ pub fn eval_script(
 
                         OP_DEPTH => {
                             // -- stacksize
-                            let bn = ScriptNum(
-                                i64::try_from(stack.size()).map_err(|_| ScriptError::StackSize)?);
-                            stack.push_back(bn.getvch())
+                            let bn = ScriptNum::try_from(stack.size()).map_err(|_| ScriptError::StackSize)?;
+                            stack.push_back(bn.into())
                         }
 
                         OP_DROP => {
@@ -801,7 +800,7 @@ pub fn eval_script(
                                 return set_error(ScriptError::InvalidStackOperation);
                             }
                             let n =
-                                u16::try_from(ScriptNum::new(stack.top(-1)?, require_minimal, None)?.getint())
+                                u16::try_from(ScriptNum::new(stack.top(-1)?, require_minimal, None)?)
                                 .map_err(|_| ScriptError::InvalidStackOperation)?;
                             stack.pop()?;
                             if usize::from(n) >= stack.size() {
@@ -851,8 +850,8 @@ pub fn eval_script(
                                 return set_error(ScriptError::InvalidStackOperation);
                             }
                             let bn =
-                                ScriptNum(stack.top(-1)?.len().try_into().map_err(|_| ScriptError::PushSize)?);
-                            stack.push_back(bn.getvch())
+                                ScriptNum::try_from(stack.top(-1)?.len()).map_err(|_| ScriptError::PushSize)?;
+                            stack.push_back(bn.into())
                         }
 
 
@@ -913,12 +912,12 @@ pub fn eval_script(
                                         bn = -bn
                                     }
                                 }
-                                OP_NOT => bn = ScriptNum((bn == bn_zero).into()),
-                                OP_0NOTEQUAL => bn = ScriptNum((bn != bn_zero).into()),
+                                OP_NOT => bn = ScriptNum::from(bn == bn_zero),
+                                OP_0NOTEQUAL => bn = ScriptNum::from(bn != bn_zero),
                                 _ => panic!("invalid opcode"),
                             }
                             stack.pop()?;
-                            stack.push_back(bn.getvch())
+                            stack.push_back(bn.into())
                         }
 
                         OP_ADD
@@ -947,22 +946,22 @@ pub fn eval_script(
                                 OP_SUB =>
                                     bn1 - bn2,
 
-                                OP_BOOLAND => ScriptNum((bn1 != bn_zero && bn2 != bn_zero).into()),
-                                OP_BOOLOR => ScriptNum((bn1 != bn_zero || bn2 != bn_zero).into()),
-                                OP_NUMEQUAL => ScriptNum((bn1 == bn2).into()),
-                                OP_NUMEQUALVERIFY => ScriptNum((bn1 == bn2).into()),
-                                OP_NUMNOTEQUAL => ScriptNum((bn1 != bn2).into()),
-                                OP_LESSTHAN => ScriptNum((bn1 < bn2).into()),
-                                OP_GREATERTHAN => ScriptNum((bn1 > bn2).into()),
-                                OP_LESSTHANOREQUAL => ScriptNum((bn1 <= bn2).into()),
-                                OP_GREATERTHANOREQUAL => ScriptNum((bn1 >= bn2).into()),
+                                OP_BOOLAND => ScriptNum::from(bn1 != bn_zero && bn2 != bn_zero),
+                                OP_BOOLOR => ScriptNum::from(bn1 != bn_zero || bn2 != bn_zero),
+                                OP_NUMEQUAL => ScriptNum::from(bn1 == bn2),
+                                OP_NUMEQUALVERIFY => ScriptNum::from(bn1 == bn2),
+                                OP_NUMNOTEQUAL => ScriptNum::from(bn1 != bn2),
+                                OP_LESSTHAN => ScriptNum::from(bn1 < bn2),
+                                OP_GREATERTHAN => ScriptNum::from(bn1 > bn2),
+                                OP_LESSTHANOREQUAL => ScriptNum::from(bn1 <= bn2),
+                                OP_GREATERTHANOREQUAL => ScriptNum::from(bn1 >= bn2),
                                 OP_MIN => if bn1 < bn2 { bn1 } else { bn2 },
                                 OP_MAX => if bn1 > bn2 { bn1 } else { bn2 },
                                 _ => panic!("invalid opcode"),
                             };
                             stack.pop()?;
                             stack.pop()?;
-                            stack.push_back(bn.getvch());
+                            stack.push_back(bn.into());
 
                             if op == OP_NUMEQUALVERIFY {
                                 if cast_to_bool(stack.top(-1)?) {
@@ -1069,7 +1068,7 @@ pub fn eval_script(
                             };
 
                             let mut keys_count =
-                                u8::try_from(ScriptNum::new(stack.top(-isize::from(i))?, require_minimal, None)?.getint())
+                                u8::try_from(ScriptNum::new(stack.top(-isize::from(i))?, require_minimal, None)?)
                                   .map_err(|_| ScriptError::PubKeyCount)?;
                             if keys_count > 20 {
                                 return set_error(ScriptError::PubKeyCount);
@@ -1086,7 +1085,7 @@ pub fn eval_script(
                             }
 
                             let mut sigs_count =
-                                u8::try_from(ScriptNum::new(stack.top(-isize::from(i))?, require_minimal, None)?.getint())
+                                u8::try_from(ScriptNum::new(stack.top(-isize::from(i))?, require_minimal, None)?)
                                   .map_err(|_| ScriptError::SigCount)?;
                             if sigs_count > keys_count {
                                 return set_error(ScriptError::SigCount);
