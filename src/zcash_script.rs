@@ -35,7 +35,7 @@ pub trait ZcashScript {
     ///  is obtained using a callback function.
     ///
     ///  - sighash: a callback function which is called to obtain the sighash.
-    ///  - n_lock_time: the lock time of the transaction being validated.
+    ///  - lock_time: the lock time of the transaction being validated.
     ///  - is_final: a boolean indicating whether the input being validated is final
     ///    (i.e. its sequence number is 0xFFFFFFFF).
     ///  - script_pub_key: the scriptPubKey of the output being spent.
@@ -45,7 +45,7 @@ pub trait ZcashScript {
     ///  Note that script verification failure is indicated by `Err(Error::Ok)`.
     fn verify_callback(
         sighash_callback: SighashCalculator,
-        lock_time: i64,
+        lock_time: u32,
         is_final: bool,
         script_pub_key: &[u8],
         script_sig: &[u8],
@@ -70,7 +70,7 @@ impl ZcashScript for RustInterpreter {
 
     fn verify_callback(
         sighash: SighashCalculator,
-        lock_time: i64,
+        lock_time: u32,
         is_final: bool,
         script_pub_key: &[u8],
         script_sig: &[u8],

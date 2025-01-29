@@ -70,7 +70,7 @@ extern "C" fn sighash_callback(
 impl ZcashScript for CxxInterpreter {
     fn verify_callback(
         sighash: SighashCalculator,
-        lock_time: i64,
+        lock_time: u32,
         is_final: bool,
         script_pub_key: &[u8],
         signature_script: &[u8],
@@ -83,7 +83,7 @@ impl ZcashScript for CxxInterpreter {
             zcash_script_verify_callback(
                 (&sighash as *const SighashCalculator) as *const c_void,
                 Some(sighash_callback),
-                lock_time,
+                lock_time.into(),
                 if is_final { 1 } else { 0 },
                 script_pub_key.as_ptr(),
                 script_pub_key
@@ -137,7 +137,7 @@ fn check_legacy_sigop_count_script<T: ZcashScript, U: ZcashScript>(
 /// differ and always returns the `T` result.
 pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
     sighash: SighashCalculator,
-    lock_time: i64,
+    lock_time: u32,
     is_final: bool,
     script_pub_key: &[u8],
     script_sig: &[u8],
@@ -192,7 +192,7 @@ impl ZcashScript for CxxRustComparisonInterpreter {
 
     fn verify_callback(
         sighash: SighashCalculator,
-        lock_time: i64,
+        lock_time: u32,
         is_final: bool,
         script_pub_key: &[u8],
         script_sig: &[u8],
@@ -273,7 +273,7 @@ mod tests {
 
     #[test]
     fn it_works() {
-        let n_lock_time: i64 = 2410374;
+        let n_lock_time: u32 = 2410374;
         let is_final: bool = true;
         let script_pub_key = &SCRIPT_PUBKEY;
         let script_sig = &SCRIPT_SIG;
@@ -294,7 +294,7 @@ mod tests {
 
     #[test]
     fn it_fails_on_invalid_sighash() {
-        let n_lock_time: i64 = 2410374;
+        let n_lock_time: u32 = 2410374;
         let is_final: bool = true;
         let script_pub_key = &SCRIPT_PUBKEY;
         let script_sig = &SCRIPT_SIG;
@@ -319,7 +319,7 @@ mod tests {
 
     #[test]
     fn it_fails_on_missing_sighash() {
-        let n_lock_time: i64 = 2410374;
+        let n_lock_time: u32 = 2410374;
         let is_final: bool = true;
         let script_pub_key = &SCRIPT_PUBKEY;
         let script_sig = &SCRIPT_SIG;
@@ -351,7 +351,7 @@ mod tests {
         /// been collapsed to `Error::Ok`. A deeper comparison, requires changes to the C++ code.
         #[test]
         fn test_arbitrary_scripts(
-            lock_time in prop::num::i64::ANY,
+            lock_time in prop::num::u32::ANY,
             is_final in prop::bool::ANY,
             pub_key in prop::collection::vec(0..=0xffu8, 0..=OVERFLOW_SCRIPT_SIZE),
             sig in prop::collection::vec(0..=0xffu8, 1..=OVERFLOW_SCRIPT_SIZE),
@@ -372,7 +372,7 @@ mod tests {
         /// Similar to `test_arbitrary_scripts`, but ensures the `sig` only contains pushes.
         #[test]
         fn test_restricted_sig_scripts(
-            lock_time in prop::num::i64::ANY,
+            lock_time in prop::num::u32::ANY,
             is_final in prop::bool::ANY,
             pub_key in prop::collection::vec(0..=0xffu8, 0..=OVERFLOW_SCRIPT_SIZE),
             sig in prop::collection::vec(0..=0x60u8, 0..=OVERFLOW_SCRIPT_SIZE),
