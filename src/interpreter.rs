@@ -499,8 +499,7 @@ pub fn eval_script(
                         OP_1NEGATE | OP_1 | OP_2 | OP_3 | OP_4 | OP_5 | OP_6 | OP_7 | OP_8
                         | OP_9 | OP_10 | OP_11 | OP_12 | OP_13 | OP_14 | OP_15 | OP_16 => {
                             // ( -- value)
-                            let bn = ScriptNum::from(u8::from(pv))
-                                - (ScriptNum::from(u8::from(OP_1) - 1));
+                            let bn = ScriptNum::from(u8::from(pv)) - u8::from(OP_RESERVED).into();
                             stack.push_back(bn.getvch());
                             // The result of these opcodes should always be the minimal way to push the data
                             // they push, so no need for a CheckMinimalPush here.
