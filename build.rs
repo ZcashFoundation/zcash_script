@@ -199,5 +199,5 @@ fn language_std(build: &mut cc::Build, std: &str) {
         "-std="
     };
 
-    build.flag(&[flag, std].concat());
+    build.flag([flag, std].concat());
 }
