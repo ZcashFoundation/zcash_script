@@ -501,7 +501,7 @@ pub fn eval_script(
                             // ( -- value)
                             let bn = ScriptNum::from(u8::from(pv))
                                 - (ScriptNum::from(u8::from(OP_1) - 1));
-                            stack.push_back(bn.into());
+                            stack.push_back(bn.getvch());
                             // The result of these opcodes should always be the minimal way to push the data
                             // they push, so no need for a CheckMinimalPush here.
                         }
@@ -753,7 +753,7 @@ pub fn eval_script(
                         OP_DEPTH => {
                             // -- stacksize
                             let bn = ScriptNum::try_from(stack.size()).map_err(|_| ScriptError::StackSize)?;
-                            stack.push_back(bn.into())
+                            stack.push_back(bn.getvch())
                         }
 
                         OP_DROP => {
@@ -851,7 +851,7 @@ pub fn eval_script(
                             }
                             let bn =
                                 ScriptNum::try_from(stack.top(-1)?.len()).map_err(|_| ScriptError::PushSize)?;
-                            stack.push_back(bn.into())
+                            stack.push_back(bn.getvch())
                         }
 
 
@@ -917,7 +917,7 @@ pub fn eval_script(
                                 _ => panic!("invalid opcode"),
                             }
                             stack.pop()?;
-                            stack.push_back(bn.into())
+                            stack.push_back(bn.getvch())
                         }
 
                         OP_ADD
@@ -961,7 +961,7 @@ pub fn eval_script(
                             };
                             stack.pop()?;
                             stack.pop()?;
-                            stack.push_back(bn.into());
+                            stack.push_back(bn.getvch());
 
                             if op == OP_NUMEQUALVERIFY {
                                 if cast_to_bool(stack.top(-1)?) {

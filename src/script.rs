@@ -308,6 +308,20 @@ impl ScriptNum {
         Self::set_vch(vch).map(ScriptNum)
     }
 
+    pub fn getint(&self) -> i32 {
+        if self.0 > i32::MAX.into() {
+            i32::MAX
+        } else if self.0 < i32::MIN.into() {
+            i32::MIN
+        } else {
+            self.0.try_into().unwrap()
+        }
+    }
+
+    pub fn getvch(&self) -> Vec<u8> {
+        Self::serialize(&self.0)
+    }
+
     pub fn serialize(value: &i64) -> Vec<u8> {
         if *value == 0 {
             return Vec::new();
@@ -425,36 +439,17 @@ impl TryFrom<usize> for ScriptNum {
     }
 }
 
-/// This is the primary extractor for numbers from `Script`, all other extractors should call this.
-impl From<ScriptNum> for i32 {
-    fn from(value: ScriptNum) -> Self {
-        if value.0 > i32::MAX.into() {
-            i32::MAX
-        } else if value.0 < i32::MIN.into() {
-            i32::MIN
-        } else {
-            value.0.try_into().unwrap()
-        }
-    }
-}
-
 impl TryFrom<ScriptNum> for u16 {
     type Error = TryFromIntError;
     fn try_from(value: ScriptNum) -> Result<Self, Self::Error> {
-        i32::from(value).try_into()
+        value.getint().try_into()
     }
 }
 
 impl TryFrom<ScriptNum> for u8 {
     type Error = TryFromIntError;
     fn try_from(value: ScriptNum) -> Result<Self, Self::Error> {
-        i32::from(value).try_into()
-    }
-}
-
-impl From<ScriptNum> for Vec<u8> {
-    fn from(value: ScriptNum) -> Self {
-        ScriptNum::serialize(&value.0)
+        value.getint().try_into()
     }
 }
 
