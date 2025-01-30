@@ -1,4 +1,7 @@
-use std::slice::Iter;
+use std::{
+    cmp::{max, min},
+    slice::Iter,
+};
 
 use ripemd::Ripemd160;
 use sha1::Sha1;
@@ -461,8 +464,50 @@ fn check_minimal_push(data: &[u8], opcode: PushValue) -> bool {
     true
 }
 
-const VCH_FALSE: ValType = Vec::new();
-const VCH_TRUE: [u8; 1] = [1];
+fn unop<T: Clone>(
+    stack: &mut Stack<T>,
+    op: impl Fn(T) -> Result<T, ScriptError>,
+) -> Result<(), ScriptError> {
+    let item = stack.pop()?;
+    op(item).map(|res| stack.push_back(res))
+}
+
+fn binfn<T: Clone, R>(
+    stack: &mut Stack<T>,
+    op: impl Fn(T, T) -> Result<R, ScriptError>,
+) -> Result<R, ScriptError> {
+    let x2 = stack.pop()?;
+    let x1 = stack.pop()?;
+    op(x1, x2)
+}
+
+fn binbasic_num<R>(
+    stack: &mut Stack<Vec<u8>>,
+    require_minimal: bool,
+    op: impl Fn(i64, i64) -> Result<R, ScriptError>,
+) -> Result<R, ScriptError> {
+    binfn(stack, |x1, x2| {
+        let bn2 = parse_num(&x2, require_minimal, None).map_err(ScriptError::ScriptNumError)?;
+        let bn1 = parse_num(&x1, require_minimal, None).map_err(ScriptError::ScriptNumError)?;
+        op(bn1, bn2)
+    })
+}
+fn binop<T: Clone>(
+    stack: &mut Stack<T>,
+    op: impl Fn(T, T) -> Result<T, ScriptError>,
+) -> Result<(), ScriptError> {
+    binfn(stack, op).map(|res| stack.push_back(res))
+}
+
+fn cast_from_bool(b: bool) -> ValType {
+    static VCH_FALSE: [u8; 0] = [];
+    static VCH_TRUE: [u8; 1] = [1];
+    if b {
+        VCH_TRUE.to_vec()
+    } else {
+        VCH_FALSE.to_vec()
+    }
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct State {
@@ -536,6 +581,39 @@ pub fn eval_step<'a>(
     let require_minimal = flags.contains(VerificationFlags::MinimalData);
     let vexec = &mut state.vexec;
     let altstack = &mut state.altstack;
+
+    let unfn_num =
+        |stackin: &mut Stack<Vec<u8>>, op: &dyn Fn(i64) -> Vec<u8>| -> Result<(), ScriptError> {
+            unop(stackin, |vch| {
+                parse_num(&vch, require_minimal, None)
+                    .map_err(ScriptError::ScriptNumError)
+                    .map(op)
+            })
+        };
+
+    let unop_num = |stack: &mut Stack<Vec<u8>>,
+                    op: &dyn Fn(i64) -> i64|
+     -> Result<(), ScriptError> { unfn_num(stack, &|bn| serialize_num(op(bn))) };
+
+    let binfn_num =
+        |stack: &mut Stack<Vec<u8>>, op: &dyn Fn(i64, i64) -> Vec<u8>| -> Result<(), ScriptError> {
+            binbasic_num(stack, require_minimal, |bn1, bn2| Ok(op(bn1, bn2)))
+                .map(|res| stack.push_back(res))
+        };
+
+    let binop_num =
+        |stack: &mut Stack<Vec<u8>>, op: &dyn Fn(i64, i64) -> i64| -> Result<(), ScriptError> {
+            binfn_num(stack, &|bn1, bn2| serialize_num(op(bn1, bn2)))
+        };
+
+    let binrel =
+        |stack: &mut Stack<Vec<u8>>, op: &dyn Fn(i64, i64) -> bool| -> Result<(), ScriptError> {
+            binfn_num(stack, &|bn1, bn2| cast_from_bool(op(bn1, bn2)))
+        };
+
+    let unrel = |stack: &mut Stack<Vec<u8>>, op: &dyn Fn(i64) -> bool| -> Result<(), ScriptError> {
+        unfn_num(stack, &|bn| cast_from_bool(op(bn)))
+    };
 
     // Are we in an executing branch of the script?
     let exec = vexec.iter().all(|value| *value);
@@ -919,117 +997,48 @@ pub fn eval_step<'a>(
                     //
                     // Bitwise logic
                     //
-                    OP_EQUAL | OP_EQUALVERIFY => {
-                        // (x1 x2 - bool)
-                        if stack.size() < 2 {
-                            return set_error(ScriptError::InvalidStackOperation);
+                    // (x1 x2 - bool)
+                    OP_EQUAL => binop(stack, |x1, x2| Ok(cast_from_bool(x1 == x2)))?,
+                    OP_EQUALVERIFY => binfn(stack, |x1, x2| {
+                        if x1 == x2 {
+                            Ok(())
+                        } else {
+                            Err(ScriptError::EqualVerify)
                         }
-                        let vch1 = stack.top(-2)?.clone();
-                        let vch2 = stack.top(-1)?.clone();
-                        let equal = vch1 == vch2;
-                        stack.pop()?;
-                        stack.pop()?;
-                        stack.push_back(if equal { VCH_TRUE.to_vec() } else { VCH_FALSE });
-                        if op == OP_EQUALVERIFY {
-                            if equal {
-                                stack.pop()?;
-                            } else {
-                                return set_error(ScriptError::EqualVerify);
-                            }
-                        }
-                    }
+                    })?,
 
                     //
                     // Numeric
                     //
-                    OP_1ADD | OP_1SUB | OP_NEGATE | OP_ABS | OP_NOT | OP_0NOTEQUAL => {
-                        // (in -- out)
-                        if stack.size() < 1 {
-                            return set_error(ScriptError::InvalidStackOperation);
-                        }
-                        let mut bn = ScriptNum::new(stack.top(-1)?, require_minimal)?;
-                        match op {
-                            OP_1ADD => bn = bn + ScriptNum::ONE,
-                            OP_1SUB => bn = bn - ScriptNum::ONE,
-                            OP_NEGATE => bn = -bn,
-                            OP_ABS => {
-                                if bn < ScriptNum::ZERO {
-                                    bn = -bn
-                                }
-                            }
-                            OP_NOT => bn = ScriptNum::from(bn == ScriptNum::ZERO),
-                            OP_0NOTEQUAL => bn = ScriptNum::from(bn != ScriptNum::ZERO),
-                            _ => panic!("invalid opcode"),
-                        }
-                        stack.pop()?;
-                        stack.push_back(bn.getvch())
-                    }
 
-                    OP_ADD
-                    | OP_SUB
-                    | OP_BOOLAND
-                    | OP_BOOLOR
-                    | OP_NUMEQUAL
-                    | OP_NUMEQUALVERIFY
-                    | OP_NUMNOTEQUAL
-                    | OP_LESSTHAN
-                    | OP_GREATERTHAN
-                    | OP_LESSTHANOREQUAL
-                    | OP_GREATERTHANOREQUAL
-                    | OP_MIN
-                    | OP_MAX => {
-                        // (x1 x2 -- out)
-                        if stack.size() < 2 {
-                            return set_error(ScriptError::InvalidStackOperation);
+                    // (in -- out)
+                    OP_1ADD => unop_num(stack, &|x| x + 1)?,
+                    OP_1SUB => unop_num(stack, &|x| x - 1)?,
+                    OP_NEGATE => unop_num(stack, &|x| -x)?,
+                    OP_ABS => unop_num(stack, &|x| x.abs())?,
+                    OP_NOT => unrel(stack, &|x| x == 0)?,
+                    OP_0NOTEQUAL => unrel(stack, &|x| x != 0)?,
+
+                    // (x1 x2 -- out)
+                    OP_ADD => binop_num(stack, &|x1, x2| x1 + x2)?,
+                    OP_SUB => binop_num(stack, &|x1, x2| x1 - x2)?,
+                    OP_BOOLAND => binrel(stack, &|x1, x2| x1 != 0 && x2 != 0)?,
+                    OP_BOOLOR => binrel(stack, &|x1, x2| x1 != 0 || x2 != 0)?,
+                    OP_NUMEQUAL => binrel(stack, &|x1, x2| x1 == x2)?,
+                    OP_NUMEQUALVERIFY => binbasic_num(stack, require_minimal, |x1, x2| {
+                        if x1 == x2 {
+                            Ok(())
+                        } else {
+                            Err(ScriptError::NumEqualVerify)
                         }
-                        let bn1 = ScriptNum::new(stack.top(-2)?, require_minimal)?;
-                        let bn2 = ScriptNum::new(stack.top(-1)?, require_minimal)?;
-                        let bn = match op {
-                            OP_ADD => bn1 + bn2,
-
-                            OP_SUB => bn1 - bn2,
-
-                            OP_BOOLAND => {
-                                ScriptNum::from(bn1 != ScriptNum::ZERO && bn2 != ScriptNum::ZERO)
-                            }
-                            OP_BOOLOR => {
-                                ScriptNum::from(bn1 != ScriptNum::ZERO || bn2 != ScriptNum::ZERO)
-                            }
-                            OP_NUMEQUAL => ScriptNum::from(bn1 == bn2),
-                            OP_NUMEQUALVERIFY => ScriptNum::from(bn1 == bn2),
-                            OP_NUMNOTEQUAL => ScriptNum::from(bn1 != bn2),
-                            OP_LESSTHAN => ScriptNum::from(bn1 < bn2),
-                            OP_GREATERTHAN => ScriptNum::from(bn1 > bn2),
-                            OP_LESSTHANOREQUAL => ScriptNum::from(bn1 <= bn2),
-                            OP_GREATERTHANOREQUAL => ScriptNum::from(bn1 >= bn2),
-                            OP_MIN => {
-                                if bn1 < bn2 {
-                                    bn1
-                                } else {
-                                    bn2
-                                }
-                            }
-                            OP_MAX => {
-                                if bn1 > bn2 {
-                                    bn1
-                                } else {
-                                    bn2
-                                }
-                            }
-                            _ => panic!("invalid opcode"),
-                        };
-                        stack.pop()?;
-                        stack.pop()?;
-                        stack.push_back(bn.getvch());
-
-                        if op == OP_NUMEQUALVERIFY {
-                            if cast_to_bool(stack.top(-1)?) {
-                                stack.pop()?;
-                            } else {
-                                return set_error(ScriptError::NumEqualVerify);
-                            }
-                        }
-                    }
+                    })?,
+                    OP_NUMNOTEQUAL => binrel(stack, &|x1, x2| x1 != x2)?,
+                    OP_LESSTHAN => binrel(stack, &|x1, x2| x1 < x2)?,
+                    OP_GREATERTHAN => binrel(stack, &|x1, x2| x1 > x2)?,
+                    OP_LESSTHANOREQUAL => binrel(stack, &|x1, x2| x1 <= x2)?,
+                    OP_GREATERTHANOREQUAL => binrel(stack, &|x1, x2| x1 >= x2)?,
+                    OP_MIN => binop_num(stack, &min)?,
+                    OP_MAX => binop_num(stack, &max)?,
 
                     OP_WITHIN => {
                         // (x min max -- out)
@@ -1043,7 +1052,7 @@ pub fn eval_step<'a>(
                         stack.pop()?;
                         stack.pop()?;
                         stack.pop()?;
-                        stack.push_back(if value { VCH_TRUE.to_vec() } else { VCH_FALSE })
+                        stack.push_back(cast_from_bool(value))
                     }
 
                     //
@@ -1088,11 +1097,7 @@ pub fn eval_step<'a>(
 
                         stack.pop()?;
                         stack.pop()?;
-                        stack.push_back(if success {
-                            VCH_TRUE.to_vec()
-                        } else {
-                            VCH_FALSE
-                        });
+                        stack.push_back(cast_from_bool(success));
                         if op == OP_CHECKSIGVERIFY {
                             if success {
                                 stack.pop()?;
@@ -1201,11 +1206,7 @@ pub fn eval_step<'a>(
                         }
                         stack.pop()?;
 
-                        stack.push_back(if success {
-                            VCH_TRUE.to_vec()
-                        } else {
-                            VCH_FALSE
-                        });
+                        stack.push_back(cast_from_bool(success));
 
                         if op == OP_CHECKMULTISIGVERIFY {
                             if success {
