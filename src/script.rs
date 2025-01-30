@@ -406,14 +406,14 @@ impl ScriptNum {
     }
 }
 
-impl From<i64> for ScriptNum {
-    fn from(value: i64) -> Self {
-        ScriptNum(value)
+impl From<i32> for ScriptNum {
+    fn from(value: i32) -> Self {
+        ScriptNum(value.into())
     }
 }
 
-impl From<i32> for ScriptNum {
-    fn from(value: i32) -> Self {
+impl From<u32> for ScriptNum {
+    fn from(value: u32) -> Self {
         ScriptNum(value.into())
     }
 }
