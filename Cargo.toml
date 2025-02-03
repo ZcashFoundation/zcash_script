@@ -89,7 +89,7 @@ cc = { version = "1.2.10", features = ["parallel"] }
 # Treat minor versions with a zero major version as compatible (cargo doesn't by default).
 hex = ">= 0.4.3"
 lazy_static = "1.5.0"
-proptest = "0.9"
+proptest = "1.6"
 
 [target.'cfg(linux)'.dev-dependencies]
 libfuzzer-sys = "0.4"
