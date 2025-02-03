@@ -392,24 +392,24 @@ fn is_defined_hashtype_signature(vch_sig: &ValType) -> bool {
 fn check_signature_encoding(
     vch_sig: &Vec<u8>,
     flags: VerificationFlags,
-) -> Result<bool, ScriptError> {
+) -> Result<(), ScriptError> {
     // Empty signature. Not strictly DER encoded, but allowed to provide a
     // compact way to provide an invalid signature for use with CHECK(MULTI)SIG
     if vch_sig.is_empty() {
-        return Ok(true);
+        return Ok(());
     };
     if !is_valid_signature_encoding(vch_sig) {
         return set_error(ScriptError::SigDER);
     } else if flags.contains(VerificationFlags::LowS) && !is_low_der_signature(vch_sig)? {
         // TODO: The C++ impl claims that `serror` is set here, but it isn’t, so this eventually
         //       ends up as `UnknownError`, when it should probably be `SigHighS`.
-        return Ok(false);
+        return set_error(ScriptError::SigHighS);
     } else if flags.contains(VerificationFlags::StrictEnc)
         && !is_defined_hashtype_signature(vch_sig)
     {
         return set_error(ScriptError::SigHashType);
     };
-    Ok(true)
+    Ok(())
 }
 
 fn check_pub_key_encoding(vch_sig: &ValType, flags: VerificationFlags) -> Result<(), ScriptError> {
@@ -449,7 +449,7 @@ pub fn eval_script(
     script: &Script,
     flags: VerificationFlags,
     checker: &dyn SignatureChecker,
-) -> Result<bool, ScriptError> {
+) -> Result<(), ScriptError> {
     let bn_zero = ScriptNum::from(0);
     let bn_one = ScriptNum::from(1);
     let vch_false: ValType = vec![];
@@ -1031,10 +1031,7 @@ pub fn eval_script(
                             let vch_sig = stack.top(-2)?.clone();
                             let vch_pub_key = stack.top(-1)?.clone();
 
-                            if !check_signature_encoding(&vch_sig, flags)? {
-                                //serror is set
-                                return Ok(false);
-                            }
+                            check_signature_encoding(&vch_sig, flags)?;
                             check_pub_key_encoding(&vch_pub_key, flags)?;
                             let success = checker.check_sig(&vch_sig, &vch_pub_key, script);
 
@@ -1104,10 +1101,7 @@ pub fn eval_script(
                                 // Note how this makes the exact order of pubkey/signature evaluation
                                 // distinguishable by CHECKMULTISIG NOT if the STRICTENC flag is set.
                                 // See the script_(in)valid tests for details.
-                                if !check_signature_encoding(vch_sig, flags)? {
-                                    // serror is set
-                                    return Ok(false);
-                                };
+                                check_signature_encoding(vch_sig, flags)?;
                                 check_pub_key_encoding(vch_pub_key, flags)?;
 
                                 // Check signature
@@ -1186,7 +1180,7 @@ pub fn eval_script(
         return set_error(ScriptError::UnbalancedConditional);
     }
 
-    set_success(true)
+    set_success(())
 }
 
 /// All signature hashes are 32 bytes, since they are either:
@@ -1270,17 +1264,11 @@ pub fn verify_script(
 
     let mut stack = Stack(Vec::new());
     let mut stack_copy = Stack(Vec::new());
-    if !eval_script(&mut stack, script_sig, flags, checker)? {
-        // serror is set
-        return set_error(ScriptError::UnknownError);
-    }
+    eval_script(&mut stack, script_sig, flags, checker)?;
     if flags.contains(VerificationFlags::P2SH) {
         stack_copy = stack.clone()
     }
-    if !eval_script(&mut stack, script_pub_key, flags, checker)? {
-        // serror is set
-        return set_error(ScriptError::UnknownError);
-    }
+    eval_script(&mut stack, script_pub_key, flags, checker)?;
     if stack.empty() {
         return set_error(ScriptError::EvalFalse);
     }
@@ -1307,10 +1295,7 @@ pub fn verify_script(
         let pub_key_2 = Script(pub_key_serialized.as_slice());
         stack.pop()?;
 
-        if !eval_script(&mut stack, &pub_key_2, flags, checker)? {
-            // serror is set
-            return set_error(ScriptError::UnknownError);
-        }
+        eval_script(&mut stack, &pub_key_2, flags, checker)?;
         if stack.empty() {
             return set_error(ScriptError::EvalFalse);
         }
