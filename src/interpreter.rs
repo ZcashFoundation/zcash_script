@@ -554,10 +554,16 @@ pub fn eval_script(
                         OP_NOP => (),
 
                         OP_CHECKLOCKTIMEVERIFY => {
-                            // This was originally OP_NOP2 but has been repurposed
-                            // for OP_CHECKLOCKTIMEVERIFY. So, we should act based
-                            // on whether or not CLTV has been activated in a soft
-                            // fork.
+                            // https://zips.z.cash/protocol/protocol.pdf#bips :
+                            //
+                            //   The following BIPs apply starting from the Zcash genesis block,
+                            //   i.e. any activation rules or exceptions for particular blocks in
+                            //   the Bitcoin block chain are to be ignored: [BIP-16], [BIP-30],
+                            //   [BIP-65], [BIP-66].
+                            //
+                            // So BIP 65, which defines CHECKLOCKTIMEVERIFY, is in practice always
+                            // enabled, and this `if` branch is dead code. In zcashd see
+                            // https://github.com/zcash/zcash/blob/a3435336b0c561799ac6805a27993eca3f9656df/src/main.cpp#L3151
                             if !flags.contains(VerificationFlags::CHECKLOCKTIMEVERIFY) {
                                 if flags.contains(VerificationFlags::DiscourageUpgradableNOPs) {
                                     return set_error(ScriptError::DiscourageUpgradableNOPs);
@@ -859,36 +865,29 @@ pub fn eval_script(
                         //
                         // Bitwise logic
                         //
-                        OP_EQUAL
-                        | OP_EQUALVERIFY
-                        // | OP_NOTEQUAL // use OP_NUMNOTEQUAL
-                            => {
-                                // (x1 x2 - bool)
-                                if stack.size() < 2 {
-                                    return set_error(ScriptError::InvalidStackOperation);
-                                }
-                                let vch1 = stack.top(-2)?.clone();
-                                let vch2 = stack.top(-1)?.clone();
-                                let equal = vch1 == vch2;
-                                // OP_NOTEQUAL is disabled because it would be too easy to say
-                                // something like n != 1 and have some wiseguy pass in 1 with extra
-                                // zero bytes after it (numerically, 0x01 == 0x0001 == 0x000001)
-                                //if op == OP_NOTEQUAL {
-                                //    fEqual = !fEqual;
-                                //}
-                                stack.pop()?;
-                                stack.pop()?;
-                                stack.push_back(if equal { vch_true.clone() } else { vch_false.clone() });
-                                if op == OP_EQUALVERIFY
-                                {
-                                    if equal {
-                                        stack.pop()?;
-                                    } else {
-                                        return set_error(ScriptError::EqualVerify);
-                                    }
+                        OP_EQUAL | OP_EQUALVERIFY => {
+                            // (x1 x2 - bool)
+                            if stack.size() < 2 {
+                                return set_error(ScriptError::InvalidStackOperation);
+                            }
+                            let vch1 = stack.top(-2)?.clone();
+                            let vch2 = stack.top(-1)?.clone();
+                            let equal = vch1 == vch2;
+                            stack.pop()?;
+                            stack.pop()?;
+                            stack.push_back(if equal {
+                                vch_true.clone()
+                            } else {
+                                vch_false.clone()
+                            });
+                            if op == OP_EQUALVERIFY {
+                                if equal {
+                                    stack.pop()?;
+                                } else {
+                                    return set_error(ScriptError::EqualVerify);
                                 }
                             }
-
+                        }
 
                         //
                         // Numeric
