@@ -604,8 +604,8 @@ pub fn eval_script(
                             }
                         }
 
-                        OP_NOP1 | OP_NOP3 | OP_NOP4 | OP_NOP5
-                        | OP_NOP6 | OP_NOP7 | OP_NOP8 | OP_NOP9 | OP_NOP10 => {
+                        OP_NOP1 | OP_NOP3 | OP_NOP4 | OP_NOP5 | OP_NOP6 | OP_NOP7 | OP_NOP8
+                        | OP_NOP9 | OP_NOP10 => {
                             // Do nothing, though if the caller wants to prevent people from using
                             // these NOPs (as part of a standard tx rule, for example) they can
                             // enable `DiscourageUpgradableNOPs` to turn these opcodes into errors.
@@ -614,8 +614,7 @@ pub fn eval_script(
                             }
                         }
 
-                        OP_IF
-                        | OP_NOTIF => {
+                        OP_IF | OP_NOTIF => {
                             // <expression> if [statements] [else [statements]] endif
                             let mut value = false;
                             if exec {
@@ -759,7 +758,8 @@ pub fn eval_script(
 
                         OP_DEPTH => {
                             // -- stacksize
-                            let bn = ScriptNum::try_from(stack.size()).map_err(|_| ScriptError::StackSize)?;
+                            let bn = ScriptNum::try_from(stack.size())
+                                .map_err(|_| ScriptError::StackSize)?;
                             stack.push_back(bn.getvch())
                         }
 
@@ -799,22 +799,28 @@ pub fn eval_script(
                             stack.push_back(vch.clone());
                         }
 
-                        OP_PICK
-                        | OP_ROLL => {
+                        OP_PICK | OP_ROLL => {
                             // (xn ... x2 x1 x0 n - xn ... x2 x1 x0 xn)
                             // (xn ... x2 x1 x0 n - ... x2 x1 x0 xn)
                             if stack.size() < 2 {
                                 return set_error(ScriptError::InvalidStackOperation);
                             }
-                            let n =
-                                u16::try_from(ScriptNum::new(stack.top(-1)?, require_minimal, None)?)
-                                .map_err(|_| ScriptError::InvalidStackOperation)?;
+                            let n = u16::try_from(ScriptNum::new(
+                                stack.top(-1)?,
+                                require_minimal,
+                                None,
+                            )?)
+                            .map_err(|_| ScriptError::InvalidStackOperation)?;
                             stack.pop()?;
                             if usize::from(n) >= stack.size() {
                                 return set_error(ScriptError::InvalidStackOperation);
                             }
-                            let vch: ValType =
-                                stack.top(-isize::try_from(n).map_err(|_| ScriptError::InvalidStackOperation)? - 1)?
+                            let vch: ValType = stack
+                                .top(
+                                    -isize::try_from(n)
+                                        .map_err(|_| ScriptError::InvalidStackOperation)?
+                                        - 1,
+                                )?
                                 .clone();
                             if op == OP_ROLL {
                                 stack.erase(stack.end() - usize::from(n) - 1, None);
@@ -850,17 +856,15 @@ pub fn eval_script(
                             stack.insert(stack.end() - 2, vch)
                         }
 
-
                         OP_SIZE => {
                             // (in -- in size)
                             if stack.size() < 1 {
                                 return set_error(ScriptError::InvalidStackOperation);
                             }
-                            let bn =
-                                ScriptNum::try_from(stack.top(-1)?.len()).map_err(|_| ScriptError::PushSize)?;
+                            let bn = ScriptNum::try_from(stack.top(-1)?.len())
+                                .map_err(|_| ScriptError::PushSize)?;
                             stack.push_back(bn.getvch())
                         }
-
 
                         //
                         // Bitwise logic
@@ -892,12 +896,7 @@ pub fn eval_script(
                         //
                         // Numeric
                         //
-                        OP_1ADD
-                        | OP_1SUB
-                        | OP_NEGATE
-                        | OP_ABS
-                        | OP_NOT
-                        | OP_0NOTEQUAL => {
+                        OP_1ADD | OP_1SUB | OP_NEGATE | OP_ABS | OP_NOT | OP_0NOTEQUAL => {
                             // (in -- out)
                             if stack.size() < 1 {
                                 return set_error(ScriptError::InvalidStackOperation);
@@ -940,11 +939,9 @@ pub fn eval_script(
                             let bn1 = ScriptNum::new(stack.top(-2)?, require_minimal, None)?;
                             let bn2 = ScriptNum::new(stack.top(-1)?, require_minimal, None)?;
                             let bn = match op {
-                                OP_ADD =>
-                                    bn1 + bn2,
+                                OP_ADD => bn1 + bn2,
 
-                                OP_SUB =>
-                                    bn1 - bn2,
+                                OP_SUB => bn1 - bn2,
 
                                 OP_BOOLAND => ScriptNum::from(bn1 != bn_zero && bn2 != bn_zero),
                                 OP_BOOLOR => ScriptNum::from(bn1 != bn_zero || bn2 != bn_zero),
@@ -955,8 +952,20 @@ pub fn eval_script(
                                 OP_GREATERTHAN => ScriptNum::from(bn1 > bn2),
                                 OP_LESSTHANOREQUAL => ScriptNum::from(bn1 <= bn2),
                                 OP_GREATERTHANOREQUAL => ScriptNum::from(bn1 >= bn2),
-                                OP_MIN => if bn1 < bn2 { bn1 } else { bn2 },
-                                OP_MAX => if bn1 > bn2 { bn1 } else { bn2 },
+                                OP_MIN => {
+                                    if bn1 < bn2 {
+                                        bn1
+                                    } else {
+                                        bn2
+                                    }
+                                }
+                                OP_MAX => {
+                                    if bn1 > bn2 {
+                                        bn1
+                                    } else {
+                                        bn2
+                                    }
+                                }
                                 _ => panic!("invalid opcode"),
                             };
                             stack.pop()?;
@@ -994,11 +1003,7 @@ pub fn eval_script(
                         //
                         // Crypto
                         //
-                        OP_RIPEMD160
-                        | OP_SHA1
-                        | OP_SHA256
-                        | OP_HASH160
-                        | OP_HASH256 => {
+                        OP_RIPEMD160 | OP_SHA1 | OP_SHA256 | OP_HASH160 | OP_HASH256 => {
                             // (in -- hash)
                             if stack.size() < 1 {
                                 return set_error(ScriptError::InvalidStackOperation);
@@ -1022,8 +1027,7 @@ pub fn eval_script(
                             stack.push_back(vch_hash)
                         }
 
-                        OP_CHECKSIG
-                        | OP_CHECKSIGVERIFY => {
+                        OP_CHECKSIG | OP_CHECKSIGVERIFY => {
                             // (sig pubkey -- bool)
                             if stack.size() < 2 {
                                 return set_error(ScriptError::InvalidStackOperation);
@@ -1052,8 +1056,7 @@ pub fn eval_script(
                             }
                         }
 
-                        OP_CHECKMULTISIG
-                        | OP_CHECKMULTISIGVERIFY => {
+                        OP_CHECKMULTISIG | OP_CHECKMULTISIGVERIFY => {
                             // ([sig ...] num_of_signatures [pubkey ...] num_of_pubkeys -- bool)
 
                             // NB: This is guaranteed u8-safe, because we are limited to 20 keys and
@@ -1064,9 +1067,12 @@ pub fn eval_script(
                                 return set_error(ScriptError::InvalidStackOperation);
                             };
 
-                            let mut keys_count =
-                                u8::try_from(ScriptNum::new(stack.top(-isize::from(i))?, require_minimal, None)?)
-                                  .map_err(|_| ScriptError::PubKeyCount)?;
+                            let mut keys_count = u8::try_from(ScriptNum::new(
+                                stack.top(-isize::from(i))?,
+                                require_minimal,
+                                None,
+                            )?)
+                            .map_err(|_| ScriptError::PubKeyCount)?;
                             if keys_count > 20 {
                                 return set_error(ScriptError::PubKeyCount);
                             };
@@ -1081,9 +1087,12 @@ pub fn eval_script(
                                 return set_error(ScriptError::InvalidStackOperation);
                             }
 
-                            let mut sigs_count =
-                                u8::try_from(ScriptNum::new(stack.top(-isize::from(i))?, require_minimal, None)?)
-                                  .map_err(|_| ScriptError::SigCount)?;
+                            let mut sigs_count = u8::try_from(ScriptNum::new(
+                                stack.top(-isize::from(i))?,
+                                require_minimal,
+                                None,
+                            )?)
+                            .map_err(|_| ScriptError::SigCount)?;
                             if sigs_count > keys_count {
                                 return set_error(ScriptError::SigCount);
                             };
