@@ -44,8 +44,8 @@ pub enum ScriptError {
     SigDER,
     MinimalData,
     SigPushOnly,
-    // SigHighS,
-    SigNullDummy = 27,
+    SigHighS,
+    SigNullDummy,
     PubKeyType,
     CleanStack,
 
