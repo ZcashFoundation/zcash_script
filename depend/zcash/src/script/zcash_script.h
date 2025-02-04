@@ -8,6 +8,7 @@
 #define ZCASH_SCRIPT_ZCASH_SCRIPT_H
 
 #include <stdint.h>
+#include "script_error.h"
 
 #if defined(BUILD_BITCOIN_INTERNAL) && defined(HAVE_CONFIG_H)
 #include "config/bitcoin-config.h"
@@ -35,19 +36,6 @@ extern "C" {
 #endif
 
 #define ZCASH_SCRIPT_API_VER 4
-
-typedef enum zcash_script_error_t
-{
-    zcash_script_ERR_OK = 0,
-    zcash_script_ERR_TX_INDEX,
-    zcash_script_ERR_TX_SIZE_MISMATCH,
-    zcash_script_ERR_TX_DESERIALIZE,
-    // Defined since API version 3.
-    zcash_script_ERR_TX_VERSION,
-    zcash_script_ERR_ALL_PREV_OUTPUTS_SIZE_MISMATCH,
-    zcash_script_ERR_ALL_PREV_OUTPUTS_DESERIALIZE,
-    zcash_script_ERR_VERIFY_SCRIPT,
-} zcash_script_error;
 
 /** Script verification flags */
 enum
@@ -93,8 +81,7 @@ EXPORT_SYMBOL unsigned int zcash_script_legacy_sigop_count_script(
 /// - flags: the script verification flags to use.
 /// - err: if not NULL, err will contain an error/success code for the operation.
 ///
-/// Note that script verification failure is indicated by err being set to
-/// zcash_script_ERR_OK and a return value of 0.
+/// Note that script verification failure is indicated by a return value of 0.
 EXPORT_SYMBOL int zcash_script_verify_callback(
     const void* ctx,
     void (*sighash)(unsigned char* sighash, unsigned int sighashLen, const void* ctx, const unsigned char* scriptCode, unsigned int scriptCodeLen, int hashType),
@@ -105,7 +92,7 @@ EXPORT_SYMBOL int zcash_script_verify_callback(
     const unsigned char* scriptSig,
     unsigned int scriptSigLen,
     unsigned int flags,
-    zcash_script_error* err);
+    ScriptError* err);
 
 #ifdef __cplusplus
 } // extern "C"

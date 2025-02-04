@@ -15,7 +15,6 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 mod tests {
     use std::ffi::{c_int, c_uint, c_void};
 
-    pub use super::zcash_script_error_t;
     use hex::FromHex;
 
     lazy_static::lazy_static! {

@@ -7,10 +7,11 @@
 #include "zcash_script.h"
 
 #include "script/interpreter.h"
+#include "script/script_error.h"
 #include "version.h"
 
 namespace {
-inline int set_error(zcash_script_error* ret, zcash_script_error serror)
+inline int set_error(ScriptError* ret, ScriptError serror)
 {
     if (ret)
         *ret = serror;
@@ -42,12 +43,10 @@ int zcash_script_verify_callback(
     const unsigned char* scriptSig,
     unsigned int scriptSigLen,
     unsigned int flags,
-    zcash_script_error* err)
+    ScriptError* script_err)
 {
     try {
-        set_error(err, zcash_script_ERR_OK);
         CScriptNum nLockTimeNum = CScriptNum(nLockTime);
-        ScriptError script_err = SCRIPT_ERR_OK;
         return VerifyScript(
             CScript(scriptSig, scriptSig + scriptSigLen),
             CScript(scriptPubKey, scriptPubKey + scriptPubKeyLen),
@@ -56,8 +55,8 @@ int zcash_script_verify_callback(
             // consensusBranchId is not longer used with the callback API; the argument
             // was left there to minimize changes to interpreter.cpp
             0,
-            &script_err);
+            script_err);
     } catch (const std::exception&) {
-        return set_error(err, zcash_script_ERR_VERIFY_SCRIPT);
+        return set_error(script_err, SCRIPT_ERR_VERIFY_SCRIPT);
     }
 }

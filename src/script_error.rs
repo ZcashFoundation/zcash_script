@@ -8,8 +8,8 @@ pub enum ScriptNumError {
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[repr(i32)]
 pub enum ScriptError {
-    // Ok = 0,
-    UnknownError = 1,
+    Ok = 0, // Unused (except in converting the C++ error to Rust)
+    UnknownError,
     EvalFalse,
     OpReturn,
 
@@ -44,8 +44,8 @@ pub enum ScriptError {
     SigDER,
     MinimalData,
     SigPushOnly,
-    // SigHighS,
-    SigNullDummy = 27,
+    SigHighS, // Unused (except in converting the C++ error to Rust)
+    SigNullDummy,
     PubKeyType,
     CleanStack,
 

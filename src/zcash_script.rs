@@ -10,10 +10,7 @@ use super::script_error::*;
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Error {
     /// Any failure that results in the script being invalid.
-    ///
-    /// __NB__: This is in `Option` because this type is used by both the C++ and Rust
-    ///         implementations, but the C++ impl doesn’t yet expose the original error.
-    Ok(Option<ScriptError>),
+    Ok(ScriptError),
     /// An exception was caught.
     VerifyScript,
     /// The script size can’t fit in a `u32`, as required by the C++ code.
@@ -87,6 +84,6 @@ impl ZcashScript for RustInterpreter {
                 is_final,
             },
         )
-        .map_err(|e| Error::Ok(Some(e)))
+        .map_err(Error::Ok)
     }
 }
