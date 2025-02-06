@@ -777,9 +777,8 @@ pub fn eval_script(
                                 return set_error(ScriptError::InvalidStackOperation);
                             }
 
-                            let a = stack.pop()?;
-                            stack.push_back(a.clone());
-                            stack.push_back(a);
+                            let vch = stack.top(-1)?;
+                            stack.push_back(vch.clone());
                         }
 
                         OP_NIP => {
