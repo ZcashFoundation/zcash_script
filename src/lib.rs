@@ -2,6 +2,7 @@
 
 #![doc(html_logo_url = "https://www.zfnd.org/images/zebra-icon.png")]
 #![doc(html_root_url = "https://docs.rs/zcash_script/0.3.0")]
+#![allow(non_snake_case)]
 #![allow(unsafe_code)]
 #[macro_use]
 extern crate enum_primitive;
@@ -24,12 +25,85 @@ pub use zcash_script::*;
 /// A tag to indicate that the C++ implementation of zcash_script should be used.
 pub enum CxxInterpreter {}
 
-impl From<zcash_script_error_t> for Error {
+impl From<cxx::ScriptError> for Error {
     #[allow(non_upper_case_globals)]
-    fn from(err_code: zcash_script_error_t) -> Self {
+    fn from(err_code: cxx::ScriptError) -> Self {
         match err_code {
-            zcash_script_error_t_zcash_script_ERR_OK => Error::Ok(None),
-            zcash_script_error_t_zcash_script_ERR_VERIFY_SCRIPT => Error::VerifyScript,
+            ScriptError_t_SCRIPT_ERR_OK => Error::Ok(script_error::ScriptError::Ok),
+            ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR => {
+                Error::Ok(script_error::ScriptError::UnknownError)
+            }
+            ScriptError_t_SCRIPT_ERR_EVAL_FALSE => Error::Ok(script_error::ScriptError::EvalFalse),
+            ScriptError_t_SCRIPT_ERR_OP_RETURN => Error::Ok(script_error::ScriptError::OpReturn),
+
+            ScriptError_t_SCRIPT_ERR_SCRIPT_SIZE => {
+                Error::Ok(script_error::ScriptError::ScriptSize)
+            }
+            ScriptError_t_SCRIPT_ERR_PUSH_SIZE => Error::Ok(script_error::ScriptError::PushSize),
+            ScriptError_t_SCRIPT_ERR_OP_COUNT => Error::Ok(script_error::ScriptError::OpCount),
+            ScriptError_t_SCRIPT_ERR_STACK_SIZE => Error::Ok(script_error::ScriptError::StackSize),
+            ScriptError_t_SCRIPT_ERR_SIG_COUNT => Error::Ok(script_error::ScriptError::SigCount),
+            ScriptError_t_SCRIPT_ERR_PUBKEY_COUNT => {
+                Error::Ok(script_error::ScriptError::PubKeyCount)
+            }
+
+            ScriptError_t_SCRIPT_ERR_VERIFY => Error::Ok(script_error::ScriptError::Verify),
+            ScriptError_t_SCRIPT_ERR_EQUALVERIFY => {
+                Error::Ok(script_error::ScriptError::EqualVerify)
+            }
+            ScriptError_t_SCRIPT_ERR_CHECKMULTISIGVERIFY => {
+                Error::Ok(script_error::ScriptError::CheckMultisigVerify)
+            }
+            ScriptError_t_SCRIPT_ERR_CHECKSIGVERIFY => {
+                Error::Ok(script_error::ScriptError::CheckSigVerify)
+            }
+            ScriptError_t_SCRIPT_ERR_NUMEQUALVERIFY => {
+                Error::Ok(script_error::ScriptError::NumEqualVerify)
+            }
+
+            ScriptError_t_SCRIPT_ERR_BAD_OPCODE => Error::Ok(script_error::ScriptError::BadOpcode),
+            ScriptError_t_SCRIPT_ERR_DISABLED_OPCODE => {
+                Error::Ok(script_error::ScriptError::DisabledOpcode)
+            }
+            ScriptError_t_SCRIPT_ERR_INVALID_STACK_OPERATION => {
+                Error::Ok(script_error::ScriptError::InvalidStackOperation)
+            }
+            ScriptError_t_SCRIPT_ERR_INVALID_ALTSTACK_OPERATION => {
+                Error::Ok(script_error::ScriptError::InvalidAltstackOperation)
+            }
+            ScriptError_t_SCRIPT_ERR_UNBALANCED_CONDITIONAL => {
+                Error::Ok(script_error::ScriptError::UnbalancedConditional)
+            }
+
+            ScriptError_t_SCRIPT_ERR_NEGATIVE_LOCKTIME => {
+                Error::Ok(script_error::ScriptError::NegativeLockTime)
+            }
+            ScriptError_t_SCRIPT_ERR_UNSATISFIED_LOCKTIME => {
+                Error::Ok(script_error::ScriptError::UnsatisfiedLockTime)
+            }
+
+            ScriptError_t_SCRIPT_ERR_SIG_HASHTYPE => {
+                Error::Ok(script_error::ScriptError::SigHashType)
+            }
+            ScriptError_t_SCRIPT_ERR_SIG_DER => Error::Ok(script_error::ScriptError::SigDER),
+            ScriptError_t_SCRIPT_ERR_MINIMALDATA => {
+                Error::Ok(script_error::ScriptError::MinimalData)
+            }
+            ScriptError_t_SCRIPT_ERR_SIG_PUSHONLY => {
+                Error::Ok(script_error::ScriptError::SigPushOnly)
+            }
+            ScriptError_t_SCRIPT_ERR_SIG_HIGH_S => Error::Ok(script_error::ScriptError::SigHighS),
+            ScriptError_t_SCRIPT_ERR_SIG_NULLDUMMY => {
+                Error::Ok(script_error::ScriptError::SigNullDummy)
+            }
+            ScriptError_t_SCRIPT_ERR_PUBKEYTYPE => Error::Ok(script_error::ScriptError::PubKeyType),
+            ScriptError_t_SCRIPT_ERR_CLEANSTACK => Error::Ok(script_error::ScriptError::CleanStack),
+
+            ScriptError_t_SCRIPT_ERR_DISCOURAGE_UPGRADABLE_NOPS => {
+                Error::Ok(script_error::ScriptError::DiscourageUpgradableNOPs)
+            }
+
+            ScriptError_t_SCRIPT_ERR_VERIFY_SCRIPT => Error::VerifyScript,
             unknown => Error::Unknown(unknown.into()),
         }
     }
@@ -166,7 +240,11 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
 /// Convert errors that don’t exist in the C++ code into the cases that do.
 pub fn normalize_error(err: Error) -> Error {
     match err {
-        Error::Ok(Some(_)) => Error::Ok(None),
+        Error::Ok(serr) => Error::Ok(match serr {
+            script_error::ScriptError::ReadError { .. } => script_error::ScriptError::BadOpcode,
+            script_error::ScriptError::ScriptNumError(_) => script_error::ScriptError::UnknownError,
+            _ => serr,
+        }),
         _ => err,
     }
 }
@@ -310,11 +388,7 @@ mod tests {
         );
 
         assert_eq!(ret.0, ret.1.map_err(normalize_error));
-        // Checks the Rust result, because we have more information on the Rust side.
-        assert_eq!(
-            ret.1,
-            Err(Error::Ok(Some(script_error::ScriptError::EvalFalse)))
-        );
+        assert_eq!(ret.0, Err(Error::Ok(script_error::ScriptError::EvalFalse)));
     }
 
     #[test]
@@ -335,11 +409,7 @@ mod tests {
         );
 
         assert_eq!(ret.0, ret.1.map_err(normalize_error));
-        // Checks the Rust result, because we have more information on the Rust side.
-        assert_eq!(
-            ret.1,
-            Err(Error::Ok(Some(script_error::ScriptError::EvalFalse)))
-        );
+        assert_eq!(ret.0, Err(Error::Ok(script_error::ScriptError::EvalFalse)));
     }
 
     proptest! {
@@ -347,8 +417,6 @@ mod tests {
             cases: 20_000, .. ProptestConfig::default()
         })]
 
-        /// This test is very shallow, because we have only `()` for success and most errors have
-        /// been collapsed to `Error::Ok`. A deeper comparison, requires changes to the C++ code.
         #[test]
         fn test_arbitrary_scripts(
             lock_time in prop::num::u32::ANY,
