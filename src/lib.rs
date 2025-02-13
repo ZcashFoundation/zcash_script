@@ -54,7 +54,9 @@ extern "C" fn sighash_callback(
     // SAFETY: `ctx` is a valid `SighashCalculator` constructed in `verify_callback`
     // which forwards it to the `CallbackTransactionSignatureChecker`.
     let callback = unsafe { *(ctx as *const SighashCalculator) };
-    // We don’t need to handle strictness here, because … something
+    // We don’t need to handle strictness here, because it is checked (when necessary) by
+    // `CheckSignatureEncoding` before `CallbackTransactionSignatureChecker` calls this callback.
+    // And we don’t have access to the flags here to determine if it should be checked.
     if let Some(sighash) = HashType::from_bits(hash_type, false)
         .ok()
         .and_then(|ht| callback(script_code_vec, ht))
@@ -209,7 +211,7 @@ impl ZcashScript for CxxRustComparisonInterpreter {
         if rust.map_err(normalize_error) != cxx {
             // probably want to distinguish between
             // - C++ succeeding when Rust fails (bad),
-            // - Rust succeeding when C++ fals (worse), and
+            // - Rust succeeding when C++ fails (worse), and
             // - differing error codes (maybe not bad).
             warn!(
                 "The Rust Zcash Script interpreter had a different result ({:?}) from the C++ one ({:?}).",

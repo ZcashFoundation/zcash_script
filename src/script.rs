@@ -156,7 +156,7 @@ pub enum Operation {
 
     // expansion
     OP_NOP1 = 0xb0,
-    OP_NOP2 = 0xb1,
+    OP_CHECKLOCKTIMEVERIFY = 0xb1,
     OP_NOP3 = 0xb2,
     OP_NOP4 = 0xb3,
     OP_NOP5 = 0xb4,
@@ -171,8 +171,6 @@ pub enum Operation {
 }
 
 use Operation::*;
-
-pub const OP_CHECKLOCKTIMEVERIFY: Operation = OP_NOP2;
 
 impl From<Opcode> for u8 {
     fn from(value: Opcode) -> Self {
@@ -292,15 +290,14 @@ impl ScriptNum {
             // If the most-significant-byte - excluding the sign bit - is zero
             // then we're not minimal. Note how this test also rejects the
             // negative-zero encoding, 0x80.
-            if (vch.last().unwrap_or_else(|| unreachable!()) & 0x7F) == 0 {
+            if (vch.last().expect("not empty") & 0x7F) == 0 {
                 // One exception: if there's more than one byte and the most
                 // significant bit of the second-most-significant-byte is set
-                // it would conflict with the sign bit. An example of this case
-                // is +-255, which encode to 0xff00 and 0xff80 respectively.
-                // (big-endian).
-                if vch.len() <= 1 {
-                    return Err(ScriptNumError::NegativeZero);
-                } else if (vch[vch.len() - 2] & 0x80) == 0 {
+                // then it would have conflicted with the sign bit if one
+                // fewer byte were used, and so such encodings are minimal.
+                // An example of this is +-255, which have minimal encodings
+                // [0xff, 0x00] and [0xff, 0x80] respectively.
+                if vch.len() <= 1 || (vch[vch.len() - 2] & 0x80) == 0 {
                     return Err(ScriptNumError::NonMinimalEncoding);
                 }
             }
@@ -328,42 +325,35 @@ impl ScriptNum {
         }
 
         if *value == i64::MIN {
-            // The code below is buggy, and produces the "wrong" result for
-            // INT64_MIN. To avoid undefined behavior while attempting to
-            // negate a value of INT64_MIN, we intentionally return the result
-            // that the code below would produce on an x86_64 system.
+            // The code below was based on buggy C++ code, that produced the
+            // "wrong" result for INT64_MIN. In that case we intentionally return
+            // the result that the C++ code as compiled for zcashd (with `-fwrapv`)
+            // originally produced on an x86_64 system.
             return vec![0, 0, 0, 0, 0, 0, 0, 128, 128];
         }
 
         let mut result = Vec::new();
         let neg = *value < 0;
-        let mut absvalue = value.abs();
+        let mut absvalue = value.unsigned_abs();
 
         while absvalue != 0 {
-            result.push(
-                (absvalue & 0xff)
-                    .try_into()
-                    .unwrap_or_else(|_| unreachable!()),
-            );
+            result.push((absvalue & 0xff).try_into().expect("fits in u8"));
             absvalue >>= 8;
         }
 
-        //    - If the most significant byte is >= 0x80 and the value is positive, push a
-        //    new zero-byte to make the significant byte < 0x80 again.
+        // - If the most significant byte is >= 0x80 and the value is positive, push a
+        //   new zero-byte to make the significant byte < 0x80 again.
+        // - If the most significant byte is >= 0x80 and the value is negative, push a
+        //   new 0x80 byte that will be popped off when converting to an integral.
+        // - If the most significant byte is < 0x80 and the value is negative, add 0x80
+        //   to it, since it will be subtracted and interpreted as a negative when
+        //   converting to an integral.
 
-        //    - If the most significant byte is >= 0x80 and the value is negative, push a
-        //    new 0x80 byte that will be popped off when converting to an integral.
-
-        //    - If the most significant byte is < 0x80 and the value is negative, add
-        //    0x80 to it, since it will be subtracted and interpreted as a negative when
-        //    converting to an integral.
-
-        if result.last().map_or(true, |last| last & 0x80 != 0) {
+        let result_back = result.last_mut().expect("not empty");
+        if *result_back & 0x80 != 0 {
             result.push(if neg { 0x80 } else { 0 });
         } else if neg {
-            if let Some(last) = result.last_mut() {
-                *last |= 0x80;
-            }
+            *result_back |= 0x80;
         }
 
         result
@@ -374,14 +364,15 @@ impl ScriptNum {
             None => Ok(0),
             Some(vch_back) => {
                 if *vch == vec![0, 0, 0, 0, 0, 0, 0, 128, 128] {
-                    // On an x86_64 system, the code below would actually decode the buggy
-                    // INT64_MIN encoding correctly. However in this case, it would be
-                    // performing left shifts of a signed type by 64, which has undefined
-                    // behavior.
+                    // Match the behaviour of the C++ code, which special-cased this
+                    // encoding to avoid an undefined shift of a signed type by 64 bits.
                     return Ok(i64::MIN);
                 };
 
-                // Guard against undefined behavior. INT64_MIN is the only allowed 9-byte encoding.
+                // Ensure defined behaviour (in Rust, left shift of `i64` by 64 bits
+                // is an arithmetic overflow that may panic or give an unspecified
+                // result). The above encoding of `i64::MIN` is the only allowed
+                // 9-byte encoding.
                 if vch.len() > 8 {
                     return Err(ScriptNumError::Overflow {
                         max_num_size: 8,
@@ -457,13 +448,11 @@ impl Add for ScriptNum {
     type Output = Self;
 
     fn add(self, other: Self) -> Self {
-        let rhs = other.0;
-        assert!(
-            rhs == 0
-                || (rhs > 0 && self.0 <= i64::MAX - rhs)
-                || (rhs < 0 && self.0 >= i64::MIN - rhs)
-        );
-        Self(self.0 + rhs)
+        Self(
+            self.0
+                .checked_add(other.0)
+                .expect("caller should avoid overflow"),
+        )
     }
 }
 
@@ -471,13 +460,11 @@ impl Sub for ScriptNum {
     type Output = Self;
 
     fn sub(self, other: Self) -> Self {
-        let rhs = other.0;
-        assert!(
-            rhs == 0
-                || (rhs > 0 && self.0 >= i64::MIN + rhs)
-                || (rhs < 0 && self.0 <= i64::MAX + rhs)
-        );
-        Self(self.0 - rhs)
+        Self(
+            self.0
+                .checked_sub(other.0)
+                .expect("caller should avoid underflow"),
+        )
     }
 }
 
@@ -507,7 +494,7 @@ impl Script<'_> {
             });
         }
 
-        // Empty the provided buffer, if any
+        // Empty the provided buffer.
         buffer.truncate(0);
 
         let leading_byte = Opcode::from(script[0]);

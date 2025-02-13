@@ -1095,6 +1095,7 @@ pub fn eval_script(
                             if sigs_count > keys_count {
                                 return set_error(ScriptError::SigCount);
                             };
+                            assert!(i <= 22);
                             i += 1;
                             let mut isig = i;
                             i += sigs_count;
@@ -1132,11 +1133,7 @@ pub fn eval_script(
                             }
 
                             // Clean up stack of actual arguments
-                            while {
-                                let res = i > 1;
-                                i -= 1;
-                                res
-                            } {
+                            for _ in 1..i {
                                 stack.pop()?;
                             }
 
@@ -1231,7 +1228,7 @@ impl SignatureChecker for CallbackTransactionSignatureChecker<'_> {
     }
 
     fn check_lock_time(&self, lock_time: &ScriptNum) -> bool {
-        // There are two times of nLockTime: lock-by-blockheight
+        // There are two kinds of nLockTime: lock-by-blockheight
         // and lock-by-blocktime, distinguished by whether
         // nLockTime < LOCKTIME_THRESHOLD.
         //
@@ -1317,8 +1314,7 @@ pub fn verify_script(
     // as the non-P2SH evaluation of a P2SH script will obviously not result in
     // a clean stack (the P2SH inputs remain).
     if flags.contains(VerificationFlags::CleanStack) {
-        // Disallow CLEANSTACK without P2SH, as otherwise a switch CLEANSTACK->P2SH+CLEANSTACK
-        // would be possible, which is not a softfork (and P2SH should be one).
+        // Disallow CLEANSTACK without P2SH, because Bitcoin did.
         assert!(flags.contains(VerificationFlags::P2SH));
         if stack.size() != 1 {
             return set_error(ScriptError::CleanStack);

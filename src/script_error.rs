@@ -1,6 +1,5 @@
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum ScriptNumError {
-    NegativeZero,
     NonMinimalEncoding,
     Overflow { max_num_size: usize, actual: usize },
 }
