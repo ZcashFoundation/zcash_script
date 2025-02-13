@@ -482,85 +482,50 @@ impl Neg for ScriptNum {
 pub struct Script<'a>(pub &'a [u8]);
 
 impl Script<'_> {
-    pub fn get_op(script: &mut &[u8]) -> Result<Opcode, ScriptError> {
-        Self::get_op2(script, &mut vec![])
+    pub fn get_op(script: &[u8]) -> Result<(Opcode, &[u8]), ScriptError> {
+        Self::get_op2(script).map(|(op, _, remainder)| (op, remainder))
     }
 
-    pub fn get_op2(script: &mut &[u8], buffer: &mut Vec<u8>) -> Result<Opcode, ScriptError> {
-        if script.is_empty() {
-            return Err(ScriptError::ReadError {
+    fn split_value(script: &[u8], needed_bytes: usize) -> Result<(&[u8], &[u8]), ScriptError> {
+        script
+            .split_at_checked(needed_bytes)
+            .ok_or(ScriptError::ReadError {
+                expected_bytes: needed_bytes,
+                available_bytes: script.len(),
+            })
+    }
+
+    /// First splits `size_size` bytes to determine the size of the value to read, then splits the
+    /// value.
+    fn split_tagged_value(script: &[u8], size_size: usize) -> Result<(&[u8], &[u8]), ScriptError> {
+        Script::split_value(script, size_size).and_then(|(bytes, script)| {
+            let mut size = 0;
+            for byte in bytes.iter().rev() {
+                size <<= 8;
+                size |= usize::from(*byte);
+            }
+            Script::split_value(script, size)
+        })
+    }
+
+    pub fn get_op2(script: &[u8]) -> Result<(Opcode, &[u8], &[u8]), ScriptError> {
+        match script.split_first() {
+            None => Err(ScriptError::ReadError {
                 expected_bytes: 1,
                 available_bytes: 0,
-            });
-        }
-
-        // Empty the provided buffer.
-        buffer.truncate(0);
-
-        let leading_byte = Opcode::from(script[0]);
-        *script = &script[1..];
-
-        Ok(match leading_byte {
-            Opcode::PushValue(pv) => match pv {
-                OP_PUSHDATA1 | OP_PUSHDATA2 | OP_PUSHDATA4 => {
-                    let read_le = |script: &mut &[u8], needed_bytes: usize| {
-                        if script.len() < needed_bytes {
-                            Err(ScriptError::ReadError {
-                                expected_bytes: needed_bytes,
-                                available_bytes: script.len(),
-                            })
-                        } else {
-                            let mut size = 0;
-                            for i in (0..needed_bytes).rev() {
-                                size <<= 8;
-                                size |= usize::from(script[i]);
-                            }
-                            *script = &script[needed_bytes..];
-                            Ok(size)
-                        }
-                    };
-
-                    let size = match pv {
-                        OP_PUSHDATA1 => read_le(script, 1),
-                        OP_PUSHDATA2 => read_le(script, 2),
-                        OP_PUSHDATA4 => read_le(script, 4),
-                        _ => unreachable!(),
-                    }?;
-
-                    if script.len() < size {
-                        return Err(ScriptError::ReadError {
-                            expected_bytes: size,
-                            available_bytes: script.len(),
-                        });
-                    }
-
-                    buffer.extend(&script[0..size]);
-                    *script = &script[size..];
-
-                    leading_byte
+            }),
+            Some((leading_byte, script)) => match Opcode::from(*leading_byte) {
+                op @ Opcode::PushValue(pv) => match pv {
+                    OP_PUSHDATA1 => Script::split_tagged_value(script, 1),
+                    OP_PUSHDATA2 => Script::split_tagged_value(script, 2),
+                    OP_PUSHDATA4 => Script::split_tagged_value(script, 4),
+                    PushdataBytelength(size_byte) => Script::split_value(script, size_byte.into()),
+                    _ => Ok((&[][..], script)),
                 }
-                // OP_0/OP_FALSE doesn't actually push a constant 0 onto the stack but
-                // pushes an empty array. (Thus we leave the buffer truncated to 0 length)
-                OP_0 => leading_byte,
-                PushdataBytelength(size_byte) => {
-                    let size = size_byte.into();
-
-                    if script.len() < size {
-                        return Err(ScriptError::ReadError {
-                            expected_bytes: size,
-                            available_bytes: script.len(),
-                        });
-                    }
-
-                    buffer.extend(&script[0..size]);
-                    *script = &script[size..];
-
-                    leading_byte
-                }
-                _ => leading_byte,
+                .map(|(value, script)| (op, value, script)),
+                op => Ok((op, &[], script)),
             },
-            _ => leading_byte,
-        })
+        }
     }
 
     /** Encode/decode small integers: */
@@ -582,10 +547,11 @@ impl Script<'_> {
         let mut pc = self.0;
         let mut last_opcode = Opcode::Operation(OP_INVALIDOPCODE);
         while !pc.is_empty() {
-            let opcode = match Self::get_op(&mut pc) {
+            let (opcode, new_pc) = match Self::get_op(pc) {
                 Ok(o) => o,
                 Err(_) => break,
             };
+            pc = new_pc;
             if let Opcode::Operation(op) = opcode {
                 if op == OP_CHECKSIG || op == OP_CHECKSIGVERIFY {
                     n += 1;
@@ -619,7 +585,8 @@ impl Script<'_> {
     pub fn is_push_only(&self) -> bool {
         let mut pc = self.0;
         while !pc.is_empty() {
-            if let Ok(Opcode::PushValue(_)) = Self::get_op(&mut pc) {
+            if let Ok((Opcode::PushValue(_), new_pc)) = Self::get_op(pc) {
+                pc = new_pc;
             } else {
                 return false;
             }

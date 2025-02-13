@@ -423,7 +423,7 @@ fn check_pub_key_encoding(vch_sig: &ValType, flags: VerificationFlags) -> Result
     set_success(())
 }
 
-fn check_minimal_push(data: &ValType, opcode: PushValue) -> bool {
+fn check_minimal_push(data: &[u8], opcode: PushValue) -> bool {
     if data.is_empty() {
         // Could have used OP_0.
         return opcode == OP_0;
@@ -463,7 +463,6 @@ pub fn eval_script(
     }
 
     let mut pc = script.0;
-    let mut vch_push_value = vec![];
 
     // We keep track of how many operations have executed so far to prevent
     // expensive-to-verify scripts
@@ -486,7 +485,8 @@ pub fn eval_script(
         //
         // Read instruction
         //
-        let opcode = Script::get_op2(&mut pc, &mut vch_push_value)?;
+        let (opcode, vch_push_value, new_pc) = Script::get_op2(pc)?;
+        pc = new_pc;
         if vch_push_value.len() > MAX_SCRIPT_ELEMENT_SIZE {
             return set_error(ScriptError::PushSize);
         }
@@ -508,10 +508,10 @@ pub fn eval_script(
                         }
                         _ => {
                             if pv <= OP_PUSHDATA4 {
-                                if require_minimal && !check_minimal_push(&vch_push_value, pv) {
+                                if require_minimal && !check_minimal_push(vch_push_value, pv) {
                                     return set_error(ScriptError::MinimalData);
                                 }
-                                stack.push_back(vch_push_value.clone());
+                                stack.push_back(vch_push_value.to_vec());
                             } else {
                                 return set_error(ScriptError::BadOpcode);
                             }
