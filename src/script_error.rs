@@ -7,8 +7,8 @@ pub enum ScriptNumError {
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[repr(i32)]
 pub enum ScriptError {
-    // Ok = 0,
-    UnknownError = 1,
+    Ok = 0, // Unused (except in converting the C++ error to Rust)
+    UnknownError,
     EvalFalse,
     OpReturn,
 

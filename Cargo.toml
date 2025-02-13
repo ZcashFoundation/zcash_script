@@ -70,10 +70,10 @@ test-dependencies = []
 bitflags = "2.8"
 enum_primitive = "0.1"
 ripemd = "0.1"
-secp256k1 = "0.29"
+secp256k1 = "0.30"
 sha-1 = "0.10"
 sha2 = "0.10"
-tracing = "0.1.39"
+tracing = "0.1.41"
 
 [build-dependencies]
 # The `bindgen` dependency should automatically upgrade to match the version used by zebra-state's `rocksdb` dependency in:
@@ -85,7 +85,7 @@ bindgen = ">= 0.64.0"
 # These dependencies are shared with a lot of other Zebra dependencies,
 # so they are configured to automatically upgrade to match Zebra.
 # But we try to use the latest versions here, to catch any bugs in `zcash_script`'s CI.
-cc = { version = "1.2.10", features = ["parallel"] }
+cc = { version = "1.2.11", features = ["parallel"] }
 
 [dev-dependencies]
 # These dependencies are shared with a lot of other Zebra dependencies.
@@ -94,7 +94,7 @@ cc = { version = "1.2.10", features = ["parallel"] }
 # Treat minor versions with a zero major version as compatible (cargo doesn't by default).
 hex = ">= 0.4.3"
 lazy_static = "1.5.0"
-proptest = "0.9"
+proptest = "1.6"
 
 [target.'cfg(linux)'.dev-dependencies]
 libfuzzer-sys = "0.4"
