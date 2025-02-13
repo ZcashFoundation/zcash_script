@@ -403,8 +403,6 @@ fn check_signature_encoding(
     if !is_valid_signature_encoding(vch_sig) {
         return set_error(ScriptError::SigDER);
     } else if flags.contains(VerificationFlags::LowS) && !is_low_der_signature(vch_sig)? {
-        // TODO: The C++ impl claims that `serror` is set here, but it isn’t, so this eventually
-        //       ends up as `UnknownError`, when it should probably be `SigHighS`.
         return set_error(ScriptError::SigHighS);
     } else if flags.contains(VerificationFlags::StrictEnc)
         && !is_defined_hashtype_signature(vch_sig)
