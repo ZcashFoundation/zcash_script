@@ -1,6 +1,5 @@
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum ScriptNumError {
-    NegativeZero,
     NonMinimalEncoding,
     Overflow { max_num_size: usize, actual: usize },
 }
@@ -44,7 +43,7 @@ pub enum ScriptError {
     SigDER,
     MinimalData,
     SigPushOnly,
-    SigHighS, // Unused (except in converting the C++ error to Rust)
+    SigHighS,
     SigNullDummy,
     PubKeyType,
     CleanStack,
