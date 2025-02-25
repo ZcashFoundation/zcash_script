@@ -156,7 +156,7 @@ pub enum Operation {
 
     // expansion
     OP_NOP1 = 0xb0,
-    OP_NOP2 = 0xb1,
+    OP_CHECKLOCKTIMEVERIFY = 0xb1,
     OP_NOP3 = 0xb2,
     OP_NOP4 = 0xb3,
     OP_NOP5 = 0xb4,
@@ -171,8 +171,6 @@ pub enum Operation {
 }
 
 use Operation::*;
-
-pub const OP_CHECKLOCKTIMEVERIFY: Operation = OP_NOP2;
 
 impl From<Opcode> for u8 {
     fn from(value: Opcode) -> Self {
@@ -292,15 +290,14 @@ impl ScriptNum {
             // If the most-significant-byte - excluding the sign bit - is zero
             // then we're not minimal. Note how this test also rejects the
             // negative-zero encoding, 0x80.
-            if (vch.last().unwrap_or_else(|| unreachable!()) & 0x7F) == 0 {
+            if (vch.last().expect("not empty") & 0x7F) == 0 {
                 // One exception: if there's more than one byte and the most
                 // significant bit of the second-most-significant-byte is set
-                // it would conflict with the sign bit. An example of this case
-                // is +-255, which encode to 0xff00 and 0xff80 respectively.
-                // (big-endian).
-                if vch.len() <= 1 {
-                    return Err(ScriptNumError::NegativeZero);
-                } else if (vch[vch.len() - 2] & 0x80) == 0 {
+                // then it would have conflicted with the sign bit if one
+                // fewer byte were used, and so such encodings are minimal.
+                // An example of this is +-255, which have minimal encodings
+                // [0xff, 0x00] and [0xff, 0x80] respectively.
+                if vch.len() <= 1 || (vch[vch.len() - 2] & 0x80) == 0 {
                     return Err(ScriptNumError::NonMinimalEncoding);
                 }
             }
@@ -328,42 +325,35 @@ impl ScriptNum {
         }
 
         if *value == i64::MIN {
-            // The code below is buggy, and produces the "wrong" result for
-            // INT64_MIN. To avoid undefined behavior while attempting to
-            // negate a value of INT64_MIN, we intentionally return the result
-            // that the code below would produce on an x86_64 system.
+            // The code below was based on buggy C++ code, that produced the
+            // "wrong" result for INT64_MIN. In that case we intentionally return
+            // the result that the C++ code as compiled for zcashd (with `-fwrapv`)
+            // originally produced on an x86_64 system.
             return vec![0, 0, 0, 0, 0, 0, 0, 128, 128];
         }
 
         let mut result = Vec::new();
         let neg = *value < 0;
-        let mut absvalue = value.abs();
+        let mut absvalue = value.unsigned_abs();
 
         while absvalue != 0 {
-            result.push(
-                (absvalue & 0xff)
-                    .try_into()
-                    .unwrap_or_else(|_| unreachable!()),
-            );
+            result.push((absvalue & 0xff).try_into().expect("fits in u8"));
             absvalue >>= 8;
         }
 
-        //    - If the most significant byte is >= 0x80 and the value is positive, push a
-        //    new zero-byte to make the significant byte < 0x80 again.
+        // - If the most significant byte is >= 0x80 and the value is positive, push a
+        //   new zero-byte to make the significant byte < 0x80 again.
+        // - If the most significant byte is >= 0x80 and the value is negative, push a
+        //   new 0x80 byte that will be popped off when converting to an integral.
+        // - If the most significant byte is < 0x80 and the value is negative, add 0x80
+        //   to it, since it will be subtracted and interpreted as a negative when
+        //   converting to an integral.
 
-        //    - If the most significant byte is >= 0x80 and the value is negative, push a
-        //    new 0x80 byte that will be popped off when converting to an integral.
-
-        //    - If the most significant byte is < 0x80 and the value is negative, add
-        //    0x80 to it, since it will be subtracted and interpreted as a negative when
-        //    converting to an integral.
-
-        if result.last().map_or(true, |last| last & 0x80 != 0) {
+        let result_back = result.last_mut().expect("not empty");
+        if *result_back & 0x80 != 0 {
             result.push(if neg { 0x80 } else { 0 });
         } else if neg {
-            if let Some(last) = result.last_mut() {
-                *last |= 0x80;
-            }
+            *result_back |= 0x80;
         }
 
         result
@@ -374,14 +364,15 @@ impl ScriptNum {
             None => Ok(0),
             Some(vch_back) => {
                 if *vch == vec![0, 0, 0, 0, 0, 0, 0, 128, 128] {
-                    // On an x86_64 system, the code below would actually decode the buggy
-                    // INT64_MIN encoding correctly. However in this case, it would be
-                    // performing left shifts of a signed type by 64, which has undefined
-                    // behavior.
+                    // Match the behaviour of the C++ code, which special-cased this
+                    // encoding to avoid an undefined shift of a signed type by 64 bits.
                     return Ok(i64::MIN);
                 };
 
-                // Guard against undefined behavior. INT64_MIN is the only allowed 9-byte encoding.
+                // Ensure defined behaviour (in Rust, left shift of `i64` by 64 bits
+                // is an arithmetic overflow that may panic or give an unspecified
+                // result). The above encoding of `i64::MIN` is the only allowed
+                // 9-byte encoding.
                 if vch.len() > 8 {
                     return Err(ScriptNumError::Overflow {
                         max_num_size: 8,
@@ -457,13 +448,11 @@ impl Add for ScriptNum {
     type Output = Self;
 
     fn add(self, other: Self) -> Self {
-        let rhs = other.0;
-        assert!(
-            rhs == 0
-                || (rhs > 0 && self.0 <= i64::MAX - rhs)
-                || (rhs < 0 && self.0 >= i64::MIN - rhs)
-        );
-        Self(self.0 + rhs)
+        Self(
+            self.0
+                .checked_add(other.0)
+                .expect("caller should avoid overflow"),
+        )
     }
 }
 
@@ -471,13 +460,11 @@ impl Sub for ScriptNum {
     type Output = Self;
 
     fn sub(self, other: Self) -> Self {
-        let rhs = other.0;
-        assert!(
-            rhs == 0
-                || (rhs > 0 && self.0 >= i64::MIN + rhs)
-                || (rhs < 0 && self.0 <= i64::MAX + rhs)
-        );
-        Self(self.0 - rhs)
+        Self(
+            self.0
+                .checked_sub(other.0)
+                .expect("caller should avoid underflow"),
+        )
     }
 }
 
@@ -495,85 +482,50 @@ impl Neg for ScriptNum {
 pub struct Script<'a>(pub &'a [u8]);
 
 impl Script<'_> {
-    pub fn get_op(script: &mut &[u8]) -> Result<Opcode, ScriptError> {
-        Self::get_op2(script, &mut vec![])
+    pub fn get_op(script: &[u8]) -> Result<(Opcode, &[u8]), ScriptError> {
+        Self::get_op2(script).map(|(op, _, remainder)| (op, remainder))
     }
 
-    pub fn get_op2(script: &mut &[u8], buffer: &mut Vec<u8>) -> Result<Opcode, ScriptError> {
-        if script.is_empty() {
-            return Err(ScriptError::ReadError {
+    fn split_value(script: &[u8], needed_bytes: usize) -> Result<(&[u8], &[u8]), ScriptError> {
+        script
+            .split_at_checked(needed_bytes)
+            .ok_or(ScriptError::ReadError {
+                expected_bytes: needed_bytes,
+                available_bytes: script.len(),
+            })
+    }
+
+    /// First splits `size_size` bytes to determine the size of the value to read, then splits the
+    /// value.
+    fn split_tagged_value(script: &[u8], size_size: usize) -> Result<(&[u8], &[u8]), ScriptError> {
+        Script::split_value(script, size_size).and_then(|(bytes, script)| {
+            let mut size = 0;
+            for byte in bytes.iter().rev() {
+                size <<= 8;
+                size |= usize::from(*byte);
+            }
+            Script::split_value(script, size)
+        })
+    }
+
+    pub fn get_op2(script: &[u8]) -> Result<(Opcode, &[u8], &[u8]), ScriptError> {
+        match script.split_first() {
+            None => Err(ScriptError::ReadError {
                 expected_bytes: 1,
                 available_bytes: 0,
-            });
-        }
-
-        // Empty the provided buffer, if any
-        buffer.truncate(0);
-
-        let leading_byte = Opcode::from(script[0]);
-        *script = &script[1..];
-
-        Ok(match leading_byte {
-            Opcode::PushValue(pv) => match pv {
-                OP_PUSHDATA1 | OP_PUSHDATA2 | OP_PUSHDATA4 => {
-                    let read_le = |script: &mut &[u8], needed_bytes: usize| {
-                        if script.len() < needed_bytes {
-                            Err(ScriptError::ReadError {
-                                expected_bytes: needed_bytes,
-                                available_bytes: script.len(),
-                            })
-                        } else {
-                            let mut size = 0;
-                            for i in (0..needed_bytes).rev() {
-                                size <<= 8;
-                                size |= usize::from(script[i]);
-                            }
-                            *script = &script[needed_bytes..];
-                            Ok(size)
-                        }
-                    };
-
-                    let size = match pv {
-                        OP_PUSHDATA1 => read_le(script, 1),
-                        OP_PUSHDATA2 => read_le(script, 2),
-                        OP_PUSHDATA4 => read_le(script, 4),
-                        _ => unreachable!(),
-                    }?;
-
-                    if script.len() < size {
-                        return Err(ScriptError::ReadError {
-                            expected_bytes: size,
-                            available_bytes: script.len(),
-                        });
-                    }
-
-                    buffer.extend(&script[0..size]);
-                    *script = &script[size..];
-
-                    leading_byte
+            }),
+            Some((leading_byte, script)) => match Opcode::from(*leading_byte) {
+                op @ Opcode::PushValue(pv) => match pv {
+                    OP_PUSHDATA1 => Script::split_tagged_value(script, 1),
+                    OP_PUSHDATA2 => Script::split_tagged_value(script, 2),
+                    OP_PUSHDATA4 => Script::split_tagged_value(script, 4),
+                    PushdataBytelength(size_byte) => Script::split_value(script, size_byte.into()),
+                    _ => Ok((&[][..], script)),
                 }
-                // OP_0/OP_FALSE doesn't actually push a constant 0 onto the stack but
-                // pushes an empty array. (Thus we leave the buffer truncated to 0 length)
-                OP_0 => leading_byte,
-                PushdataBytelength(size_byte) => {
-                    let size = size_byte.into();
-
-                    if script.len() < size {
-                        return Err(ScriptError::ReadError {
-                            expected_bytes: size,
-                            available_bytes: script.len(),
-                        });
-                    }
-
-                    buffer.extend(&script[0..size]);
-                    *script = &script[size..];
-
-                    leading_byte
-                }
-                _ => leading_byte,
+                .map(|(value, script)| (op, value, script)),
+                op => Ok((op, &[], script)),
             },
-            _ => leading_byte,
-        })
+        }
     }
 
     /** Encode/decode small integers: */
@@ -595,10 +547,12 @@ impl Script<'_> {
         let mut pc = self.0;
         let mut last_opcode = Opcode::Operation(OP_INVALIDOPCODE);
         while !pc.is_empty() {
-            let opcode = match Self::get_op(&mut pc) {
+            let (opcode, new_pc) = match Self::get_op(pc) {
                 Ok(o) => o,
+                // Stop counting when we get to an invalid opcode.
                 Err(_) => break,
             };
+            pc = new_pc;
             if let Opcode::Operation(op) = opcode {
                 if op == OP_CHECKSIG || op == OP_CHECKSIGVERIFY {
                     n += 1;
@@ -632,7 +586,8 @@ impl Script<'_> {
     pub fn is_push_only(&self) -> bool {
         let mut pc = self.0;
         while !pc.is_empty() {
-            if let Ok(Opcode::PushValue(_)) = Self::get_op(&mut pc) {
+            if let Ok((Opcode::PushValue(_), new_pc)) = Self::get_op(pc) {
+                pc = new_pc;
             } else {
                 return false;
             }
