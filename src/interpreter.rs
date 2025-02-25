@@ -859,7 +859,7 @@ pub fn eval_script(
                                 return set_error(ScriptError::InvalidStackOperation);
                             }
                             let bn = ScriptNum::try_from(stack.top(-1)?.len())
-                                .map_err(|_| ScriptError::PushSize)?;
+                                .expect("stack element size fits in ScriptNum");
                             stack.push_back(bn.getvch())
                         }
 
@@ -1073,6 +1073,7 @@ pub fn eval_script(
                             if keys_count > 20 {
                                 return set_error(ScriptError::PubKeyCount);
                             };
+                            assert!(op_count <= 201);
                             op_count += keys_count;
                             if op_count > 201 {
                                 return set_error(ScriptError::OpCount);

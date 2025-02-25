@@ -288,8 +288,7 @@ impl ZcashScript for CxxRustComparisonInterpreter {
         );
         if rust.map_err(normalize_error) != cxx {
             // probably want to distinguish between
-            // - C++ succeeding when Rust fails (bad),
-            // - Rust succeeding when C++ fails (worse), and
+            // - one succeeding when the other fails (bad), and
             // - differing error codes (maybe not bad).
             warn!(
                 "The Rust Zcash Script interpreter had a different result ({:?}) from the C++ one ({:?}).",
