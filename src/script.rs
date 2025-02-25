@@ -549,6 +549,7 @@ impl Script<'_> {
         while !pc.is_empty() {
             let (opcode, new_pc) = match Self::get_op(pc) {
                 Ok(o) => o,
+                // Stop counting when we get to an invalid opcode.
                 Err(_) => break,
             };
             pc = new_pc;

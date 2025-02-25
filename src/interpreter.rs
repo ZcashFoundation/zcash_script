@@ -372,9 +372,9 @@ fn is_low_der_signature(vch_sig: &ValType) -> Result<bool, ScriptError> {
     // https://bitcoin.stackexchange.com/a/12556:
     //     Also note that inside transaction signatures, an extra hashtype byte
     //     follows the actual signature data.
-    let (_, vch_sig_copy) = vch_sig.split_last().unwrap_or_else(|| {
-        unreachable!("`is_valid_signature_encoding` checks that the length is at least 9.")
-    });
+    let (_, vch_sig_copy) = vch_sig
+        .split_last()
+        .expect("`is_valid_signature_encoding` checks that the length is at least 9");
     // If the S value is above the order of the curve divided by two, its
     // complement modulo the order could have been used instead, which is
     // one byte shorter when encoded correctly.
