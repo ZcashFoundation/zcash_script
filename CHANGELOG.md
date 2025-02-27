@@ -43,6 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `signature::Decoded` operations `from_bytes`, `sig`, and `sighash`
+- `pv::` containing all `PushValue` opcodes
+- `op::` containing all `Opcode`s (including `PushValues`)
 
 ## [0.3.2](https://github.com/ZcashFoundation/zcash_script/compare/v0.3.1...v0.3.2) - 2025-06-24
 
