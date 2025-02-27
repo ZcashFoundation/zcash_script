@@ -123,9 +123,10 @@ pub(crate) mod bad {
         Opcode::{self, *},
         Operation::*,
         PushValue::*,
+        SmallValue::*,
     };
 
-    pub const RESERVED: Opcode = PushValue(OP_RESERVED);
+    pub const RESERVED: Opcode = PushValue(SmallValue(OP_RESERVED));
     pub const VERIF: Opcode = Operation(Control(OP_VERIF));
     pub const VERNOTIF: Opcode = Operation(Control(OP_VERNOTIF));
     pub const VER: Opcode = Operation(Normal(OP_VER));
