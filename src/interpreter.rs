@@ -444,17 +444,15 @@ fn check_minimal_push(data: &[u8], opcode: PushValue) -> bool {
     true
 }
 
+const VCH_FALSE: ValType = Vec::new();
+const VCH_TRUE: [u8; 1] = [1];
+
 pub fn eval_script(
     stack: &mut Stack<Vec<u8>>,
     script: &Script,
     flags: VerificationFlags,
     checker: &dyn SignatureChecker,
 ) -> Result<(), ScriptError> {
-    let bn_zero = ScriptNum::from(0);
-    let bn_one = ScriptNum::from(1);
-    let vch_false: ValType = vec![];
-    let vch_true: ValType = vec![1];
-
     // There's a limit on how large scripts can be.
     if script.0.len() > MAX_SCRIPT_SIZE {
         return set_error(ScriptError::ScriptSize);
@@ -591,7 +589,7 @@ pub fn eval_script(
                                 // In the rare event that the argument may be < 0 due to
                                 // some arithmetic being done first, you can always use
                                 // 0 MAX CHECKLOCKTIMEVERIFY.
-                                if lock_time < bn_zero {
+                                if lock_time < ScriptNum::ZERO {
                                     return set_error(ScriptError::NegativeLockTime);
                                 }
 
@@ -876,11 +874,7 @@ pub fn eval_script(
                             let equal = vch1 == vch2;
                             stack.pop()?;
                             stack.pop()?;
-                            stack.push_back(if equal {
-                                vch_true.clone()
-                            } else {
-                                vch_false.clone()
-                            });
+                            stack.push_back(if equal { VCH_TRUE.to_vec() } else { VCH_FALSE });
                             if op == OP_EQUALVERIFY {
                                 if equal {
                                     stack.pop()?;
@@ -900,16 +894,16 @@ pub fn eval_script(
                             }
                             let mut bn = ScriptNum::new(stack.top(-1)?, require_minimal, None)?;
                             match op {
-                                OP_1ADD => bn = bn + bn_one,
-                                OP_1SUB => bn = bn - bn_one,
+                                OP_1ADD => bn = bn + ScriptNum::ONE,
+                                OP_1SUB => bn = bn - ScriptNum::ONE,
                                 OP_NEGATE => bn = -bn,
                                 OP_ABS => {
-                                    if bn < bn_zero {
+                                    if bn < ScriptNum::ZERO {
                                         bn = -bn
                                     }
                                 }
-                                OP_NOT => bn = ScriptNum::from(bn == bn_zero),
-                                OP_0NOTEQUAL => bn = ScriptNum::from(bn != bn_zero),
+                                OP_NOT => bn = ScriptNum::from(bn == ScriptNum::ZERO),
+                                OP_0NOTEQUAL => bn = ScriptNum::from(bn != ScriptNum::ZERO),
                                 _ => panic!("invalid opcode"),
                             }
                             stack.pop()?;
@@ -940,8 +934,12 @@ pub fn eval_script(
 
                                 OP_SUB => bn1 - bn2,
 
-                                OP_BOOLAND => ScriptNum::from(bn1 != bn_zero && bn2 != bn_zero),
-                                OP_BOOLOR => ScriptNum::from(bn1 != bn_zero || bn2 != bn_zero),
+                                OP_BOOLAND => ScriptNum::from(
+                                    bn1 != ScriptNum::ZERO && bn2 != ScriptNum::ZERO,
+                                ),
+                                OP_BOOLOR => ScriptNum::from(
+                                    bn1 != ScriptNum::ZERO || bn2 != ScriptNum::ZERO,
+                                ),
                                 OP_NUMEQUAL => ScriptNum::from(bn1 == bn2),
                                 OP_NUMEQUALVERIFY => ScriptNum::from(bn1 == bn2),
                                 OP_NUMNOTEQUAL => ScriptNum::from(bn1 != bn2),
@@ -990,11 +988,7 @@ pub fn eval_script(
                             stack.pop()?;
                             stack.pop()?;
                             stack.pop()?;
-                            stack.push_back(if value {
-                                vch_true.clone()
-                            } else {
-                                vch_false.clone()
-                            })
+                            stack.push_back(if value { VCH_TRUE.to_vec() } else { VCH_FALSE })
                         }
 
                         //
@@ -1040,9 +1034,9 @@ pub fn eval_script(
                             stack.pop()?;
                             stack.pop()?;
                             stack.push_back(if success {
-                                vch_true.clone()
+                                VCH_TRUE.to_vec()
                             } else {
-                                vch_false.clone()
+                                VCH_FALSE
                             });
                             if op == OP_CHECKSIGVERIFY {
                                 if success {
@@ -1153,9 +1147,9 @@ pub fn eval_script(
                             stack.pop()?;
 
                             stack.push_back(if success {
-                                vch_true.clone()
+                                VCH_TRUE.to_vec()
                             } else {
-                                vch_false.clone()
+                                VCH_FALSE
                             });
 
                             if op == OP_CHECKMULTISIGVERIFY {
