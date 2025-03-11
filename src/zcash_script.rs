@@ -41,9 +41,7 @@ pub trait ZcashScript {
     ///
     ///  Note that script verification failure is indicated by `Err(Error::Ok)`.
     fn verify_callback(
-        sighash_callback: SighashCalculator,
-        lock_time: u32,
-        is_final: bool,
+        &self,
         script_pub_key: &[u8],
         script_sig: &[u8],
         flags: VerificationFlags,
@@ -51,37 +49,32 @@ pub trait ZcashScript {
 
     /// Returns the number of transparent signature operations in the input or
     /// output script pointed to by script.
-    fn legacy_sigop_count_script(script: &[u8]) -> Result<u32, Error>;
+    fn legacy_sigop_count_script(&self, script: &[u8]) -> Result<u32, Error>;
 }
 
-/// A tag to indicate that the Rust implementation of zcash_script should be used.
-pub enum RustInterpreter {}
-
-impl RustInterpreter {
-    pub fn verify<F>(
-        script_pub_key: &[u8],
-        script_sig: &[u8],
-        flags: VerificationFlags,
-        payload: &mut F::Payload,
-        stepper: &F,
-    ) -> Result<(), Error>
-    where
-        F: StepFn,
-    {
-        verify_script(
-            &Script(script_sig),
-            &Script(script_pub_key),
-            flags,
-            payload,
-            stepper,
-        )
-        .map_err(Error::Ok)
-    }
+pub fn stepwise_verify<F>(
+    script_pub_key: &[u8],
+    script_sig: &[u8],
+    flags: VerificationFlags,
+    payload: &mut F::Payload,
+    stepper: &F,
+) -> Result<(), Error>
+where
+    F: StepFn,
+{
+    verify_script(
+        &Script(script_sig),
+        &Script(script_pub_key),
+        flags,
+        payload,
+        stepper,
+    )
+    .map_err(Error::Ok)
 }
 
 /// A payload for comparing the results of two steppers.
-#[derive(Debug, PartialEq, Eq)]
-pub struct StepResults<'a, T, U> {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StepResults<T, U> {
     /// This contains the step-wise states of the steppers as long as they were identical. Its
     /// `head` contains the initial state and its `tail` has a 1:1 correspondence to the opcodes
     /// (not to the bytes).
@@ -91,13 +84,13 @@ pub struct StepResults<'a, T, U> {
     /// stepper’s outcome at the point at which they diverged.
     pub diverging_result: Option<(Result<State, ScriptError>, Result<State, ScriptError>)>,
     /// The final payload of the first stepper.
-    pub payload_l: &'a mut T,
+    pub payload_l: T,
     /// The final payload of the second stepper.
-    pub payload_r: &'a mut U,
+    pub payload_r: U,
 }
 
-impl<'a, T, U> StepResults<'a, T, U> {
-    pub fn initial(payload_l: &'a mut T, payload_r: &'a mut U) -> Self {
+impl<T, U> StepResults<T, U> {
+    pub fn initial(payload_l: T, payload_r: U) -> Self {
         StepResults {
             identical_states: vec![],
             diverging_result: None,
@@ -119,20 +112,22 @@ pub struct ComparisonStepEvaluator<'a, T, U> {
     pub eval_step_r: &'a dyn StepFn<Payload = U>,
 }
 
-impl<'a, T, U> StepFn for ComparisonStepEvaluator<'a, T, U> {
-    type Payload = StepResults<'a, T, U>;
+impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
+    type Payload = StepResults<T, U>;
     fn call<'b>(
         &self,
         pc: &'b [u8],
         script: &Script,
         state: &mut State,
-        payload: &mut StepResults<'a, T, U>,
+        payload: &mut StepResults<T, U>,
     ) -> Result<&'b [u8], ScriptError> {
         let mut right_state = (*state).clone();
-        let left = self.eval_step_l.call(pc, script, state, payload.payload_l);
+        let left = self
+            .eval_step_l
+            .call(pc, script, state, &mut payload.payload_l);
         let right = self
             .eval_step_r
-            .call(pc, script, &mut right_state, payload.payload_r);
+            .call(pc, script, &mut right_state, &mut payload.payload_r);
 
         match (left, right) {
             (Ok(_), Ok(_)) => {
@@ -163,83 +158,53 @@ impl<'a, T, U> StepFn for ComparisonStepEvaluator<'a, T, U> {
     }
 }
 
-impl ZcashScript for RustInterpreter {
+pub struct StepwiseInterpreter<F>
+where
+    F: StepFn,
+{
+    pub initial_payload: F::Payload,
+    pub stepper: F,
+}
+
+pub fn rust_interpreter<C: SignatureChecker + Copy>(
+    flags: VerificationFlags,
+    checker: C,
+) -> StepwiseInterpreter<DefaultStepEvaluator<C>> {
+    StepwiseInterpreter {
+        initial_payload: (),
+        stepper: DefaultStepEvaluator { flags, checker },
+    }
+}
+
+impl<F: StepFn> ZcashScript for StepwiseInterpreter<F> {
     /// Returns the number of transparent signature operations in the
     /// transparent inputs and outputs of this transaction.
-    fn legacy_sigop_count_script(script: &[u8]) -> Result<u32, Error> {
+    fn legacy_sigop_count_script(&self, script: &[u8]) -> Result<u32, Error> {
         let cscript = Script(script);
         Ok(cscript.get_sig_op_count(false))
     }
 
     fn verify_callback(
-        sighash: SighashCalculator,
-        lock_time: u32,
-        is_final: bool,
+        &self,
         script_pub_key: &[u8],
         script_sig: &[u8],
         flags: VerificationFlags,
     ) -> Result<(), Error> {
-        let lock_time_num = lock_time.into();
-        let checker = CallbackTransactionSignatureChecker {
-            sighash,
-            lock_time: &lock_time_num,
-            is_final,
-        };
-        let stepper = DefaultStepEvaluator { flags, checker };
-        Self::verify(script_pub_key, script_sig, flags, &mut (), &stepper)
-    }
-}
-
-#[cfg(any(test, feature = "test-dependencies"))]
-pub mod testing {
-    use super::*;
-
-    /// Ensures that flags represent a supported state. This avoids crashes in the C++ code, which
-    /// break various tests.
-    pub fn repair_flags(flags: VerificationFlags) -> VerificationFlags {
-        // TODO: The C++ implementation fails an assert (interpreter.cpp:1097) if `CleanStack` is
-        //       set without `P2SH`.
-        if flags.contains(VerificationFlags::CleanStack) {
-            flags & VerificationFlags::P2SH
-        } else {
-            flags
-        }
-    }
-
-    /// A `usize` one larger than the longest allowed script, for testing bounds.
-    pub const OVERFLOW_SCRIPT_SIZE: usize = MAX_SCRIPT_SIZE + 1;
-
-    /// This is the same as `DefaultStepEvaluator`, except that it skips `OP_EQUAL`, allowing us to
-    /// test comparison failures.
-    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-    pub struct BrokenStepEvaluator<T>(pub T);
-
-    impl<T: StepFn> StepFn for BrokenStepEvaluator<T> {
-        type Payload = T::Payload;
-        fn call<'a>(
-            &self,
-            pc: &'a [u8],
-            script: &Script,
-            state: &mut State,
-            payload: &mut T::Payload,
-        ) -> Result<&'a [u8], ScriptError> {
-            self.0.call(
-                if pc[0] == Operation::OP_EQUAL.into() {
-                    &pc[1..]
-                } else {
-                    pc
-                },
-                script,
-                state,
-                payload,
-            )
-        }
+        let mut payload = self.initial_payload.clone();
+        stepwise_verify(
+            script_pub_key,
+            script_sig,
+            flags,
+            &mut payload,
+            &self.stepper,
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{testing::*, *};
+    use super::*;
+    use crate::testing::*;
     use hex::FromHex;
     use proptest::prelude::*;
 
@@ -281,15 +246,13 @@ mod tests {
             lock_time: &n_lock_time.into(),
             is_final,
         };
-        let mut payload_l = ();
-        let mut payload_r = ();
         let rust_stepper = DefaultStepEvaluator { flags, checker };
         let stepper = ComparisonStepEvaluator {
             eval_step_l: &rust_stepper,
             eval_step_r: &rust_stepper,
         };
-        let mut res = StepResults::initial(&mut payload_l, &mut payload_r);
-        let ret = RustInterpreter::verify(script_pub_key, script_sig, flags, &mut res, &stepper);
+        let mut res = StepResults::initial((), ());
+        let ret = stepwise_verify(script_pub_key, script_sig, flags, &mut res, &stepper);
 
         if res.diverging_result != None {
             panic!("invalid result: {:?}", res);
@@ -310,16 +273,14 @@ mod tests {
             lock_time: &n_lock_time.into(),
             is_final,
         };
-        let mut payload_l = ();
-        let mut payload_r = ();
         let rust_stepper = DefaultStepEvaluator { flags, checker };
         let broken_stepper = BrokenStepEvaluator(rust_stepper);
         let stepper = ComparisonStepEvaluator {
             eval_step_l: &rust_stepper,
             eval_step_r: &broken_stepper,
         };
-        let mut res = StepResults::initial(&mut payload_l, &mut payload_r);
-        let ret = RustInterpreter::verify(script_pub_key, script_sig, flags, &mut res, &stepper);
+        let mut res = StepResults::initial((), ());
+        let ret = stepwise_verify(script_pub_key, script_sig, flags, &mut res, &stepper);
 
         // The final return value is from whichever stepper failed.
         assert_eq!(
@@ -377,15 +338,13 @@ mod tests {
             lock_time: &n_lock_time.into(),
             is_final,
         };
-        let mut payload_l = ();
-        let mut payload_r = ();
         let rust_stepper = DefaultStepEvaluator { flags, checker };
         let stepper = ComparisonStepEvaluator {
             eval_step_l: &rust_stepper,
             eval_step_r: &rust_stepper,
         };
-        let mut res = StepResults::initial(&mut payload_l, &mut payload_r);
-        let ret = RustInterpreter::verify(script_pub_key, script_sig, flags, &mut res, &stepper);
+        let mut res = StepResults::initial((), ());
+        let ret = stepwise_verify(script_pub_key, script_sig, flags, &mut res, &stepper);
 
         if res.diverging_result != None {
             panic!("mismatched result: {:?}", res);
@@ -406,15 +365,13 @@ mod tests {
             lock_time: &n_lock_time.into(),
             is_final,
         };
-        let mut payload_l = ();
-        let mut payload_r = ();
         let rust_stepper = DefaultStepEvaluator { flags, checker };
         let stepper = ComparisonStepEvaluator {
             eval_step_l: &rust_stepper,
             eval_step_r: &rust_stepper,
         };
-        let mut res = StepResults::initial(&mut payload_l, &mut payload_r);
-        let ret = RustInterpreter::verify(script_pub_key, script_sig, flags, &mut res, &stepper);
+        let mut res = StepResults::initial((), ());
+        let ret = stepwise_verify(script_pub_key, script_sig, flags, &mut res, &stepper);
 
         if res.diverging_result != None {
             panic!("mismatched result: {:?}", res);
@@ -443,15 +400,13 @@ mod tests {
                 is_final,
             };
             let flags = repair_flags(VerificationFlags::from_bits_truncate(flags));
-            let mut payload_l = ();
-            let mut payload_r = ();
             let rust_stepper = DefaultStepEvaluator { flags, checker };
             let stepper = ComparisonStepEvaluator {
             eval_step_l: &rust_stepper,
             eval_step_r: &rust_stepper,
         };
-            let mut res = StepResults::initial(&mut payload_l, &mut payload_r);
-            let _ = RustInterpreter::verify(&pub_key[..], &sig[..], flags, &mut res, &stepper);
+            let mut res = StepResults::initial((), ());
+            let _ = stepwise_verify(&pub_key[..], &sig[..], flags, &mut res, &stepper);
 
             if res.diverging_result != None {
                 panic!("mismatched result: {:?}", res);
@@ -476,15 +431,13 @@ mod tests {
                 is_final,
             };
             let flags = repair_flags(VerificationFlags::from_bits_truncate(flags)) | VerificationFlags::SigPushOnly;
-            let mut payload_l = ();
-            let mut payload_r = ();
             let rust_stepper = DefaultStepEvaluator { flags, checker };
             let stepper = ComparisonStepEvaluator {
             eval_step_l: &rust_stepper,
             eval_step_r: &rust_stepper,
         };
-            let mut res = StepResults::initial(&mut payload_l, &mut payload_r);
-            let _ = RustInterpreter::verify(&pub_key[..], &sig[..], flags, &mut res, &stepper);
+            let mut res = StepResults::initial((), ());
+            let _ = stepwise_verify(&pub_key[..], &sig[..], flags, &mut res, &stepper);
 
             if res.diverging_result != None {
                 panic!("mismatched result: {:?}", res);

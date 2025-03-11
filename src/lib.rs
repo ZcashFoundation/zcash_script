@@ -19,11 +19,18 @@ use std::os::raw::{c_int, c_uint, c_void};
 use tracing::warn;
 
 pub use cxx::*;
-pub use interpreter::{HashType, SighashCalculator, SignedOutputs, VerificationFlags};
+pub use interpreter::{
+    CallbackTransactionSignatureChecker, HashType, SighashCalculator, SignedOutputs,
+    VerificationFlags,
+};
 pub use zcash_script::*;
 
 /// A tag to indicate that the C++ implementation of zcash_script should be used.
-pub enum CxxInterpreter {}
+pub struct CxxInterpreter<'a> {
+    pub sighash: SighashCalculator<'a>,
+    pub lock_time: u32,
+    pub is_final: bool,
+}
 
 impl From<cxx::ScriptError> for Error {
     #[allow(non_upper_case_globals)]
@@ -143,11 +150,9 @@ extern "C" fn sighash_callback(
 }
 
 /// This steals a bit of the wrapper code from zebra_script, to provide the API that they want.
-impl ZcashScript for CxxInterpreter {
+impl<'a> ZcashScript for CxxInterpreter<'a> {
     fn verify_callback(
-        sighash: SighashCalculator,
-        lock_time: u32,
-        is_final: bool,
+        &self,
         script_pub_key: &[u8],
         signature_script: &[u8],
         flags: VerificationFlags,
@@ -157,10 +162,10 @@ impl ZcashScript for CxxInterpreter {
         // SAFETY: The `script` fields are created from a valid Rust `slice`.
         let ret = unsafe {
             zcash_script_verify_callback(
-                (&sighash as *const SighashCalculator) as *const c_void,
+                (&self.sighash as *const SighashCalculator) as *const c_void,
                 Some(sighash_callback),
-                lock_time.into(),
-                if is_final { 1 } else { 0 },
+                self.lock_time.into(),
+                if self.is_final { 1 } else { 0 },
                 script_pub_key.as_ptr(),
                 script_pub_key
                     .len()
@@ -185,7 +190,7 @@ impl ZcashScript for CxxInterpreter {
 
     /// Returns the number of transparent signature operations in the
     /// transparent inputs and outputs of this transaction.
-    fn legacy_sigop_count_script(script: &[u8]) -> Result<u32, Error> {
+    fn legacy_sigop_count_script(&self, script: &[u8]) -> Result<u32, Error> {
         script
             .len()
             .try_into()
@@ -200,11 +205,13 @@ impl ZcashScript for CxxInterpreter {
 /// both results. This is more useful for testing than the impl that logs a warning if the results
 /// differ and always returns the C++ result.
 fn check_legacy_sigop_count_script<T: ZcashScript, U: ZcashScript>(
+    first: &T,
+    second: &U,
     script: &[u8],
 ) -> (Result<u32, Error>, Result<u32, Error>) {
     (
-        T::legacy_sigop_count_script(script),
-        U::legacy_sigop_count_script(script),
+        first.legacy_sigop_count_script(script),
+        second.legacy_sigop_count_script(script),
     )
 }
 
@@ -212,30 +219,15 @@ fn check_legacy_sigop_count_script<T: ZcashScript, U: ZcashScript>(
 /// both results. This is more useful for testing than the impl that logs a warning if the results
 /// differ and always returns the `T` result.
 pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
-    sighash: SighashCalculator,
-    lock_time: u32,
-    is_final: bool,
+    first: &T,
+    second: &U,
     script_pub_key: &[u8],
     script_sig: &[u8],
     flags: VerificationFlags,
 ) -> (Result<(), Error>, Result<(), Error>) {
     (
-        T::verify_callback(
-            sighash,
-            lock_time,
-            is_final,
-            script_pub_key,
-            script_sig,
-            flags,
-        ),
-        U::verify_callback(
-            sighash,
-            lock_time,
-            is_final,
-            script_pub_key,
-            script_sig,
-            flags,
-        ),
+        first.verify_callback(script_pub_key, script_sig, flags),
+        second.verify_callback(script_pub_key, script_sig, flags),
     )
 }
 
@@ -253,14 +245,16 @@ pub fn normalize_error(err: Error) -> Error {
 
 /// A tag to indicate that both the C++ and Rust implementations of zcash_script should be used,
 /// with their results compared.
-pub enum CxxRustComparisonInterpreter {}
+pub struct ComparisonInterpreter<T, U> {
+    first: T,
+    second: U,
+}
 
 /// This implementation is functionally equivalent to the `T` impl, but it also runs a second (`U`)
 /// impl and logs a warning if they disagree.
-impl ZcashScript for CxxRustComparisonInterpreter {
-    fn legacy_sigop_count_script(script: &[u8]) -> Result<u32, Error> {
-        let (cxx, rust) =
-            check_legacy_sigop_count_script::<CxxInterpreter, RustInterpreter>(script);
+impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U> {
+    fn legacy_sigop_count_script(&self, script: &[u8]) -> Result<u32, Error> {
+        let (cxx, rust) = check_legacy_sigop_count_script(&self.first, &self.second, script);
         if rust != cxx {
             warn!(
                 "The Rust Zcash Script interpreter had a different sigop count ({:?}) from the C++ one ({:?}).",
@@ -271,21 +265,13 @@ impl ZcashScript for CxxRustComparisonInterpreter {
     }
 
     fn verify_callback(
-        sighash: SighashCalculator,
-        lock_time: u32,
-        is_final: bool,
+        &self,
         script_pub_key: &[u8],
         script_sig: &[u8],
         flags: VerificationFlags,
     ) -> Result<(), Error> {
-        let (cxx, rust) = check_verify_callback::<CxxInterpreter, RustInterpreter>(
-            sighash,
-            lock_time,
-            is_final,
-            script_pub_key,
-            script_sig,
-            flags,
-        );
+        let (cxx, rust) =
+            check_verify_callback(&self.first, &self.second, script_pub_key, script_sig, flags);
         if rust.map_err(normalize_error) != cxx {
             // probably want to distinguish between
             // - one succeeding when the other fails (bad), and
@@ -302,6 +288,10 @@ impl ZcashScript for CxxRustComparisonInterpreter {
 #[cfg(any(test, feature = "test-dependencies"))]
 pub mod testing {
     use super::*;
+    use crate::{
+        interpreter::{State, StepFn},
+        script::{Operation, Script},
+    };
 
     /// Ensures that flags represent a supported state. This avoids crashes in the C++ code, which
     /// break various tests.
@@ -317,6 +307,33 @@ pub mod testing {
 
     /// A `usize` one larger than the longest allowed script, for testing bounds.
     pub const OVERFLOW_SCRIPT_SIZE: usize = script::MAX_SCRIPT_SIZE + 1;
+
+    /// This is the same as `DefaultStepEvaluator`, except that it skips `OP_EQUAL`, allowing us to
+    /// test comparison failures.
+    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+    pub struct BrokenStepEvaluator<T>(pub T);
+
+    impl<T: StepFn> StepFn for BrokenStepEvaluator<T> {
+        type Payload = T::Payload;
+        fn call<'a>(
+            &self,
+            pc: &'a [u8],
+            script: &Script,
+            state: &mut State,
+            payload: &mut T::Payload,
+        ) -> Result<&'a [u8], script_error::ScriptError> {
+            self.0.call(
+                if pc[0] == Operation::OP_EQUAL.into() {
+                    &pc[1..]
+                } else {
+                    pc
+                },
+                script,
+                state,
+                payload,
+            )
+        }
+    }
 }
 
 #[cfg(test)]
@@ -352,16 +369,26 @@ mod tests {
 
     #[test]
     fn it_works() {
-        let n_lock_time: u32 = 2410374;
+        let lock_time: u32 = 2410374;
         let is_final: bool = true;
         let script_pub_key = &SCRIPT_PUBKEY;
         let script_sig = &SCRIPT_SIG;
         let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
 
-        let ret = check_verify_callback::<CxxInterpreter, RustInterpreter>(
-            &sighash,
-            n_lock_time,
-            is_final,
+        let ret = check_verify_callback(
+            &CxxInterpreter {
+                sighash: &sighash,
+                lock_time,
+                is_final,
+            },
+            &rust_interpreter(
+                flags,
+                CallbackTransactionSignatureChecker {
+                    sighash: &sighash,
+                    lock_time: &lock_time.into(),
+                    is_final,
+                },
+            ),
             script_pub_key,
             script_sig,
             flags,
@@ -373,16 +400,25 @@ mod tests {
 
     #[test]
     fn it_fails_on_invalid_sighash() {
-        let n_lock_time: u32 = 2410374;
+        let lock_time: u32 = 2410374;
         let is_final: bool = true;
         let script_pub_key = &SCRIPT_PUBKEY;
         let script_sig = &SCRIPT_SIG;
         let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
-
-        let ret = check_verify_callback::<CxxInterpreter, RustInterpreter>(
-            &invalid_sighash,
-            n_lock_time,
-            is_final,
+        let ret = check_verify_callback(
+            &CxxInterpreter {
+                sighash: &invalid_sighash,
+                lock_time,
+                is_final,
+            },
+            &rust_interpreter(
+                flags,
+                CallbackTransactionSignatureChecker {
+                    sighash: &invalid_sighash,
+                    lock_time: &lock_time.into(),
+                    is_final,
+                },
+            ),
             script_pub_key,
             script_sig,
             flags,
@@ -394,16 +430,26 @@ mod tests {
 
     #[test]
     fn it_fails_on_missing_sighash() {
-        let n_lock_time: u32 = 2410374;
+        let lock_time: u32 = 2410374;
         let is_final: bool = true;
         let script_pub_key = &SCRIPT_PUBKEY;
         let script_sig = &SCRIPT_SIG;
         let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
 
-        let ret = check_verify_callback::<CxxInterpreter, RustInterpreter>(
-            &missing_sighash,
-            n_lock_time,
-            is_final,
+        let ret = check_verify_callback(
+            &CxxInterpreter {
+                sighash: &missing_sighash,
+                lock_time,
+                is_final,
+            },
+            &rust_interpreter(
+                flags,
+                CallbackTransactionSignatureChecker {
+                    sighash: &missing_sighash,
+                    lock_time: &lock_time.into(),
+                    is_final,
+                },
+            ),
             script_pub_key,
             script_sig,
             flags,
@@ -424,15 +470,26 @@ mod tests {
             is_final in prop::bool::ANY,
             pub_key in prop::collection::vec(0..=0xffu8, 0..=OVERFLOW_SCRIPT_SIZE),
             sig in prop::collection::vec(0..=0xffu8, 1..=OVERFLOW_SCRIPT_SIZE),
-            flags in prop::bits::u32::masked(VerificationFlags::all().bits()),
+            flag_bits in prop::bits::u32::masked(VerificationFlags::all().bits()),
         ) {
-            let ret = check_verify_callback::<CxxInterpreter, RustInterpreter>(
-                &missing_sighash,
+            let flags =                 repair_flags(VerificationFlags::from_bits_truncate(flag_bits));
+            let ret = check_verify_callback(
+            &CxxInterpreter {
+                sighash: &sighash,
                 lock_time,
                 is_final,
+            },
+            &rust_interpreter(
+                flags,
+                CallbackTransactionSignatureChecker {
+                    sighash: &sighash,
+                    lock_time: &lock_time.into(),
+                    is_final,
+                },
+            ),
                 &pub_key[..],
                 &sig[..],
-                repair_flags(VerificationFlags::from_bits_truncate(flags)),
+                flags,
             );
             prop_assert_eq!(ret.0, ret.1.map_err(normalize_error),
                             "original Rust result: {:?}", ret.1);
@@ -445,18 +502,29 @@ mod tests {
             is_final in prop::bool::ANY,
             pub_key in prop::collection::vec(0..=0xffu8, 0..=OVERFLOW_SCRIPT_SIZE),
             sig in prop::collection::vec(0..=0x60u8, 0..=OVERFLOW_SCRIPT_SIZE),
-            flags in prop::bits::u32::masked(
+            flag_bits in prop::bits::u32::masked(
                 // Don’t waste test cases on whether or not `SigPushOnly` is set.
                 (VerificationFlags::all() - VerificationFlags::SigPushOnly).bits()),
         ) {
-            let ret = check_verify_callback::<CxxInterpreter, RustInterpreter>(
-                &missing_sighash,
+            let flags = repair_flags(VerificationFlags::from_bits_truncate(flag_bits))
+                    | VerificationFlags::SigPushOnly;
+            let ret = check_verify_callback(
+            &CxxInterpreter {
+                sighash: &sighash,
                 lock_time,
                 is_final,
+            },
+            &rust_interpreter(
+                flags,
+                CallbackTransactionSignatureChecker {
+                    sighash: &sighash,
+                    lock_time: &lock_time.into(),
+                    is_final,
+                },
+            ),
                 &pub_key[..],
                 &sig[..],
-                repair_flags(VerificationFlags::from_bits_truncate(flags))
-                    | VerificationFlags::SigPushOnly,
+                flags,
             );
             prop_assert_eq!(ret.0, ret.1.map_err(normalize_error),
                             "original Rust result: {:?}", ret.1);

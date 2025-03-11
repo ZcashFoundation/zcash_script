@@ -1198,7 +1198,7 @@ pub fn eval_step<'a>(
 }
 
 pub trait StepFn {
-    type Payload;
+    type Payload: Clone;
     fn call<'a>(
         &self,
         pc: &'a [u8],
