@@ -20,8 +20,8 @@ use tracing::warn;
 
 pub use cxx::*;
 pub use interpreter::{
-    CallbackTransactionSignatureChecker, HashType, SighashCalculator, SignedOutputs,
-    VerificationFlags,
+    CallbackTransactionSignatureChecker, DefaultStepEvaluator, HashType, SighashCalculator,
+    SignedOutputs, VerificationFlags,
 };
 pub use zcash_script::*;
 
@@ -250,6 +250,32 @@ pub struct ComparisonInterpreter<T, U> {
     second: U,
 }
 
+pub fn cxx_rust_comparison_interpreter<'a>(
+    sighash: &'a SighashCalculator<'a>,
+    lock_time: u32,
+    is_final: bool,
+    flags: VerificationFlags,
+) -> ComparisonInterpreter<
+    CxxInterpreter<'a>,
+    StepwiseInterpreter<DefaultStepEvaluator<CallbackTransactionSignatureChecker<'a>>>,
+> {
+    ComparisonInterpreter {
+        first: CxxInterpreter {
+            sighash,
+            lock_time,
+            is_final,
+        },
+        second: rust_interpreter(
+            flags,
+            CallbackTransactionSignatureChecker {
+                sighash,
+                lock_time: lock_time.into(),
+                is_final,
+            },
+        ),
+    }
+}
+
 /// This implementation is functionally equivalent to the `T` impl, but it also runs a second (`U`)
 /// impl and logs a warning if they disagree.
 impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U> {
@@ -385,7 +411,7 @@ mod tests {
                 flags,
                 CallbackTransactionSignatureChecker {
                     sighash: &sighash,
-                    lock_time: &lock_time.into(),
+                    lock_time: lock_time.into(),
                     is_final,
                 },
             ),
@@ -415,7 +441,7 @@ mod tests {
                 flags,
                 CallbackTransactionSignatureChecker {
                     sighash: &invalid_sighash,
-                    lock_time: &lock_time.into(),
+                    lock_time: lock_time.into(),
                     is_final,
                 },
             ),
@@ -446,7 +472,7 @@ mod tests {
                 flags,
                 CallbackTransactionSignatureChecker {
                     sighash: &missing_sighash,
-                    lock_time: &lock_time.into(),
+                    lock_time: lock_time.into(),
                     is_final,
                 },
             ),
@@ -483,7 +509,7 @@ mod tests {
                 flags,
                 CallbackTransactionSignatureChecker {
                     sighash: &sighash,
-                    lock_time: &lock_time.into(),
+                    lock_time: lock_time.into(),
                     is_final,
                 },
             ),
@@ -518,7 +544,7 @@ mod tests {
                 flags,
                 CallbackTransactionSignatureChecker {
                     sighash: &sighash,
-                    lock_time: &lock_time.into(),
+                    lock_time: lock_time.into(),
                     is_final,
                 },
             ),

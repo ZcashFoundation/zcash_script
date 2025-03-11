@@ -146,7 +146,7 @@ impl SignatureChecker for BaseSignatureChecker {}
 #[derive(Copy, Clone)]
 pub struct CallbackTransactionSignatureChecker<'a> {
     pub sighash: SighashCalculator<'a>,
-    pub lock_time: &'a ScriptNum,
+    pub lock_time: ScriptNum,
     pub is_final: bool,
 }
 
@@ -1304,11 +1304,11 @@ impl SignatureChecker for CallbackTransactionSignatureChecker<'_> {
         // We want to compare apples to apples, so fail the script
         // unless the type of nLockTime being tested is the same as
         // the nLockTime in the transaction.
-        if *self.lock_time < LOCKTIME_THRESHOLD && *lock_time >= LOCKTIME_THRESHOLD
-            || *self.lock_time >= LOCKTIME_THRESHOLD && *lock_time < LOCKTIME_THRESHOLD
+        if self.lock_time < LOCKTIME_THRESHOLD && *lock_time >= LOCKTIME_THRESHOLD
+            || self.lock_time >= LOCKTIME_THRESHOLD && *lock_time < LOCKTIME_THRESHOLD
             // Now that we know we're comparing apples-to-apples, the
             // comparison is a simple numeric one.
-            || lock_time > self.lock_time
+            || *lock_time > self.lock_time
         {
             false
             // Finally the nLockTime feature can be disabled and thus

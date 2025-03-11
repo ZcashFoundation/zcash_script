@@ -243,7 +243,7 @@ mod tests {
 
         let checker = CallbackTransactionSignatureChecker {
             sighash: &sighash,
-            lock_time: &n_lock_time.into(),
+            lock_time: n_lock_time.into(),
             is_final,
         };
         let rust_stepper = DefaultStepEvaluator { flags, checker };
@@ -270,7 +270,7 @@ mod tests {
 
         let checker = CallbackTransactionSignatureChecker {
             sighash: &sighash,
-            lock_time: &n_lock_time.into(),
+            lock_time: n_lock_time.into(),
             is_final,
         };
         let rust_stepper = DefaultStepEvaluator { flags, checker };
@@ -335,7 +335,7 @@ mod tests {
 
         let checker = CallbackTransactionSignatureChecker {
             sighash: &invalid_sighash,
-            lock_time: &n_lock_time.into(),
+            lock_time: n_lock_time.into(),
             is_final,
         };
         let rust_stepper = DefaultStepEvaluator { flags, checker };
@@ -362,7 +362,7 @@ mod tests {
 
         let checker = CallbackTransactionSignatureChecker {
             sighash: &missing_sighash,
-            lock_time: &n_lock_time.into(),
+            lock_time: n_lock_time.into(),
             is_final,
         };
         let rust_stepper = DefaultStepEvaluator { flags, checker };
@@ -396,7 +396,7 @@ mod tests {
         ) {
             let checker = CallbackTransactionSignatureChecker {
                 sighash: &missing_sighash,
-                lock_time: &lock_time.into(),
+                lock_time: lock_time.into(),
                 is_final,
             };
             let flags = repair_flags(VerificationFlags::from_bits_truncate(flags));
@@ -424,10 +424,9 @@ mod tests {
                 // Don’t waste test cases on whether or not `SigPushOnly` is set.
                 (VerificationFlags::all() - VerificationFlags::SigPushOnly).bits()),
         ) {
-            let lt = lock_time.into();
             let checker = CallbackTransactionSignatureChecker {
                 sighash: &missing_sighash,
-                lock_time: &lt,
+                lock_time: lock_time.into(),
                 is_final,
             };
             let flags = repair_flags(VerificationFlags::from_bits_truncate(flags)) | VerificationFlags::SigPushOnly;
