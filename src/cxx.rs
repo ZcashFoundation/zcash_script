@@ -82,7 +82,7 @@ mod tests {
             )
         };
 
-        assert!(ret == 1);
+        assert_eq!(ret, 1);
     }
 
     #[test]
@@ -109,6 +109,7 @@ mod tests {
             )
         };
 
-        assert!(ret != 1);
+        assert_eq!(ret, 0);
+        assert_eq!(err, super::ScriptError_t_SCRIPT_ERR_EVAL_FALSE);
     }
 }

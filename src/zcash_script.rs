@@ -117,7 +117,7 @@ impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
     fn call<'b>(
         &self,
         pc: &'b [u8],
-        script: &Script,
+        script: &'b Script,
         state: &mut State,
         payload: &mut StepResults<T, U>,
     ) -> Result<&'b [u8], ScriptError> {
@@ -146,7 +146,9 @@ impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
             }
             // at least one is `Err`
             (_, _) => {
-                if left != right {
+                if left.map_err(crate::normalize_script_error)
+                    != right.map_err(crate::normalize_script_error)
+                {
                     payload.diverging_result = Some((
                         left.map(|_| state.clone()),
                         right.map(|_| right_state.clone()),

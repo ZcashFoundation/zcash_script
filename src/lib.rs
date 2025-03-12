@@ -18,11 +18,13 @@ use std::os::raw::{c_int, c_uint, c_void};
 
 use tracing::warn;
 
+pub use cxx::*;
 pub use interpreter::{
     CallbackTransactionSignatureChecker, DefaultStepEvaluator, HashType, SighashCalculator,
-    SignedOutputs, VerificationFlags,
+    SignedOutputs, State, StepFn, VerificationFlags,
 };
-use script_error::ScriptError;
+pub use script::Script;
+pub use script_error::ScriptError;
 pub use zcash_script::*;
 
 pub struct CxxInterpreter<'a> {
@@ -89,6 +91,147 @@ impl From<cxx::ScriptError> for Error {
 
             cxx::ScriptError_t_SCRIPT_ERR_VERIFY_SCRIPT => Error::VerifyScript,
             unknown => Error::Unknown(unknown.into()),
+        }
+    }
+}
+
+pub struct CxxStepEvaluator<'a> {
+    flags: VerificationFlags,
+    sighash: SighashCalculator<'a>,
+    lock_time: u32,
+    is_final: bool,
+}
+
+impl ZcashScriptState {
+    /// The `&mut Vec<_>` parameters are used to ensure that the pointers we store in
+    /// [ZcashScriptState] live long enough to be used by the C++ code.
+    fn from_state(
+        state: &State,
+        stackElems: &mut Vec<*const u8>,
+        stackElemLens: &mut Vec<usize>,
+        altstackElems: &mut Vec<*const u8>,
+        altstackElemLens: &mut Vec<usize>,
+        vfExecs: &mut Vec<i8>,
+    ) -> Self {
+        let stack = state.stack();
+        let altstack = state.altstack();
+        let vexec = state.vexec();
+
+        *stackElems = stack.iter().map(Vec::as_ptr).collect::<Vec<*const u8>>();
+        *stackElemLens = stack.iter().map(Vec::len).collect::<Vec<usize>>();
+        *altstackElems = altstack.iter().map(Vec::as_ptr).collect::<Vec<*const u8>>();
+        *altstackElemLens = altstack.iter().map(Vec::len).collect::<Vec<usize>>();
+        *vfExecs = vexec.iter().map(|b| (*b).into()).collect::<Vec<i8>>();
+        ZcashScriptState {
+            stack: stackElems.as_mut_ptr(),
+            stackElemLen: stackElemLens.as_mut_ptr(),
+            stackLen: stack.size(),
+            altstack: altstackElems.as_mut_ptr(),
+            altstackElemLen: altstackElemLens.as_mut_ptr(),
+            altstackLen: altstack.size(),
+            vfExec: vfExecs.as_mut_ptr(),
+            vfExecLen: vexec.size(),
+            nOpCount: state.op_count().into(),
+        }
+    }
+
+    /// [std::slice::from_raw_parts] doesn’t handle null pointers. But we get null pointers for
+    /// empty `std::vector`s from C++, so this handles that case to return an empty slice.
+    unsafe fn slice_from_really_raw_parts<'a, T>(data: *const T, len: usize) -> &'a [T] {
+        if data.is_null() {
+            assert_eq!(len, 0, "can’t create a non-empty slice from a null pointer");
+            &[]
+        } else {
+            std::slice::from_raw_parts(data, len)
+        }
+    }
+
+    fn to_state(self) -> State {
+        let stackLen = self.stackLen;
+        let stack = unsafe { Self::slice_from_really_raw_parts(self.stack, stackLen) };
+        let stackElemLens =
+            unsafe { Self::slice_from_really_raw_parts(self.stackElemLen, stackLen) };
+        let altstackLen = self.altstackLen;
+        let altstack = unsafe { Self::slice_from_really_raw_parts(self.altstack, altstackLen) };
+        let altstackElemLens =
+            unsafe { Self::slice_from_really_raw_parts(self.altstackElemLen, altstackLen) };
+        let vexecLen = self.vfExecLen;
+
+        State::from_parts(
+            interpreter::Stack::from_parts(
+                std::iter::zip(stack.iter(), stackElemLens.iter())
+                    .map(|(elem, len)| {
+                        unsafe { Self::slice_from_really_raw_parts(*elem, *len) }.to_vec()
+                    })
+                    .collect(),
+            ),
+            interpreter::Stack::from_parts(
+                std::iter::zip(altstack.iter(), altstackElemLens.iter())
+                    .map(|(elem, len)| {
+                        unsafe { Self::slice_from_really_raw_parts(*elem, *len) }.to_vec()
+                    })
+                    .collect(),
+            ),
+            self.nOpCount
+                .try_into()
+                .expect("the op_count is always in the range [0, 201]."),
+            interpreter::Stack::from_parts(unsafe {
+                Self::slice_from_really_raw_parts::<i8>(self.vfExec, vexecLen)
+                    .iter()
+                    .map(|c| *c != 0)
+                    .collect()
+            }),
+        )
+    }
+}
+
+impl<'b> StepFn for CxxStepEvaluator<'b> {
+    type Payload = ();
+
+    fn call<'a>(
+        &self,
+        pc: &'a [u8],
+        script: &'a Script,
+        state: &mut State,
+        _payload: &mut (),
+    ) -> Result<&'a [u8], script_error::ScriptError> {
+        let mut stackElems = Vec::new();
+        let mut stackElemLens = Vec::new();
+        let mut altstackElems = Vec::new();
+        let mut altstackElemLens = Vec::new();
+        let mut vfExecs = Vec::new();
+        let mut cState = ZcashScriptState::from_state(
+            state,
+            &mut stackElems,
+            &mut stackElemLens,
+            &mut altstackElems,
+            &mut altstackElemLens,
+            &mut vfExecs,
+        );
+        let mut err = 0;
+        let mut pc_offset = script.0.len() - pc.len();
+        let ret = unsafe {
+            zcash_script_eval_step(
+                self.flags.bits(),
+                (&self.sighash as *const SighashCalculator) as *const c_void,
+                Some(sighash_callback),
+                self.lock_time.into(),
+                if self.is_final { 1 } else { 0 },
+                &mut cState,
+                script.0.as_ptr(),
+                script.0.len(),
+                &mut pc_offset,
+                &mut err,
+            )
+        };
+        *state = cState.to_state();
+        if ret == 1 {
+            Ok(&script.0[pc_offset..])
+        } else {
+            Err(match Error::from(err) {
+                Error::Ok(e) => e,
+                _ => script_error::ScriptError::UnknownError,
+            })
         }
     }
 }
@@ -208,14 +351,18 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
     )
 }
 
+pub fn normalize_script_error(err: ScriptError) -> ScriptError {
+    match err {
+        ScriptError::ReadError { .. } => ScriptError::BadOpcode,
+        ScriptError::ScriptNumError(_) => ScriptError::UnknownError,
+        _ => err,
+    }
+}
+
 /// Convert errors that don’t exist in the C++ code into the cases that do.
 pub fn normalize_error(err: Error) -> Error {
     match err {
-        Error::Ok(serr) => Error::Ok(match serr {
-            ScriptError::ReadError { .. } => ScriptError::BadOpcode,
-            ScriptError::ScriptNumError(_) => ScriptError::UnknownError,
-            _ => serr,
-        }),
+        Error::Ok(serr) => Error::Ok(normalize_script_error(serr)),
         _ => err,
     }
 }
@@ -321,7 +468,7 @@ pub mod testing {
         fn call<'a>(
             &self,
             pc: &'a [u8],
-            script: &Script,
+            script: &'a Script,
             state: &mut State,
             payload: &mut T::Payload,
         ) -> Result<&'a [u8], ScriptError> {
@@ -463,8 +610,10 @@ mod tests {
     }
 
     proptest! {
+        // The stepwise comparison tests are significantly slower than the simple comparison tests,
+        // so run fewer iterations.
         #![proptest_config(ProptestConfig {
-            cases: 20_000, .. ProptestConfig::default()
+            cases: 2_000, .. ProptestConfig::default()
         })]
 
         #[test]
@@ -531,6 +680,175 @@ mod tests {
             );
             prop_assert_eq!(ret.0, ret.1.map_err(normalize_error),
                             "original Rust result: {:?}", ret.1);
+        }
+    }
+
+    #[test]
+    fn it_works_compare() {
+        let lock_time: u32 = 2410374;
+        let is_final: bool = true;
+        let script_pub_key = &SCRIPT_PUBKEY;
+        let script_sig = &SCRIPT_SIG;
+        let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
+
+        let checker = CallbackTransactionSignatureChecker {
+            sighash: &sighash,
+            lock_time: lock_time.into(),
+            is_final,
+        };
+        let cxx_stepper = CxxStepEvaluator {
+            flags,
+            sighash: &sighash,
+            lock_time,
+            is_final,
+        };
+        let rust_stepper = DefaultStepEvaluator { flags, checker };
+        let stepper = ComparisonStepEvaluator {
+            eval_step_l: &cxx_stepper,
+            eval_step_r: &rust_stepper,
+        };
+        let mut res = StepResults::initial((), ());
+        let ret = stepwise_verify(script_pub_key, script_sig, flags, &mut res, &stepper);
+
+        if res.diverging_result != None {
+            panic!("mismatched result: {:?}", res);
+        }
+        assert_eq!(ret, Ok(()));
+    }
+
+    #[test]
+    fn it_fails_on_invalid_sighash_compare() {
+        let lock_time: u32 = 2410374;
+        let is_final: bool = true;
+        let script_pub_key = &SCRIPT_PUBKEY;
+        let script_sig = &SCRIPT_SIG;
+        let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
+
+        let checker = CallbackTransactionSignatureChecker {
+            sighash: &invalid_sighash,
+            lock_time: lock_time.into(),
+            is_final,
+        };
+        let cxx_stepper = CxxStepEvaluator {
+            flags,
+            sighash: &invalid_sighash,
+            lock_time,
+            is_final,
+        };
+        let rust_stepper = DefaultStepEvaluator { flags, checker };
+        let stepper = ComparisonStepEvaluator {
+            eval_step_l: &cxx_stepper,
+            eval_step_r: &rust_stepper,
+        };
+        let mut res = StepResults::initial((), ());
+        let ret = stepwise_verify(script_pub_key, script_sig, flags, &mut res, &stepper);
+
+        if res.diverging_result != None {
+            panic!("mismatched result: {:?}", res);
+        }
+        assert_eq!(ret, Err(Error::Ok(script_error::ScriptError::EvalFalse)));
+    }
+
+    #[test]
+    fn it_fails_on_missing_sighash_compare() {
+        let lock_time: u32 = 2410374;
+        let is_final: bool = true;
+        let script_pub_key = &SCRIPT_PUBKEY;
+        let script_sig = &SCRIPT_SIG;
+        let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
+
+        let checker = CallbackTransactionSignatureChecker {
+            sighash: &missing_sighash,
+            lock_time: lock_time.into(),
+            is_final,
+        };
+        let cxx_stepper = CxxStepEvaluator {
+            flags,
+            sighash: &missing_sighash,
+            lock_time,
+            is_final,
+        };
+        let rust_stepper = DefaultStepEvaluator { flags, checker };
+        let stepper = ComparisonStepEvaluator {
+            eval_step_l: &cxx_stepper,
+            eval_step_r: &rust_stepper,
+        };
+        let mut res = StepResults::initial((), ());
+        let ret = stepwise_verify(script_pub_key, script_sig, flags, &mut res, &stepper);
+
+        if res.diverging_result != None {
+            panic!("mismatched result: {:?}", res);
+        }
+        assert_eq!(ret, Err(Error::Ok(script_error::ScriptError::EvalFalse)));
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig {
+            cases: 5_000, .. ProptestConfig::default()
+        })]
+
+        /// This test is very shallow, because we have only `()` for success and most errors have
+        /// been collapsed to `Error::Ok`. A deeper comparison, requires changes to the C++ code.
+        #[test]
+        fn test_arbitrary_scripts_compare(
+            lock_time in prop::num::u32::ANY,
+            is_final in prop::bool::ANY,
+            pub_key in prop::collection::vec(0..=0xffu8, 0..=OVERFLOW_SCRIPT_SIZE),
+            sig in prop::collection::vec(0..=0xffu8, 1..=OVERFLOW_SCRIPT_SIZE),
+            flags in prop::bits::u32::masked(VerificationFlags::all().bits()),
+        ) {
+            let checker = CallbackTransactionSignatureChecker {
+                sighash: &missing_sighash,
+                lock_time: lock_time.into(),
+                is_final,
+            };
+            let flags = repair_flags(VerificationFlags::from_bits_truncate(flags));
+            let cxx_stepper =
+                CxxStepEvaluator {flags, sighash: &missing_sighash, lock_time, is_final};
+            let rust_stepper = DefaultStepEvaluator { flags, checker };
+            let stepper = ComparisonStepEvaluator {
+                eval_step_l: &cxx_stepper,
+                eval_step_r: &rust_stepper,
+            };
+            let mut res = StepResults::initial((), ());
+            let _ = stepwise_verify(&pub_key[..], &sig[..], flags, &mut res, &stepper);
+
+            if res.diverging_result != None {
+                panic!("mismatched result: {:?}", res);
+            }
+        }
+
+        /// Similar to `test_arbitrary_scripts`, but ensures the `sig` only contains pushes.
+        #[test]
+        fn test_restricted_sig_scripts_compare(
+            lock_time in prop::num::u32::ANY,
+            is_final in prop::bool::ANY,
+            pub_key in prop::collection::vec(0..=0xffu8, 0..=OVERFLOW_SCRIPT_SIZE),
+            sig in prop::collection::vec(0..=0x60u8, 0..=OVERFLOW_SCRIPT_SIZE),
+            flags in prop::bits::u32::masked(
+                // Don’t waste test cases on whether or not `SigPushOnly` is set.
+                (VerificationFlags::all() - VerificationFlags::SigPushOnly).bits()),
+        ) {
+            let lt = lock_time.into();
+            let checker = CallbackTransactionSignatureChecker {
+                sighash: &missing_sighash,
+                lock_time: lt,
+                is_final,
+            };
+            let flags = repair_flags(VerificationFlags::from_bits_truncate(flags)) | VerificationFlags::SigPushOnly;
+            let cxx_stepper =
+                CxxStepEvaluator {flags, sighash: &missing_sighash, lock_time, is_final};
+            let rust_stepper = DefaultStepEvaluator { flags, checker };
+            let stepper = ComparisonStepEvaluator {
+                eval_step_l: &cxx_stepper,
+                eval_step_r: &rust_stepper,
+            };
+            let mut res = StepResults::initial((), ());
+            let _ = stepwise_verify(&pub_key[..], &sig[..], flags, &mut res, &stepper);
+
+            if res.diverging_result != None {
+                panic!("mismatched result: {:?}", res);
+            }
         }
     }
 }

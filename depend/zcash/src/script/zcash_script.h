@@ -7,6 +7,8 @@
 #ifndef ZCASH_SCRIPT_ZCASH_SCRIPT_H
 #define ZCASH_SCRIPT_ZCASH_SCRIPT_H
 
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include "script_error.h"
 
@@ -93,6 +95,30 @@ EXPORT_SYMBOL int zcash_script_verify_callback(
     unsigned int scriptSigLen,
     unsigned int flags,
     ScriptError* err);
+
+EXPORT_SYMBOL struct ZcashScriptState {
+    unsigned char const** stack;
+    size_t* stackElemLen;
+    size_t stackLen;
+    unsigned char const** altstack;
+    size_t* altstackElemLen;
+    size_t altstackLen;
+    char* vfExec;
+    size_t vfExecLen;
+    int nOpCount;
+};
+
+EXPORT_SYMBOL int zcash_script_eval_step(
+    unsigned int flags,
+    const void* ctx,
+    void (*sighash)(unsigned char* sighash, unsigned int sighashLen, const void* ctx, const unsigned char* scriptCode, unsigned int scriptCodeLen, int hashType),
+    int64_t nLockTime,
+    uint8_t isFinal,
+    struct ZcashScriptState* state,
+    unsigned char const* script,
+    size_t scriptLen,
+    size_t* pc,
+    ScriptError* serror);
 
 #ifdef __cplusplus
 } // extern "C"
