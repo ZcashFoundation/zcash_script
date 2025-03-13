@@ -18,11 +18,11 @@ use std::os::raw::{c_int, c_uint, c_void};
 
 use tracing::warn;
 
-pub use cxx::*;
 pub use interpreter::{
     CallbackTransactionSignatureChecker, DefaultStepEvaluator, HashType, SighashCalculator,
     SignedOutputs, VerificationFlags,
 };
+use script_error::ScriptError;
 pub use zcash_script::*;
 
 /// A tag to indicate that the C++ implementation of zcash_script should be used.
@@ -36,81 +36,59 @@ impl From<cxx::ScriptError> for Error {
     #[allow(non_upper_case_globals)]
     fn from(err_code: cxx::ScriptError) -> Self {
         match err_code {
-            ScriptError_t_SCRIPT_ERR_OK => Error::Ok(script_error::ScriptError::Ok),
-            ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR => {
-                Error::Ok(script_error::ScriptError::UnknownError)
-            }
-            ScriptError_t_SCRIPT_ERR_EVAL_FALSE => Error::Ok(script_error::ScriptError::EvalFalse),
-            ScriptError_t_SCRIPT_ERR_OP_RETURN => Error::Ok(script_error::ScriptError::OpReturn),
+            cxx::ScriptError_t_SCRIPT_ERR_OK => Error::Ok(ScriptError::Ok),
+            cxx::ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR => Error::Ok(ScriptError::UnknownError),
+            cxx::ScriptError_t_SCRIPT_ERR_EVAL_FALSE => Error::Ok(ScriptError::EvalFalse),
+            cxx::ScriptError_t_SCRIPT_ERR_OP_RETURN => Error::Ok(ScriptError::OpReturn),
 
-            ScriptError_t_SCRIPT_ERR_SCRIPT_SIZE => {
-                Error::Ok(script_error::ScriptError::ScriptSize)
-            }
-            ScriptError_t_SCRIPT_ERR_PUSH_SIZE => Error::Ok(script_error::ScriptError::PushSize),
-            ScriptError_t_SCRIPT_ERR_OP_COUNT => Error::Ok(script_error::ScriptError::OpCount),
-            ScriptError_t_SCRIPT_ERR_STACK_SIZE => Error::Ok(script_error::ScriptError::StackSize),
-            ScriptError_t_SCRIPT_ERR_SIG_COUNT => Error::Ok(script_error::ScriptError::SigCount),
-            ScriptError_t_SCRIPT_ERR_PUBKEY_COUNT => {
-                Error::Ok(script_error::ScriptError::PubKeyCount)
-            }
+            cxx::ScriptError_t_SCRIPT_ERR_SCRIPT_SIZE => Error::Ok(ScriptError::ScriptSize),
+            cxx::ScriptError_t_SCRIPT_ERR_PUSH_SIZE => Error::Ok(ScriptError::PushSize),
+            cxx::ScriptError_t_SCRIPT_ERR_OP_COUNT => Error::Ok(ScriptError::OpCount),
+            cxx::ScriptError_t_SCRIPT_ERR_STACK_SIZE => Error::Ok(ScriptError::StackSize),
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_COUNT => Error::Ok(ScriptError::SigCount),
+            cxx::ScriptError_t_SCRIPT_ERR_PUBKEY_COUNT => Error::Ok(ScriptError::PubKeyCount),
 
-            ScriptError_t_SCRIPT_ERR_VERIFY => Error::Ok(script_error::ScriptError::Verify),
-            ScriptError_t_SCRIPT_ERR_EQUALVERIFY => {
-                Error::Ok(script_error::ScriptError::EqualVerify)
+            cxx::ScriptError_t_SCRIPT_ERR_VERIFY => Error::Ok(ScriptError::Verify),
+            cxx::ScriptError_t_SCRIPT_ERR_EQUALVERIFY => Error::Ok(ScriptError::EqualVerify),
+            cxx::ScriptError_t_SCRIPT_ERR_CHECKMULTISIGVERIFY => {
+                Error::Ok(ScriptError::CheckMultisigVerify)
             }
-            ScriptError_t_SCRIPT_ERR_CHECKMULTISIGVERIFY => {
-                Error::Ok(script_error::ScriptError::CheckMultisigVerify)
-            }
-            ScriptError_t_SCRIPT_ERR_CHECKSIGVERIFY => {
-                Error::Ok(script_error::ScriptError::CheckSigVerify)
-            }
-            ScriptError_t_SCRIPT_ERR_NUMEQUALVERIFY => {
-                Error::Ok(script_error::ScriptError::NumEqualVerify)
-            }
+            cxx::ScriptError_t_SCRIPT_ERR_CHECKSIGVERIFY => Error::Ok(ScriptError::CheckSigVerify),
+            cxx::ScriptError_t_SCRIPT_ERR_NUMEQUALVERIFY => Error::Ok(ScriptError::NumEqualVerify),
 
-            ScriptError_t_SCRIPT_ERR_BAD_OPCODE => Error::Ok(script_error::ScriptError::BadOpcode),
-            ScriptError_t_SCRIPT_ERR_DISABLED_OPCODE => {
-                Error::Ok(script_error::ScriptError::DisabledOpcode)
+            cxx::ScriptError_t_SCRIPT_ERR_BAD_OPCODE => Error::Ok(ScriptError::BadOpcode),
+            cxx::ScriptError_t_SCRIPT_ERR_DISABLED_OPCODE => Error::Ok(ScriptError::DisabledOpcode),
+            cxx::ScriptError_t_SCRIPT_ERR_INVALID_STACK_OPERATION => {
+                Error::Ok(ScriptError::InvalidStackOperation)
             }
-            ScriptError_t_SCRIPT_ERR_INVALID_STACK_OPERATION => {
-                Error::Ok(script_error::ScriptError::InvalidStackOperation)
+            cxx::ScriptError_t_SCRIPT_ERR_INVALID_ALTSTACK_OPERATION => {
+                Error::Ok(ScriptError::InvalidAltstackOperation)
             }
-            ScriptError_t_SCRIPT_ERR_INVALID_ALTSTACK_OPERATION => {
-                Error::Ok(script_error::ScriptError::InvalidAltstackOperation)
-            }
-            ScriptError_t_SCRIPT_ERR_UNBALANCED_CONDITIONAL => {
-                Error::Ok(script_error::ScriptError::UnbalancedConditional)
+            cxx::ScriptError_t_SCRIPT_ERR_UNBALANCED_CONDITIONAL => {
+                Error::Ok(ScriptError::UnbalancedConditional)
             }
 
-            ScriptError_t_SCRIPT_ERR_NEGATIVE_LOCKTIME => {
-                Error::Ok(script_error::ScriptError::NegativeLockTime)
+            cxx::ScriptError_t_SCRIPT_ERR_NEGATIVE_LOCKTIME => {
+                Error::Ok(ScriptError::NegativeLockTime)
             }
-            ScriptError_t_SCRIPT_ERR_UNSATISFIED_LOCKTIME => {
-                Error::Ok(script_error::ScriptError::UnsatisfiedLockTime)
-            }
-
-            ScriptError_t_SCRIPT_ERR_SIG_HASHTYPE => {
-                Error::Ok(script_error::ScriptError::SigHashType)
-            }
-            ScriptError_t_SCRIPT_ERR_SIG_DER => Error::Ok(script_error::ScriptError::SigDER),
-            ScriptError_t_SCRIPT_ERR_MINIMALDATA => {
-                Error::Ok(script_error::ScriptError::MinimalData)
-            }
-            ScriptError_t_SCRIPT_ERR_SIG_PUSHONLY => {
-                Error::Ok(script_error::ScriptError::SigPushOnly)
-            }
-            ScriptError_t_SCRIPT_ERR_SIG_HIGH_S => Error::Ok(script_error::ScriptError::SigHighS),
-            ScriptError_t_SCRIPT_ERR_SIG_NULLDUMMY => {
-                Error::Ok(script_error::ScriptError::SigNullDummy)
-            }
-            ScriptError_t_SCRIPT_ERR_PUBKEYTYPE => Error::Ok(script_error::ScriptError::PubKeyType),
-            ScriptError_t_SCRIPT_ERR_CLEANSTACK => Error::Ok(script_error::ScriptError::CleanStack),
-
-            ScriptError_t_SCRIPT_ERR_DISCOURAGE_UPGRADABLE_NOPS => {
-                Error::Ok(script_error::ScriptError::DiscourageUpgradableNOPs)
+            cxx::ScriptError_t_SCRIPT_ERR_UNSATISFIED_LOCKTIME => {
+                Error::Ok(ScriptError::UnsatisfiedLockTime)
             }
 
-            ScriptError_t_SCRIPT_ERR_VERIFY_SCRIPT => Error::VerifyScript,
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_HASHTYPE => Error::Ok(ScriptError::SigHashType),
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_DER => Error::Ok(ScriptError::SigDER),
+            cxx::ScriptError_t_SCRIPT_ERR_MINIMALDATA => Error::Ok(ScriptError::MinimalData),
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_PUSHONLY => Error::Ok(ScriptError::SigPushOnly),
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_HIGH_S => Error::Ok(ScriptError::SigHighS),
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_NULLDUMMY => Error::Ok(ScriptError::SigNullDummy),
+            cxx::ScriptError_t_SCRIPT_ERR_PUBKEYTYPE => Error::Ok(ScriptError::PubKeyType),
+            cxx::ScriptError_t_SCRIPT_ERR_CLEANSTACK => Error::Ok(ScriptError::CleanStack),
+
+            cxx::ScriptError_t_SCRIPT_ERR_DISCOURAGE_UPGRADABLE_NOPS => {
+                Error::Ok(ScriptError::DiscourageUpgradableNOPs)
+            }
+
+            cxx::ScriptError_t_SCRIPT_ERR_VERIFY_SCRIPT => Error::VerifyScript,
             unknown => Error::Unknown(unknown.into()),
         }
     }
@@ -161,7 +139,7 @@ impl<'a> ZcashScript for CxxInterpreter<'a> {
 
         // SAFETY: The `script` fields are created from a valid Rust `slice`.
         let ret = unsafe {
-            zcash_script_verify_callback(
+            cxx::zcash_script_verify_callback(
                 (&self.sighash as *const SighashCalculator) as *const c_void,
                 Some(sighash_callback),
                 self.lock_time.into(),
@@ -196,7 +174,7 @@ impl<'a> ZcashScript for CxxInterpreter<'a> {
             .try_into()
             .map_err(Error::InvalidScriptSize)
             .map(|script_len| unsafe {
-                zcash_script_legacy_sigop_count_script(script.as_ptr(), script_len)
+                cxx::zcash_script_legacy_sigop_count_script(script.as_ptr(), script_len)
             })
     }
 }
@@ -235,8 +213,8 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
 pub fn normalize_error(err: Error) -> Error {
     match err {
         Error::Ok(serr) => Error::Ok(match serr {
-            script_error::ScriptError::ReadError { .. } => script_error::ScriptError::BadOpcode,
-            script_error::ScriptError::ScriptNumError(_) => script_error::ScriptError::UnknownError,
+            ScriptError::ReadError { .. } => ScriptError::BadOpcode,
+            ScriptError::ScriptNumError(_) => ScriptError::UnknownError,
             _ => serr,
         }),
         _ => err,
@@ -347,7 +325,7 @@ pub mod testing {
             script: &Script,
             state: &mut State,
             payload: &mut T::Payload,
-        ) -> Result<&'a [u8], script_error::ScriptError> {
+        ) -> Result<&'a [u8], ScriptError> {
             self.0.call(
                 if pc[0] == Operation::OP_EQUAL.into() {
                     &pc[1..]
@@ -451,7 +429,7 @@ mod tests {
         );
 
         assert_eq!(ret.0, ret.1.map_err(normalize_error));
-        assert_eq!(ret.0, Err(Error::Ok(script_error::ScriptError::EvalFalse)));
+        assert_eq!(ret.0, Err(Error::Ok(ScriptError::EvalFalse)));
     }
 
     #[test]
@@ -482,7 +460,7 @@ mod tests {
         );
 
         assert_eq!(ret.0, ret.1.map_err(normalize_error));
-        assert_eq!(ret.0, Err(Error::Ok(script_error::ScriptError::EvalFalse)));
+        assert_eq!(ret.0, Err(Error::Ok(ScriptError::EvalFalse)));
     }
 
     proptest! {
