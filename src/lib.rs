@@ -7,9 +7,9 @@
 #[macro_use]
 extern crate enum_primitive;
 
-mod cxx;
+pub mod cxx;
 mod external;
-mod interpreter;
+pub mod interpreter;
 mod script;
 pub mod script_error;
 mod zcash_script;
