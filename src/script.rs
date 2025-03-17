@@ -322,6 +322,43 @@ impl ScriptNum {
         Self::serialize(&self.0)
     }
 
+    fn set_vch(vch: &Vec<u8>) -> Result<i64, ScriptNumError> {
+        match vch.last() {
+            None => Ok(0),
+            Some(vch_back) => {
+                if *vch == vec![0, 0, 0, 0, 0, 0, 0, 128, 128] {
+                    // Match the behaviour of the C++ code, which special-cased this
+                    // encoding to avoid an undefined shift of a signed type by 64 bits.
+                    return Ok(i64::MIN);
+                };
+
+                // Ensure defined behaviour (in Rust, left shift of `i64` by 64 bits
+                // is an arithmetic overflow that may panic or give an unspecified
+                // result). The above encoding of `i64::MIN` is the only allowed
+                // 9-byte encoding.
+                if vch.len() > 8 {
+                    return Err(ScriptNumError::Overflow {
+                        max_num_size: 8,
+                        actual: vch.len(),
+                    });
+                };
+
+                let mut result: i64 = 0;
+                for (i, vch_i) in vch.iter().enumerate() {
+                    result |= i64::from(*vch_i) << (8 * i);
+                }
+
+                // If the input vector's most significant byte is 0x80, remove it from
+                // the result's msb and return a negative.
+                if vch_back & 0x80 != 0 {
+                    return Ok(-(result & !(0x80 << (8 * (vch.len() - 1)))));
+                };
+
+                Ok(result)
+            }
+        }
+    }
+
     pub fn serialize(value: &i64) -> Vec<u8> {
         if *value == 0 {
             return Vec::new();
@@ -360,43 +397,6 @@ impl ScriptNum {
         }
 
         result
-    }
-
-    fn set_vch(vch: &Vec<u8>) -> Result<i64, ScriptNumError> {
-        match vch.last() {
-            None => Ok(0),
-            Some(vch_back) => {
-                if *vch == vec![0, 0, 0, 0, 0, 0, 0, 128, 128] {
-                    // Match the behaviour of the C++ code, which special-cased this
-                    // encoding to avoid an undefined shift of a signed type by 64 bits.
-                    return Ok(i64::MIN);
-                };
-
-                // Ensure defined behaviour (in Rust, left shift of `i64` by 64 bits
-                // is an arithmetic overflow that may panic or give an unspecified
-                // result). The above encoding of `i64::MIN` is the only allowed
-                // 9-byte encoding.
-                if vch.len() > 8 {
-                    return Err(ScriptNumError::Overflow {
-                        max_num_size: 8,
-                        actual: vch.len(),
-                    });
-                };
-
-                let mut result: i64 = 0;
-                for (i, vch_i) in vch.iter().enumerate() {
-                    result |= i64::from(*vch_i) << (8 * i);
-                }
-
-                // If the input vector's most significant byte is 0x80, remove it from
-                // the result's msb and return a negative.
-                if vch_back & 0x80 != 0 {
-                    return Ok(-(result & !(0x80 << (8 * (vch.len() - 1)))));
-                };
-
-                Ok(result)
-            }
-        }
     }
 }
 
