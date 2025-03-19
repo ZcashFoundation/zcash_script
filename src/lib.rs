@@ -324,7 +324,7 @@ pub mod testing {
     }
 
     /// A `usize` one larger than the longest allowed script, for testing bounds.
-    pub const OVERFLOW_SCRIPT_SIZE: usize = script::MAX_SCRIPT_SIZE + 1;
+    pub const OVERFLOW_SCRIPT_SIZE: usize = script::MAX_SIZE + 1;
 
     /// This is the same as `DefaultStepEvaluator`, except that it skips `OP_EQUAL`, allowing us to
     /// test comparison failures.

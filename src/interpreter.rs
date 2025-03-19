@@ -15,6 +15,7 @@ use crate::{
             Control::{self, *},
             Normal::{self, *},
         },
+        push_value::LargeValue,
         Opcode, Operation, PushValue,
     },
     script::{self, num, Script},
@@ -267,8 +268,8 @@ impl<T: Clone> Stack<T> {
 
 fn is_compressed_or_uncompressed_pub_key(vch_pub_key: &[u8]) -> bool {
     match vch_pub_key[0] {
-        0x02 | 0x03 => vch_pub_key.len() == PubKey::COMPRESSED_PUBLIC_KEY_SIZE,
-        0x04 => vch_pub_key.len() == PubKey::PUBLIC_KEY_SIZE,
+        0x02 | 0x03 => vch_pub_key.len() == PubKey::COMPRESSED_SIZE,
+        0x04 => vch_pub_key.len() == PubKey::SIZE,
         _ => false, // not a public key
     }
 }
@@ -467,7 +468,7 @@ fn eval_opcode(
 
     (match opcode {
         Opcode::PushValue(pv) => {
-            if pv.value().map_or(0, |v| v.len()) <= script::MAX_SCRIPT_ELEMENT_SIZE {
+            if pv.value().map_or(0, |v| v.len()) <= LargeValue::MAX_SIZE {
                 if should_exec(vexec) {
                     eval_push_value(&pv, flags.contains(VerificationFlags::MinimalData), stack)
                 } else {
@@ -1156,7 +1157,7 @@ where
     F: StepFn,
 {
     // There's a limit on how large scripts can be.
-    if script.0.len() > script::MAX_SCRIPT_SIZE {
+    if script.0.len() > script::MAX_SIZE {
         return Err(ScriptError::ScriptSize);
     }
 
