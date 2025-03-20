@@ -1,4 +1,5 @@
 use enum_primitive::FromPrimitive;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     opcode::{
@@ -18,7 +19,7 @@ pub(crate) mod num;
 pub const MAX_SIZE: usize = 10_000;
 
 /** Serialized script, used inside transaction inputs and outputs */
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Script<'a>(pub &'a [u8]);
 
 impl Script<'_> {

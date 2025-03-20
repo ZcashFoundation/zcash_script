@@ -2,12 +2,13 @@ pub mod operation;
 pub mod push_value;
 
 use enum_primitive::FromPrimitive;
+use serde::{Deserialize, Serialize};
 
 use operation::{Control, Normal};
 use push_value::{LargeValue, SmallValue};
 
 /** Script opcodes */
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Deserialize, Serialize)]
 pub enum Opcode {
     PushValue(PushValue),
     Operation(Operation),
@@ -22,7 +23,7 @@ impl From<&Opcode> for Vec<u8> {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Deserialize, Serialize)]
 pub enum PushValue {
     SmallValue(SmallValue),
     LargeValue(LargeValue),
@@ -44,7 +45,7 @@ impl PushValue {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Deserialize, Serialize)]
 pub enum Operation {
     /// - always evaluated
     /// - can be cast to its discriminant

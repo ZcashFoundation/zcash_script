@@ -71,6 +71,7 @@ bitflags = "2.8"
 enum_primitive = "0.1"
 ripemd = "0.1"
 secp256k1 = "0.30"
+serde = { version = "1.0", features = ["derive"] }
 sha-1 = "0.10"
 sha2 = "0.10"
 tracing = "0.1.41"
