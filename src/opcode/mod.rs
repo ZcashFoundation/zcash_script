@@ -3,6 +3,8 @@
 pub mod push_value;
 
 use enum_primitive::FromPrimitive;
+use serde::{de, Deserialize, Serialize, Serializer};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 use thiserror::Error;
 
 use super::Opcode;
@@ -106,9 +108,41 @@ impl From<LargeValue> for PushValue {
     }
 }
 
+impl Serialize for PushValue {
+    /// Wraps in an `Opcode`, then serializes that, since they have the same representation.
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        Opcode::PushValue(self.clone()).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for PushValue {
+    /// Deserializes to an `Opcode` then extracts the `PushValue`.
+    fn deserialize<D>(deserializer: D) -> Result<PushValue, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        Opcode::deserialize(deserializer).and_then(|op| match op {
+            Opcode::PushValue(pv) => Ok(pv),
+            _ => Err(de::Error::custom("invalid PushValue")),
+        })
+    }
+}
+
+impl From<&PushValue> for Vec<u8> {
+    fn from(value: &PushValue) -> Self {
+        match value {
+            PushValue::SmallValue(v) => vec![(*v).into()],
+            PushValue::LargeValue(v) => v.into(),
+        }
+    }
+}
+
 enum_from_primitive! {
 /// Control operations are evaluated regardless of whether the current branch is active.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
 pub enum Control {
     OP_IF = 0x63,
@@ -120,7 +154,7 @@ pub enum Control {
 
 enum_from_primitive! {
 /// Normal operations are only executed when they are on an active branch.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
 pub enum Operation {
     // control
@@ -234,15 +268,6 @@ impl Operation {
             }
 
             _ => vec![],
-        }
-    }
-}
-
-impl From<&PushValue> for Vec<u8> {
-    fn from(value: &PushValue) -> Self {
-        match value {
-            PushValue::SmallValue(v) => vec![(*v).into()],
-            PushValue::LargeValue(v) => v.into(),
         }
     }
 }

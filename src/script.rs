@@ -1,5 +1,6 @@
 //! Managing sequences of opcodes.
 
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
@@ -143,7 +144,7 @@ pub enum ComponentType {
 }
 
 /// Serialized script, used inside transaction inputs and outputs
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Code<'a>(pub &'a [u8]);
 
 impl Code<'_> {

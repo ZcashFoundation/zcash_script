@@ -23,8 +23,10 @@ mod zcash_script;
 #[cfg(any(test, feature = "test-dependencies"))]
 pub mod test_vectors;
 
+use core::fmt;
 use std::os::raw::{c_int, c_uint, c_void};
 
+use serde::{de, Deserialize, Serialize, Serializer};
 use tracing::warn;
 
 use interpreter::{
@@ -100,6 +102,60 @@ impl From<opcode::Control> for Opcode {
 impl From<opcode::Operation> for Opcode {
     fn from(value: opcode::Operation) -> Self {
         Opcode::Operation(value)
+    }
+}
+
+impl Serialize for Opcode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let bytes = Vec::<u8>::from(self);
+        match bytes[..] {
+            [opcode] => serializer.serialize_u8(opcode),
+            _ => serializer.serialize_bytes(&bytes),
+        }
+    }
+}
+
+struct OpcodeVisitor;
+
+impl<'de> de::Visitor<'de> for OpcodeVisitor {
+    type Value = Opcode;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a slice of bytes")
+    }
+
+    fn visit_bytes<E>(self, value: &[u8]) -> Result<Opcode, E>
+    where
+        E: de::Error,
+    {
+        let (res, remaining_code) = Opcode::parse(value);
+        res.map_err(|e| E::custom(format!("{e}")))
+            .and_then(|opcode| {
+                if remaining_code.is_empty() {
+                    Ok(opcode)
+                } else {
+                    Err(E::custom("leftover bytes"))
+                }
+            })
+    }
+
+    fn visit_u8<E>(self, value: u8) -> Result<Opcode, E>
+    where
+        E: de::Error,
+    {
+        Self::visit_bytes(OpcodeVisitor, &[value])
+    }
+}
+
+impl<'de> Deserialize<'de> for Opcode {
+    fn deserialize<D>(deserializer: D) -> Result<Opcode, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        deserializer.deserialize_bytes(OpcodeVisitor)
     }
 }
 

@@ -1,8 +1,13 @@
 #![allow(non_camel_case_types)]
 
 use bounded_vec::{BoundedVec, EmptyBoundedVec};
+use serde::{de, Deserialize, Serialize, Serializer};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 
-use crate::{num, opcode};
+use crate::{
+    num,
+    opcode::{self, PushValue},
+};
 
 /// Data values that aren’t represented within their opcode byte.
 ///
@@ -184,9 +189,32 @@ impl From<&LargeValue> for Vec<u8> {
     }
 }
 
+impl Serialize for LargeValue {
+    /// Wraps in a `PushValue`, then serializes that, since they have the same representation.
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        PushValue::LargeValue(self.clone()).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for LargeValue {
+    /// Deserializes to a `PushValue`, then extracts the `LargeValue`.
+    fn deserialize<D>(deserializer: D) -> Result<LargeValue, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        PushValue::deserialize(deserializer).and_then(|pv| match pv {
+            PushValue::LargeValue(lv) => Ok(lv),
+            _ => Err(de::Error::custom("invalid LargeValue")),
+        })
+    }
+}
+
 enum_from_primitive! {
 /// Data values represented entirely by their opcode byte.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
 pub enum SmallValue {
     // push value
