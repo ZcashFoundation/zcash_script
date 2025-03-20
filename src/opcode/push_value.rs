@@ -1,8 +1,9 @@
 #![allow(non_camel_case_types)]
 
 use crate::script::num;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Deserialize, Serialize)]
 pub enum LargeValue {
     // push value
     PushdataBytelength(Vec<u8>),
@@ -66,7 +67,7 @@ impl LargeValue {
 }
 
 enum_from_primitive! {
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Deserialize, Serialize)]
 #[repr(u8)]
 pub enum SmallValue {
     // push value
