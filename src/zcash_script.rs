@@ -1,23 +1,22 @@
-use std::num::TryFromIntError;
-
 use thiserror::Error;
 
-use crate::{interpreter::*, script, script_error::*};
+use crate::{
+    interpreter::{
+        verify_script, DefaultStepEvaluator, SignatureChecker, State, StepFn, VerificationFlags,
+    },
+    script,
+};
 
 /// This extends `ScriptError` with cases that can only occur when using the C++ implementation.
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum Error {
     /// An error that could occur in any implementation has occurred.
     #[error("{0}")]
-    Script(ScriptError),
+    Script(script::Error),
 
     /// An exception was caught during C++ verification.
     #[error("caught exception during verification")]
     CaughtException,
-
-    /// The script size can’t fit in a `u32`, as required by the C++ code.
-    #[error("invalid script size: {0}")]
-    InvalidScriptSize(TryFromIntError),
 
     /// Some other failure value recovered from C++.
     ///
@@ -34,6 +33,12 @@ impl Error {
             Error::Script(serr) => Error::Script(serr.normalize()),
             _ => self.clone(),
         }
+    }
+}
+
+impl From<script::Error> for Error {
+    fn from(value: script::Error) -> Self {
+        Error::Script(value)
     }
 }
 
@@ -99,7 +104,7 @@ pub struct StepResults<T, U> {
     /// If the execution matched the entire way, then this contains `None`. If there was a
     /// divergence, then this contains `Some` with a pair of `Result`s – one representing each
     /// stepper’s outcome at the point at which they diverged.
-    diverging_result: Option<(Result<State, ScriptError>, Result<State, ScriptError>)>,
+    diverging_result: Option<(Result<State, script::Error>, Result<State, script::Error>)>,
     /// The final payload of the first stepper.
     payload_l: T,
     /// The final payload of the second stepper.
@@ -144,7 +149,7 @@ impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
         script: &script::Code,
         state: &mut State,
         payload: &mut StepResults<T, U>,
-    ) -> Result<&'b [u8], ScriptError> {
+    ) -> Result<&'b [u8], script::Error> {
         let mut right_state = (*state).clone();
         let left = self
             .eval_step_l
@@ -163,7 +168,7 @@ impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
                     // anything
                     payload.diverging_result =
                         Some((l.map(|_| state.clone()), r.map(|_| right_state.clone())));
-                    Err(ScriptError::ExternalError("mismatched step results"))
+                    Err(script::Error::ExternalError("mismatched step results"))
                 }
             }
             // at least one is `Err`
@@ -243,7 +248,7 @@ mod tests {
         interpreter::{
             CallbackTransactionSignatureChecker, DefaultStepEvaluator, VerificationFlags,
         },
-        script_error::ScriptError,
+        opcode, script,
         testing::{
             invalid_sighash, missing_sighash, repair_flags, sighash, BrokenStepEvaluator,
             OVERFLOW_SCRIPT_SIZE, SCRIPT_PUBKEY, SCRIPT_SIG,
@@ -302,10 +307,10 @@ mod tests {
         // The final return value is from whichever stepper failed.
         assert_eq!(
             ret,
-            Err(Error::Script(ScriptError::ReadError {
+            Err(Error::from(script::Error::from(opcode::Error::ReadError {
                 expected_bytes: 1,
                 available_bytes: 0,
-            }))
+            })))
         );
 
         // `State`s are large, so we just check that there was some progress in lock step, and a
@@ -316,10 +321,10 @@ mod tests {
                 diverging_result:
                     Some((
                         Ok(state),
-                        Err(ScriptError::ReadError {
+                        Err(script::Error::Opcode(opcode::Error::ReadError {
                             expected_bytes: 1,
                             available_bytes: 0,
-                        }),
+                        })),
                     )),
                 payload_l: (),
                 payload_r: (),
@@ -360,7 +365,7 @@ mod tests {
         if res.diverging_result.is_some() {
             panic!("mismatched result: {res:?}");
         }
-        assert_eq!(ret, Err(Error::Script(ScriptError::EvalFalse)));
+        assert_eq!(ret, Err(Error::from(script::Error::EvalFalse)));
     }
 
     #[test]
@@ -387,7 +392,7 @@ mod tests {
         if res.diverging_result.is_some() {
             panic!("mismatched result: {res:?}");
         }
-        assert_eq!(ret, Err(Error::Script(ScriptError::EvalFalse)));
+        assert_eq!(ret, Err(Error::from(script::Error::EvalFalse)));
     }
 
     proptest! {

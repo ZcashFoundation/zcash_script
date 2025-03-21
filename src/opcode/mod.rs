@@ -1,5 +1,7 @@
 #![allow(non_camel_case_types)]
 
+use thiserror::Error;
+
 pub mod push_value;
 
 use super::Opcode;
@@ -7,6 +9,19 @@ use push_value::{
     LargeValue,
     SmallValue::{self, *},
 };
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Error)]
+pub enum Error {
+    #[error("expected {expected_bytes} bytes, but only {available_bytes} bytes available")]
+    ReadError {
+        expected_bytes: usize,
+        available_bytes: usize,
+    },
+
+    /// __TODO__: `Option` can go away once C++ support is removed.
+    #[error("disabled opcode encountered{}", .0.map_or("".to_owned(), |op| format!(": {:?}", op)))]
+    Disabled(Option<Disabled>),
+}
 
 /// Opcodes that represent constants to be pushed onto the stack.
 #[derive(Clone, PartialEq, Eq, Debug)]

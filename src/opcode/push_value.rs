@@ -2,7 +2,7 @@
 
 use bounded_vec::{BoundedVec, EmptyBoundedVec};
 
-use crate::{num, script_error::ScriptError};
+use crate::{num, opcode};
 
 /// Data values that aren’t represented within their opcode byte.
 ///
@@ -45,10 +45,10 @@ impl LargeValue {
         }
     }
 
-    fn split_value(script: &[u8], needed_bytes: usize) -> Result<(&[u8], &[u8]), ScriptError> {
+    fn split_value(script: &[u8], needed_bytes: usize) -> Result<(&[u8], &[u8]), opcode::Error> {
         script
             .split_at_checked(needed_bytes)
-            .ok_or(ScriptError::ReadError {
+            .ok_or(opcode::Error::ReadError {
                 expected_bytes: needed_bytes,
                 available_bytes: script.len(),
             })
@@ -56,7 +56,10 @@ impl LargeValue {
 
     /// First splits `size_size` bytes to determine the size of the value to read, then splits the
     /// value.
-    fn split_tagged_value(script: &[u8], size_size: usize) -> Result<(&[u8], &[u8]), ScriptError> {
+    fn split_tagged_value(
+        script: &[u8],
+        size_size: usize,
+    ) -> Result<(&[u8], &[u8]), opcode::Error> {
         Self::split_value(script, size_size).and_then(|(bytes, script)| {
             let mut size = 0;
             for byte in bytes.iter().rev() {
@@ -69,9 +72,9 @@ impl LargeValue {
 
     /// Parse a single [`LargeValue`] from a script. Returns `Ok(None)` if the first byte doesn’t
     /// correspond to a [`LargeValue`].
-    pub fn parse(script: &[u8]) -> Result<Option<(LargeValue, &[u8])>, ScriptError> {
+    pub fn parse(script: &[u8]) -> Result<Option<(LargeValue, &[u8])>, opcode::Error> {
         match script.split_first() {
-            None => Err(ScriptError::ReadError {
+            None => Err(opcode::Error::ReadError {
                 expected_bytes: 1,
                 available_bytes: 0,
             }),
