@@ -15,7 +15,6 @@ mod opcode;
 pub mod pattern;
 pub mod pv;
 pub mod script;
-pub mod script_error;
 mod zcash_script;
 
 use std::os::raw::{c_int, c_uint, c_void};
@@ -26,7 +25,6 @@ pub use interpreter::{
     CallbackTransactionSignatureChecker, DefaultStepEvaluator, HashType, SighashCalculator,
     SignedOutputs, VerificationFlags,
 };
-use script_error::ScriptError;
 pub use zcash_script::*;
 
 pub struct CxxInterpreter<'a> {
@@ -39,61 +37,89 @@ impl From<cxx::ScriptError> for Error {
     #[allow(non_upper_case_globals)]
     fn from(err_code: cxx::ScriptError) -> Self {
         match err_code {
-            cxx::ScriptError_t_SCRIPT_ERR_OK => Error::Ok(ScriptError::Ok),
-            cxx::ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR => Error::Ok(ScriptError::UnknownError),
-            cxx::ScriptError_t_SCRIPT_ERR_EVAL_FALSE => Error::Ok(ScriptError::EvalFalse),
-            cxx::ScriptError_t_SCRIPT_ERR_OP_RETURN => Error::Ok(ScriptError::OpReturn),
-
-            cxx::ScriptError_t_SCRIPT_ERR_SCRIPT_SIZE => Error::Ok(ScriptError::ScriptSize),
-            cxx::ScriptError_t_SCRIPT_ERR_PUSH_SIZE => Error::Ok(ScriptError::PushSize(None)),
-            cxx::ScriptError_t_SCRIPT_ERR_OP_COUNT => Error::Ok(ScriptError::OpCount),
-            cxx::ScriptError_t_SCRIPT_ERR_STACK_SIZE => Error::Ok(ScriptError::StackSize(None)),
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_COUNT => Error::Ok(ScriptError::SigCount(None)),
-            cxx::ScriptError_t_SCRIPT_ERR_PUBKEY_COUNT => Error::Ok(ScriptError::PubKeyCount(None)),
-
-            cxx::ScriptError_t_SCRIPT_ERR_VERIFY => Error::Ok(ScriptError::Verify),
-            cxx::ScriptError_t_SCRIPT_ERR_EQUALVERIFY => Error::Ok(ScriptError::EqualVerify),
-            cxx::ScriptError_t_SCRIPT_ERR_CHECKMULTISIGVERIFY => {
-                Error::Ok(ScriptError::CheckMultisigVerify)
+            cxx::ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR => Error::Ok(script::Error::UnknownError),
+            cxx::ScriptError_t_SCRIPT_ERR_EVAL_FALSE => Error::Ok(script::Error::EvalFalse),
+            cxx::ScriptError_t_SCRIPT_ERR_OP_RETURN => {
+                Error::Ok(interpreter::Error::OpReturn.into())
             }
-            cxx::ScriptError_t_SCRIPT_ERR_CHECKSIGVERIFY => Error::Ok(ScriptError::CheckSigVerify),
-            cxx::ScriptError_t_SCRIPT_ERR_NUMEQUALVERIFY => Error::Ok(ScriptError::NumEqualVerify),
 
-            cxx::ScriptError_t_SCRIPT_ERR_BAD_OPCODE => Error::Ok(ScriptError::BadOpcode(None)),
+            cxx::ScriptError_t_SCRIPT_ERR_SCRIPT_SIZE => Error::Ok(script::Error::ScriptSize(None)),
+            cxx::ScriptError_t_SCRIPT_ERR_PUSH_SIZE => {
+                Error::Ok(interpreter::Error::PushSize(None).into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_OP_COUNT => Error::Ok(interpreter::Error::OpCount.into()),
+            cxx::ScriptError_t_SCRIPT_ERR_STACK_SIZE => {
+                Error::Ok(interpreter::Error::StackSize(None).into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_COUNT => {
+                Error::Ok(interpreter::Error::SigCount(None).into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_PUBKEY_COUNT => {
+                Error::Ok(interpreter::Error::PubKeyCount(None).into())
+            }
+
+            cxx::ScriptError_t_SCRIPT_ERR_VERIFY => Error::Ok(interpreter::Error::Verify.into()),
+            cxx::ScriptError_t_SCRIPT_ERR_EQUALVERIFY => {
+                Error::Ok(interpreter::Error::EqualVerify.into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_CHECKMULTISIGVERIFY => {
+                Error::Ok(interpreter::Error::CheckMultisigVerify.into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_CHECKSIGVERIFY => {
+                Error::Ok(interpreter::Error::CheckSigVerify.into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_NUMEQUALVERIFY => {
+                Error::Ok(interpreter::Error::NumEqualVerify.into())
+            }
+
+            cxx::ScriptError_t_SCRIPT_ERR_BAD_OPCODE => {
+                Error::Ok(interpreter::Error::BadOpcode(None).into())
+            }
             cxx::ScriptError_t_SCRIPT_ERR_DISABLED_OPCODE => {
-                Error::Ok(ScriptError::DisabledOpcode(None))
+                Error::Ok(interpreter::Error::DisabledOpcode(None).into())
             }
             cxx::ScriptError_t_SCRIPT_ERR_INVALID_STACK_OPERATION => {
-                Error::Ok(ScriptError::InvalidStackOperation)
+                Error::Ok(interpreter::Error::InvalidStackOperation.into())
             }
             cxx::ScriptError_t_SCRIPT_ERR_INVALID_ALTSTACK_OPERATION => {
-                Error::Ok(ScriptError::InvalidAltstackOperation)
+                Error::Ok(interpreter::Error::InvalidAltstackOperation.into())
             }
             cxx::ScriptError_t_SCRIPT_ERR_UNBALANCED_CONDITIONAL => {
-                Error::Ok(ScriptError::UnbalancedConditional)
+                Error::Ok(interpreter::Error::UnbalancedConditional.into())
             }
 
             cxx::ScriptError_t_SCRIPT_ERR_NEGATIVE_LOCKTIME => {
-                Error::Ok(ScriptError::NegativeLockTime)
+                Error::Ok(interpreter::Error::NegativeLockTime.into())
             }
             cxx::ScriptError_t_SCRIPT_ERR_UNSATISFIED_LOCKTIME => {
-                Error::Ok(ScriptError::UnsatisfiedLockTime)
+                Error::Ok(interpreter::Error::UnsatisfiedLockTime.into())
             }
 
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_HASHTYPE => Error::Ok(ScriptError::SigHashType(None)),
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_DER => Error::Ok(ScriptError::SigDER(None)),
-            cxx::ScriptError_t_SCRIPT_ERR_MINIMALDATA => Error::Ok(ScriptError::MinimalData),
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_PUSHONLY => Error::Ok(ScriptError::SigPushOnly),
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_HIGH_S => Error::Ok(ScriptError::SigHighS),
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_NULLDUMMY => Error::Ok(ScriptError::SigNullDummy),
-            cxx::ScriptError_t_SCRIPT_ERR_PUBKEYTYPE => Error::Ok(ScriptError::PubKeyType),
-            cxx::ScriptError_t_SCRIPT_ERR_CLEANSTACK => Error::Ok(ScriptError::CleanStack),
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_HASHTYPE => {
+                Error::Ok(interpreter::Error::SigHashType(None).into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_DER => {
+                Error::Ok(interpreter::Error::SigDER(None).into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_MINIMALDATA => {
+                Error::Ok(interpreter::Error::MinimalData.into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_PUSHONLY => Error::Ok(script::Error::SigPushOnly),
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_HIGH_S => {
+                Error::Ok(interpreter::Error::SigHighS.into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_NULLDUMMY => {
+                Error::Ok(interpreter::Error::SigNullDummy.into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_PUBKEYTYPE => {
+                Error::Ok(interpreter::Error::PubKeyType.into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_CLEANSTACK => Error::Ok(script::Error::CleanStack),
 
             cxx::ScriptError_t_SCRIPT_ERR_DISCOURAGE_UPGRADABLE_NOPS => {
-                Error::Ok(ScriptError::DiscourageUpgradableNOPs)
+                Error::Ok(interpreter::Error::DiscourageUpgradableNOPs.into())
             }
 
-            cxx::ScriptError_t_SCRIPT_ERR_VERIFY_SCRIPT => Error::VerifyScript,
             unknown => Error::Unknown(unknown.into()),
         }
     }
@@ -153,12 +179,12 @@ impl<'a> ZcashScript for CxxInterpreter<'a> {
                 script_pub_key
                     .len()
                     .try_into()
-                    .map_err(Error::InvalidScriptSize)?,
+                    .map_err(|err| script::Error::ScriptSize(Some(err)))?,
                 signature_script.as_ptr(),
                 signature_script
                     .len()
                     .try_into()
-                    .map_err(Error::InvalidScriptSize)?,
+                    .map_err(|err| script::Error::ScriptSize(Some(err)))?,
                 flags.bits(),
                 &mut err,
             )
@@ -177,7 +203,7 @@ impl<'a> ZcashScript for CxxInterpreter<'a> {
         script
             .len()
             .try_into()
-            .map_err(Error::InvalidScriptSize)
+            .map_err(|err| script::Error::ScriptSize(Some(err)).into())
             .map(|script_len| unsafe {
                 cxx::zcash_script_legacy_sigop_count_script(script.as_ptr(), script_len)
             })
@@ -218,14 +244,26 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
 pub fn normalize_error(err: Error) -> Error {
     match err {
         Error::Ok(serr) => Error::Ok(match serr {
-            ScriptError::BadOpcode(Some(_)) => ScriptError::BadOpcode(None),
-            ScriptError::DisabledOpcode(Some(_)) => ScriptError::DisabledOpcode(None),
-            ScriptError::PubKeyCount(Some(_)) => ScriptError::PubKeyCount(None),
-            ScriptError::SigCount(Some(_)) => ScriptError::SigCount(None),
-            ScriptError::ReadError { .. } => ScriptError::BadOpcode(None),
-            ScriptError::NumError(_) => ScriptError::UnknownError,
-            ScriptError::SigDER(Some(_)) => ScriptError::SigDER(None),
-            ScriptError::SigHashType(Some(_)) => ScriptError::SigHashType(None),
+            script::Error::Interpreter(ie) => match ie {
+                interpreter::Error::BadOpcode(Some(_)) => {
+                    interpreter::Error::BadOpcode(None).into()
+                }
+                interpreter::Error::DisabledOpcode(Some(_)) => {
+                    interpreter::Error::DisabledOpcode(None).into()
+                }
+                interpreter::Error::PubKeyCount(Some(_)) => {
+                    interpreter::Error::PubKeyCount(None).into()
+                }
+                interpreter::Error::SigCount(Some(_)) => interpreter::Error::SigCount(None).into(),
+                interpreter::Error::Num(_) => script::Error::UnknownError,
+                interpreter::Error::SigDER(Some(_)) => interpreter::Error::SigDER(None).into(),
+                interpreter::Error::SigHashType(Some(_)) => {
+                    interpreter::Error::SigHashType(None).into()
+                }
+                _ => ie.into(),
+            },
+            script::Error::ScriptSize(Some(_)) => script::Error::ScriptSize(None),
+            script::Error::Read(_) => interpreter::Error::BadOpcode(None).into(),
             _ => serr,
         }),
         _ => err,
@@ -339,7 +377,7 @@ pub mod testing {
             script: &Script,
             state: &mut State,
             payload: &mut T::Payload,
-        ) -> Result<&'a [u8], ScriptError> {
+        ) -> Result<&'a [u8], script::Error> {
             self.0.call(
                 if pc[0] == Normal::OP_EQUAL.into() {
                     &pc[1..]
@@ -448,7 +486,7 @@ mod tests {
         );
 
         assert_eq!(ret.0, ret.1.map_err(normalize_error));
-        assert_eq!(ret.0, Err(Error::Ok(ScriptError::EvalFalse)));
+        assert_eq!(ret.0, Err(Error::Ok(script::Error::EvalFalse)));
     }
 
     #[test]
@@ -479,7 +517,7 @@ mod tests {
         );
 
         assert_eq!(ret.0, ret.1.map_err(normalize_error));
-        assert_eq!(ret.0, Err(Error::Ok(ScriptError::EvalFalse)));
+        assert_eq!(ret.0, Err(Error::Ok(script::Error::EvalFalse)));
     }
 
     proptest! {

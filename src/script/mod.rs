@@ -1,7 +1,10 @@
+use std::num::TryFromIntError;
+
 use enum_primitive::FromPrimitive;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    interpreter,
     opcode::{
         operation::Normal::*,
         push_value::{
@@ -10,10 +13,38 @@ use crate::{
         },
         Opcode, Operation, PushValue,
     },
-    script_error::ScriptError,
 };
 
 pub(crate) mod num;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct ReadError {
+    pub expected_bytes: usize,
+    pub available_bytes: usize,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Error {
+    UnknownError,
+    ScriptSize(Option<TryFromIntError>),
+    Read(ReadError),
+    SigPushOnly,
+    Interpreter(interpreter::Error),
+    CleanStack,
+    EvalFalse,
+}
+
+impl From<ReadError> for Error {
+    fn from(value: ReadError) -> Self {
+        Error::Read(value)
+    }
+}
+
+impl From<interpreter::Error> for Error {
+    fn from(value: interpreter::Error) -> Self {
+        Error::Interpreter(value)
+    }
+}
 
 /// Maximum script length in bytes
 pub const MAX_SIZE: usize = 10_000;
@@ -23,7 +54,7 @@ pub const MAX_SIZE: usize = 10_000;
 pub struct Script<'a>(pub &'a [u8]);
 
 impl Script<'_> {
-    pub fn parse(&self) -> Result<Vec<Opcode>, ScriptError> {
+    pub fn parse(&self) -> Result<Vec<Opcode>, ReadError> {
         let mut pc = self.0;
         let mut result = vec![];
         while !pc.is_empty() {
@@ -35,18 +66,16 @@ impl Script<'_> {
         Ok(result)
     }
 
-    fn split_value(script: &[u8], needed_bytes: usize) -> Result<(&[u8], &[u8]), ScriptError> {
-        script
-            .split_at_checked(needed_bytes)
-            .ok_or(ScriptError::ReadError {
-                expected_bytes: needed_bytes,
-                available_bytes: script.len(),
-            })
+    fn split_value(script: &[u8], needed_bytes: usize) -> Result<(&[u8], &[u8]), ReadError> {
+        script.split_at_checked(needed_bytes).ok_or(ReadError {
+            expected_bytes: needed_bytes,
+            available_bytes: script.len(),
+        })
     }
 
     /// First splits `size_size` bytes to determine the size of the value to read, then splits the
     /// value.
-    fn split_tagged_value(script: &[u8], size_size: usize) -> Result<(&[u8], &[u8]), ScriptError> {
+    fn split_tagged_value(script: &[u8], size_size: usize) -> Result<(&[u8], &[u8]), ReadError> {
         Script::split_value(script, size_size).and_then(|(bytes, script)| {
             let mut size = 0;
             for byte in bytes.iter().rev() {
@@ -57,9 +86,9 @@ impl Script<'_> {
         })
     }
 
-    pub fn get_lv(script: &[u8]) -> Result<Option<(LargeValue, &[u8])>, ScriptError> {
+    pub fn get_lv(script: &[u8]) -> Result<Option<(LargeValue, &[u8])>, ReadError> {
         match script.split_first() {
-            None => Err(ScriptError::ReadError {
+            None => Err(ReadError {
                 expected_bytes: 1,
                 available_bytes: 0,
             }),
@@ -82,11 +111,11 @@ impl Script<'_> {
         }
     }
 
-    pub fn get_op(script: &[u8]) -> Result<(Opcode, &[u8]), ScriptError> {
+    pub fn get_op(script: &[u8]) -> Result<(Opcode, &[u8]), ReadError> {
         Self::get_lv(script).and_then(|r| {
             r.map_or(
                 match script.split_first() {
-                    None => Err(ScriptError::ReadError {
+                    None => Err(ReadError {
                         expected_bytes: 1,
                         available_bytes: 0,
                     }),
