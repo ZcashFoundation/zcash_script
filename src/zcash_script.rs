@@ -1,8 +1,9 @@
-use std::num::TryFromIntError;
-
-use super::interpreter::*;
-use super::script::*;
-use super::script_error::*;
+use crate::{
+    interpreter::{
+        verify_script, DefaultStepEvaluator, SignatureChecker, State, StepFn, VerificationFlags,
+    },
+    script::{self, Script},
+};
 
 /// This maps to `zcash_script_error_t`, but most of those cases aren’t used any more. This only
 /// replicates the still-used cases, and then an `Unknown` bucket for anything else that might
@@ -10,16 +11,18 @@ use super::script_error::*;
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Error {
     /// Any failure that results in the script being invalid.
-    Ok(ScriptError),
-    /// An exception was caught.
-    VerifyScript,
-    /// The script size can’t fit in a `u32`, as required by the C++ code.
-    InvalidScriptSize(TryFromIntError),
+    Ok(script::Error),
     /// Some other failure value recovered from C++.
     ///
     /// __NB__: Linux uses `u32` for the underlying C++ enum while Windows uses `i32`, so `i64` can
     ///         hold either.
     Unknown(i64),
+}
+
+impl From<script::Error> for Error {
+    fn from(value: script::Error) -> Self {
+        Error::Ok(value)
+    }
 }
 
 /// The external API of zcash_script. This is defined to make it possible to compare the C++ and
@@ -82,7 +85,7 @@ pub struct StepResults<T, U> {
     /// If the execution matched the entire way, then this contains `None`. If there was a
     /// divergence, then this contains `Some` with a pair of `Result`s – one representing each
     /// stepper’s outcome at the point at which they diverged.
-    pub diverging_result: Option<(Result<State, ScriptError>, Result<State, ScriptError>)>,
+    pub diverging_result: Option<(Result<State, script::Error>, Result<State, script::Error>)>,
     /// The final payload of the first stepper.
     pub payload_l: T,
     /// The final payload of the second stepper.
@@ -120,7 +123,7 @@ impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
         script: &Script,
         state: &mut State,
         payload: &mut StepResults<T, U>,
-    ) -> Result<&'b [u8], ScriptError> {
+    ) -> Result<&'b [u8], script::Error> {
         let mut right_state = (*state).clone();
         let left = self
             .eval_step_l
@@ -141,7 +144,7 @@ impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
                         left.map(|_| state.clone()),
                         right.map(|_| right_state.clone()),
                     ));
-                    Err(ScriptError::UnknownError)
+                    Err(script::Error::UnknownError)
                 }
             }
             // at least one is `Err`
@@ -213,7 +216,7 @@ impl<F: StepFn> ZcashScript for StepwiseInterpreter<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::*;
+    use crate::{interpreter::CallbackTransactionSignatureChecker, script::ReadError, testing::*};
     use proptest::prelude::*;
 
     #[test]
@@ -268,10 +271,10 @@ mod tests {
         // The final return value is from whichever stepper failed.
         assert_eq!(
             ret,
-            Err(Error::Ok(ScriptError::ReadError {
+            Err(Error::Ok(script::Error::Read(ReadError {
                 expected_bytes: 1,
                 available_bytes: 0,
-            }))
+            })))
         );
 
         // `State`s are large, so we just check that there was some progress in lock step, and a
@@ -282,10 +285,10 @@ mod tests {
                 diverging_result:
                     Some((
                         Ok(state),
-                        Err(ScriptError::ReadError {
+                        Err(script::Error::Read(ReadError {
                             expected_bytes: 1,
                             available_bytes: 0,
-                        }),
+                        })),
                     )),
                 payload_l: (),
                 payload_r: (),
@@ -328,7 +331,7 @@ mod tests {
         if res.diverging_result != None {
             panic!("mismatched result: {:?}", res);
         }
-        assert_eq!(ret, Err(Error::Ok(ScriptError::EvalFalse)));
+        assert_eq!(ret, Err(Error::Ok(script::Error::EvalFalse)));
     }
 
     #[test]
@@ -355,7 +358,7 @@ mod tests {
         if res.diverging_result != None {
             panic!("mismatched result: {:?}", res);
         }
-        assert_eq!(ret, Err(Error::Ok(ScriptError::EvalFalse)));
+        assert_eq!(ret, Err(Error::Ok(script::Error::EvalFalse)));
     }
 
     proptest! {
