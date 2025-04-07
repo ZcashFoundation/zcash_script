@@ -483,11 +483,11 @@ impl State {
 
     /// Creates a state with an initial stack, but other components empty.
     pub fn initial(stack: Stack<Vec<u8>>) -> Self {
-        Self::manual(stack, Stack::new(), 0, Stack::new())
+        Self::from_parts(stack, Stack::new(), 0, Stack::new())
     }
 
-    /// Create an arbitrary stat.
-    pub fn manual(
+    /// Create an arbitrary state.
+    pub fn from_parts(
         stack: Stack<Vec<u8>>,
         altstack: Stack<Vec<u8>>,
         op_count: u8,
