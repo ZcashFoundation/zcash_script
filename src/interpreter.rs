@@ -183,6 +183,10 @@ pub struct Stack<T>(Vec<T>);
 /// Wraps a Vec (or whatever underlying implementation we choose in a way that matches the C++ impl
 /// and provides us some decent chaining)
 impl<T: Clone> Stack<T> {
+    pub fn new() -> Self {
+        Stack(vec![])
+    }
+
     fn reverse_index(&self, i: isize) -> Result<usize, ScriptError> {
         usize::try_from(-i)
             .map(|a| self.0.len() - a)
@@ -474,12 +478,12 @@ pub struct State {
 impl State {
     /// Creates a new empty state.
     pub fn new() -> Self {
-        Self::initial(Stack(vec![]))
+        Self::initial(Stack::new())
     }
 
     /// Creates a state with an initial stack, but other components empty.
     pub fn initial(stack: Stack<Vec<u8>>) -> Self {
-        Self::manual(stack, Stack(vec![]), 0, Stack(vec![]))
+        Self::manual(stack, Stack::new(), 0, Stack::new())
     }
 
     /// Create an arbitrary stat.
@@ -1373,7 +1377,7 @@ where
         return set_error(ScriptError::SigPushOnly);
     }
 
-    let data_stack = eval_script(Stack(Vec::new()), script_sig, payload, stepper)?;
+    let data_stack = eval_script(Stack::new(), script_sig, payload, stepper)?;
     let pub_key_stack = eval_script(data_stack.clone(), script_pub_key, payload, stepper)?;
     if pub_key_stack.empty() {
         return set_error(ScriptError::EvalFalse);
