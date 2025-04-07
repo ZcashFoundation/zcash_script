@@ -177,7 +177,7 @@ fn cast_to_bool(vch: &ValType) -> bool {
  * Script is a stack machine (like Forth) that evaluates a predicate
  * returning a bool indicating valid or not.  There are no loops.
  */
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Stack<T>(Vec<T>);
 
 /// Wraps a Vec (or whatever underlying implementation we choose in a way that matches the C++ impl
@@ -462,7 +462,7 @@ fn check_minimal_push(data: &[u8], opcode: PushValue) -> bool {
 const VCH_FALSE: ValType = Vec::new();
 const VCH_TRUE: [u8; 1] = [1];
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct State {
     stack: Stack<Vec<u8>>,
     altstack: Stack<Vec<u8>>,
