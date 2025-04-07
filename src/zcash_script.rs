@@ -162,8 +162,17 @@ pub struct StepwiseInterpreter<F>
 where
     F: StepFn,
 {
-    pub initial_payload: F::Payload,
-    pub stepper: F,
+    initial_payload: F::Payload,
+    stepper: F,
+}
+
+impl<F: StepFn> StepwiseInterpreter<F> {
+    pub fn new(initial_payload: F::Payload, stepper: F) -> Self {
+        StepwiseInterpreter {
+            initial_payload,
+            stepper,
+        }
+    }
 }
 
 pub fn rust_interpreter<C: SignatureChecker + Copy>(
@@ -298,12 +307,7 @@ mod tests {
                 identical_states,
                 diverging_result:
                     Some((
-                        Ok(State {
-                            stack,
-                            altstack,
-                            op_count: 2,
-                            vexec,
-                        }),
+                        Ok(state),
                         Err(ScriptError::ReadError {
                             expected_bytes: 1,
                             available_bytes: 0,
@@ -314,9 +318,10 @@ mod tests {
             } => {
                 assert!(
                     identical_states.len() == 6
-                        && stack.size() == 4
-                        && altstack.empty()
-                        && vexec.empty()
+                        && state.stack().size() == 4
+                        && state.altstack().empty()
+                        && state.op_count() == 2
+                        && state.vexec().empty()
                 );
             }
             _ => {

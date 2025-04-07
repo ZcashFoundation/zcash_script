@@ -460,25 +460,57 @@ const VCH_TRUE: [u8; 1] = [1];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct State {
-    pub stack: Stack<Vec<u8>>,
-    pub altstack: Stack<Vec<u8>>,
+    stack: Stack<Vec<u8>>,
+    altstack: Stack<Vec<u8>>,
     // We keep track of how many operations have executed so far to prevent expensive-to-verify
     // scripts
-    pub op_count: u8,
+    op_count: u8,
     // This keeps track of the conditional flags at each nesting level during execution. If we're in
     // a branch of execution where *any* of these conditionals are false, we ignore opcodes unless
     // those opcodes direct control flow (OP_IF, OP_ELSE, etc.).
-    pub vexec: Stack<bool>,
+    vexec: Stack<bool>,
 }
 
 impl State {
+    /// Creates a new empty state.
+    pub fn new() -> Self {
+        Self::initial(Stack(vec![]))
+    }
+
+    /// Creates a state with an initial stack, but other components empty.
     pub fn initial(stack: Stack<Vec<u8>>) -> Self {
+        Self::manual(stack, Stack(vec![]), 0, Stack(vec![]))
+    }
+
+    /// Create an arbitrary stat.
+    pub fn manual(
+        stack: Stack<Vec<u8>>,
+        altstack: Stack<Vec<u8>>,
+        op_count: u8,
+        vexec: Stack<bool>,
+    ) -> Self {
         State {
             stack,
-            altstack: Stack(vec![]),
-            op_count: 0,
-            vexec: Stack(vec![]),
+            altstack,
+            op_count,
+            vexec,
         }
+    }
+
+    pub fn stack(&self) -> &Stack<Vec<u8>> {
+        &self.stack
+    }
+
+    pub fn altstack(&self) -> &Stack<Vec<u8>> {
+        &self.altstack
+    }
+
+    pub fn op_count(&self) -> u8 {
+        self.op_count
+    }
+
+    pub fn vexec(&self) -> &Stack<bool> {
+        &self.vexec
     }
 }
 
