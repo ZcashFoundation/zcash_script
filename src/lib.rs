@@ -476,7 +476,7 @@ mod tests {
             sig in prop::collection::vec(0..=0xffu8, 1..=OVERFLOW_SCRIPT_SIZE),
             flag_bits in prop::bits::u32::masked(VerificationFlags::all().bits()),
         ) {
-            let flags =                 repair_flags(VerificationFlags::from_bits_truncate(flag_bits));
+            let flags = repair_flags(VerificationFlags::from_bits_truncate(flag_bits));
             let ret = check_verify_callback(
             &CxxInterpreter {
                 sighash: &sighash,
