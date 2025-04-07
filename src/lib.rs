@@ -25,7 +25,6 @@ pub use interpreter::{
 use script_error::ScriptError;
 pub use zcash_script::*;
 
-/// A tag to indicate that the C++ implementation of zcash_script should be used.
 pub struct CxxInterpreter<'a> {
     pub sighash: SighashCalculator<'a>,
     pub lock_time: u32,
