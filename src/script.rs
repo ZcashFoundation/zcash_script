@@ -269,6 +269,9 @@ impl From<Operation> for u8 {
 pub struct ScriptNum(i64);
 
 impl ScriptNum {
+    pub const ZERO: ScriptNum = ScriptNum(0);
+    pub const ONE: ScriptNum = ScriptNum(1);
+
     const DEFAULT_MAX_NUM_SIZE: usize = 4;
 
     pub fn new(
