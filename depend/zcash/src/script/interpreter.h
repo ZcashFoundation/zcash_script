@@ -137,6 +137,22 @@ public:
     bool CheckLockTime(const CScriptNum& nLockTime) const;
 };
 
+struct State {
+    std::vector<std::vector<unsigned char>> stack;
+    std::vector<std::vector<unsigned char>> altstack{};
+    std::vector<bool> vfExec{};
+    int nOpCount{0};
+};
+
+/// Runs one step of the evaluator, allowing incremental inspection.
+bool EvalStep(
+    struct State& state,
+    const CScript& script,
+    CScript::const_iterator& pc,
+    unsigned int flags,
+    const BaseSignatureChecker& checker,
+    uint32_t consensusBranchId,
+    ScriptError* serror);
 
 bool EvalScript(
     std::vector<std::vector<unsigned char> >& stack,
