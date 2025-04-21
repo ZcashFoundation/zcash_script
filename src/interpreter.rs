@@ -683,6 +683,9 @@ pub fn eval_step<'a>(
                         let mut value = false;
                         if exec {
                             if stack.size() < 1 {
+                                // TODO: This preserves what I think is a bug in the C++ impl – I
+                                //       think this should return
+                                //       [ScriptError::InvalidStackOperation], like every other similar case.
                                 return set_error(ScriptError::UnbalancedConditional);
                             }
                             let vch: &ValType = stack.top(-1)?;
