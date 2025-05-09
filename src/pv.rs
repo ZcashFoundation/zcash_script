@@ -1,5 +1,7 @@
 //! Convenience definitions for all push values.
 
+use alloc::vec::Vec;
+
 use crate::opcode::{
     push_value::{LargeValue::*, SmallValue::*},
     PushValue::{self, LargeValue, SmallValue},

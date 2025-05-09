@@ -1,7 +1,10 @@
 #![allow(non_camel_case_types)]
 
-use crate::script::num;
+use alloc::vec::Vec;
+
 use serde::{Deserialize, Serialize};
+
+use crate::script::num;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Deserialize, Serialize)]
 pub enum LargeValue {

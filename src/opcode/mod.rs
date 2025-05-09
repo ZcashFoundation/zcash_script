@@ -1,6 +1,8 @@
 pub mod operation;
 pub mod push_value;
 
+use alloc::vec::Vec;
+
 use enum_primitive::FromPrimitive;
 use serde::{Deserialize, Serialize};
 

@@ -1,6 +1,8 @@
 //! Much of this comes from
 //! https://gist.github.com/str4d/9d80f1b60e6787310897044502cb025b
 
+use alloc::vec::Vec;
+
 use crate::{
     op,
     opcode::{

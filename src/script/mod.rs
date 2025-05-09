@@ -1,4 +1,5 @@
-use std::num::TryFromIntError;
+use alloc::vec::Vec;
+use core::num::TryFromIntError;
 
 use enum_primitive::FromPrimitive;
 use serde::{Deserialize, Serialize};

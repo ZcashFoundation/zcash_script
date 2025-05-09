@@ -1,5 +1,7 @@
 //! Convenience definitions for all opcodes.
 
+use alloc::vec::Vec;
+
 use crate::{
     opcode::{
         operation::{Control::*, Normal::*},

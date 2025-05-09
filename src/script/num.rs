@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Error {
     NonMinimalEncoding,

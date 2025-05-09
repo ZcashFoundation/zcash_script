@@ -31,6 +31,7 @@ fn bindgen_headers() -> Result<()> {
     println!("cargo:rerun-if-changed=depend/zcash/src/script/zcash_script.h");
 
     let bindings = bindgen::Builder::default()
+        .use_core()
         .header("depend/zcash/src/script/zcash_script.h")
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.

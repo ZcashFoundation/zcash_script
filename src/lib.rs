@@ -4,6 +4,9 @@
 #![doc(html_root_url = "https://docs.rs/zcash_script/0.3.0")]
 #![allow(non_snake_case)]
 #![allow(unsafe_code)]
+#![no_std]
+#[macro_use]
+extern crate alloc;
 #[macro_use]
 extern crate enum_primitive;
 
@@ -17,7 +20,10 @@ pub mod pv;
 pub mod script;
 mod zcash_script;
 
-use std::os::raw::{c_int, c_uint, c_void};
+use core::{
+    ffi::{c_int, c_uint, c_void},
+    ptr, slice,
+};
 
 use tracing::warn;
 
@@ -139,8 +145,7 @@ extern "C" fn sighash_callback(
     // SAFETY: `script_code` is created from a Rust slice in `verify_callback`, passed through the
     // C++ code, eventually to `CallbackTransactionSignatureChecker::CheckSig`, which calls this
     // function.
-    let script_code_vec =
-        unsafe { std::slice::from_raw_parts(script_code, checked_script_code_len) };
+    let script_code_vec = unsafe { slice::from_raw_parts(script_code, checked_script_code_len) };
     // SAFETY: `ctx` is a valid `SighashCalculator` constructed in `verify_callback`
     // which forwards it to the `CallbackTransactionSignatureChecker`.
     let callback = unsafe { *(ctx as *const SighashCalculator) };
@@ -154,7 +159,7 @@ extern "C" fn sighash_callback(
         assert_eq!(sighash_out_len, sighash.len().try_into().unwrap());
         // SAFETY: `sighash_out` is a valid buffer created in
         // `CallbackTransactionSignatureChecker::CheckSig`.
-        unsafe { std::ptr::copy_nonoverlapping(sighash.as_ptr(), sighash_out, sighash.len()) };
+        unsafe { ptr::copy_nonoverlapping(sighash.as_ptr(), sighash_out, sighash.len()) };
     }
 }
 
@@ -347,6 +352,7 @@ pub mod testing {
         pattern::*,
         script::{self, Script},
     };
+    use alloc::vec::Vec;
     use hex::FromHex;
 
     /// Ensures that flags represent a supported state. This avoids crashes in the C++ code, which
