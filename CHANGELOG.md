@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+## [0.3.0](https://github.com/ZcashFoundation/zcash_script/compare/v0.2.0...v0.3.0) - 2025-05-13
+
+- Another major API update. The previous C++ functions were moved to the `cxx`
+  module. A new Rust implementation has been added. In the root of the
+  crate there are now "Intepreters" which allow choosing which implementation
+  to use.
+
+- Eliminate `ScriptNum` ([#208](https://github.com/ZcashFoundation/zcash_script/pull/208))
+- Add various stepwise functionality ([#204](https://github.com/ZcashFoundation/zcash_script/pull/204))
+- Addressing post-hoc PR feedback on #174 ([#197](https://github.com/ZcashFoundation/zcash_script/pull/197))
+- Expose `ScriptError` on C++ side ([#195](https://github.com/ZcashFoundation/zcash_script/pull/195))
+- Change type of `lock_time` parameter ([#190](https://github.com/ZcashFoundation/zcash_script/pull/190))
+- Initial Rust implementation ([#174](https://github.com/ZcashFoundation/zcash_script/pull/174))
+- Add a basic rust-toolchain.toml ([#176](https://github.com/ZcashFoundation/zcash_script/pull/176))
+- Address Str4d’s comments on #171 ([#175](https://github.com/ZcashFoundation/zcash_script/pull/175))
+- Provide a Rustier wrapper for zcash_script ([#171](https://github.com/ZcashFoundation/zcash_script/pull/171))
+
 ## [0.2.0] - 2024-06-10
 
 - Major API update. Most functions have been removed and a new callback-based
