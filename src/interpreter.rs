@@ -513,10 +513,22 @@ pub fn eval_step<'a>(
     //
     opcode::parse(pc)
         .map_err(script::Error::from)
-        .and_then(|(opcode, new_pc)| {
-            eval_opcode(flags, opcode, script, &checker, state)
+        .and_then(|(opcode, new_pc)| match opcode {
+            Err(byte) => {
+                state.op_count += 1;
+                if state.op_count <= MAX_OP_COUNT {
+                    if should_exec(&state.vexec) {
+                        Err(Error::BadOpcode(Some(byte)).into())
+                    } else {
+                        Ok(new_pc)
+                    }
+                } else {
+                    Err(Error::OpCount.into())
+                }
+            }
+            Ok(opcode) => eval_opcode(flags, opcode, script, &checker, state)
                 .map_err(script::Error::from)
-                .map(|()| new_pc)
+                .map(|()| new_pc),
         })
 }
 
@@ -555,13 +567,6 @@ fn eval_opcode(
                             eval_operation(
                                 normal, flags, script, checker, stack, altstack, op_count,
                             )
-                        } else {
-                            Ok(())
-                        }
-                    }
-                    Operation::Unknown(byte) => {
-                        if should_exec(vexec) {
-                            Err(Error::BadOpcode(Some(byte)))
                         } else {
                             Ok(())
                         }

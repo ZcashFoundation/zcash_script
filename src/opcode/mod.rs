@@ -90,7 +90,11 @@ fn get_lv(script: &[u8]) -> Result<Option<(LargeValue, &[u8])>, ReadError> {
     }
 }
 
-pub fn parse(script: &[u8]) -> Result<(Opcode, &[u8]), Error> {
+/// This parses a single opcode from a byte stream.
+///
+/// NB: The nested `Result` allows us to preserve unknown bytes, which only trigger a failure if
+///     they’re on an active branch during interpretation.
+pub fn parse(script: &[u8]) -> Result<(Result<Opcode, u8>, &[u8]), Error> {
     get_lv(script).map_err(Error::Read).and_then(|r| {
         r.map_or(
             match script.split_first() {
@@ -100,19 +104,21 @@ pub fn parse(script: &[u8]) -> Result<(Opcode, &[u8]), Error> {
                 })),
                 Some((leading_byte, script)) => SmallValue::from_u8(*leading_byte)
                     .map_or(
-                        match *leading_byte {
-                            0x7e | 0x7f | 0x80 | 0x81 | 0x83 | 0x84 | 0x85 | 0x86 | 0x8d | 0x8e
-                            | 0x95 | 0x96 | 0x97 | 0x98 | 0x99 | 0xab => {
-                                Err(Error::DisabledOpcode(Some(*leading_byte)))
-                            }
-
-                            unknown => Ok(Opcode::Operation(Operation::from(unknown))),
-                        },
-                        |sv| Ok(Opcode::PushValue(PushValue::SmallValue(sv))),
+                        Operation::try_from(*leading_byte).map_or(
+                            match *leading_byte {
+                                0x7e | 0x7f | 0x80 | 0x81 | 0x83 | 0x84 | 0x85 | 0x86 | 0x8d
+                                | 0x8e | 0x95 | 0x96 | 0x97 | 0x98 | 0x99 | 0xab => {
+                                    Err(Error::DisabledOpcode(Some(*leading_byte)))
+                                }
+                                unknown => Ok(Err(unknown)),
+                            },
+                            |op| Ok(Ok(Opcode::Operation(op))),
+                        ),
+                        |sv| Ok(Ok(Opcode::PushValue(PushValue::SmallValue(sv)))),
                     )
                     .map(|op| (op, script)),
             },
-            |(v, script)| Ok((Opcode::PushValue(PushValue::LargeValue(v)), script)),
+            |(v, script)| Ok((Ok(Opcode::PushValue(PushValue::LargeValue(v))), script)),
         )
     })
 }
@@ -147,7 +153,7 @@ impl<'de> de::Visitor<'de> for OpcodeVisitor {
             .map_err(|_| E::custom("not enough bytes"))
             .and_then(|(opcode, remainder)| {
                 if remainder.is_empty() {
-                    Ok(opcode)
+                    opcode.map_err(|byte| E::custom(format!("unknown byte {}", byte)))
                 } else {
                     Err(E::custom("leftover bytes"))
                 }
@@ -211,7 +217,7 @@ impl<'de> Deserialize<'de> for PushValue {
     {
         Opcode::deserialize(deserializer).and_then(|op| match op {
             Opcode::PushValue(pv) => Ok(pv),
-            Opcode::Operation(_) => Err(de::Error::custom("invalid PushValue")),
+            _ => Err(de::Error::custom("invalid PushValue")),
         })
     }
 }
@@ -233,18 +239,14 @@ pub enum Operation {
     /// - only evaluated on active branch
     /// - can be cast to its discriminant
     Normal(Normal),
-    /// `Unknown` is a bit odd. It is executed in the same cases as `Normal`, but making it part of
-    /// `Normal` complicated the byte mapping implementation. It also takes any byte, but if you
-    /// create one with a byte that represents some other opcode, the interpretation will behave
-    /// differently than if you serialize and re-parse it.
-    Unknown(u8),
 }
 
-impl From<u8> for Operation {
-    fn from(value: u8) -> Self {
-        Control::from_u8(value).map_or(
-            Normal::from_u8(value).map_or(Operation::Unknown(value), Operation::Normal),
-            Operation::Control,
+impl TryFrom<u8> for Operation {
+    type Error = ();
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Unconditional::from_u8(value).map_or(
+            Normal::from_u8(value).map_or(Err(()), |n| Ok(Operation::Normal(n))),
+            |un| Ok(Operation::Control(un)),
         )
     }
 }
@@ -271,7 +273,9 @@ impl<'de> de::Visitor<'de> for OperationVisitor {
     where
         E: de::Error,
     {
-        Ok(value.into())
+        value
+            .try_into()
+            .map_err(|()| E::custom("not a valid Operation"))
     }
 }
 
@@ -289,7 +293,6 @@ impl From<Operation> for u8 {
         match value {
             Operation::Control(op) => op.into(),
             Operation::Normal(op) => op.into(),
-            Operation::Unknown(byte) => byte,
         }
     }
 }

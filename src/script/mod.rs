@@ -48,14 +48,17 @@ pub const MAX_SIZE: usize = 10_000;
 pub struct Script<'a>(pub &'a [u8]);
 
 impl Script<'_> {
-    pub fn parse(&self) -> Result<Vec<Opcode>, opcode::Error> {
+    pub fn parse(&self) -> Result<Vec<Opcode>, Error> {
         let mut pc = self.0;
         let mut result = vec![];
         while !pc.is_empty() {
-            opcode::parse(pc).map(|(op, new_pc)| {
-                pc = new_pc;
-                result.push(op)
-            })?;
+            opcode::parse(pc)
+                .map_err(Error::Opcode)
+                .and_then(|(op, new_pc)| {
+                    pc = new_pc;
+                    op.map_err(|byte| interpreter::Error::BadOpcode(Some(byte)).into())
+                        .map(|op| result.push(op))
+                })?;
         }
         Ok(result)
     }
@@ -91,7 +94,7 @@ impl Script<'_> {
                 Err(_) => break,
             };
             pc = new_pc;
-            if let Opcode::Operation(Operation::Normal(op)) = opcode {
+            if let Ok(Opcode::Operation(Operation::Normal(op))) = opcode {
                 if op == OP_CHECKSIG || op == OP_CHECKSIGVERIFY {
                     n += 1;
                 } else if op == OP_CHECKMULTISIG || op == OP_CHECKMULTISIGVERIFY {
@@ -107,7 +110,7 @@ impl Script<'_> {
                     }
                 }
             }
-            last_opcode = Some(opcode);
+            last_opcode = opcode.ok();
         }
         n
     }
@@ -125,14 +128,8 @@ impl Script<'_> {
 
     /// Called by `IsStandardTx` and P2SH/BIP62 VerifyScript (which makes it consensus-critical).
     pub fn is_push_only(&self) -> bool {
-        let mut pc = self.0;
-        while !pc.is_empty() {
-            if let Ok((Opcode::PushValue(_), new_pc)) = opcode::parse(pc) {
-                pc = new_pc;
-            } else {
-                return false;
-            }
-        }
-        true
+        self.parse().map_or(false, |op| {
+            op.iter().all(|op| matches!(op, Opcode::PushValue(_)))
+        })
     }
 }
