@@ -15,8 +15,8 @@ use crate::{
     opcode::{
         self,
         operation::{
-            Control::{self, *},
             Normal::{self, *},
+            Unconditional::{self, *},
         },
         push_value::LargeValue,
         Opcode, Operation, PushValue,
@@ -551,7 +551,7 @@ fn eval_opcode(
             *op_count += 1;
             if *op_count <= MAX_OP_COUNT {
                 match op {
-                    Operation::Control(control) => eval_control(control, stack, vexec),
+                    Operation::Unconditional(un) => eval_unconditional(un, stack, vexec),
                     Operation::Normal(normal) => {
                         if should_exec(vexec) {
                             eval_operation(
@@ -605,8 +605,8 @@ fn should_exec(vexec: &Stack<bool>) -> bool {
 }
 
 /// <expression> if [statements] [else [statements]] endif
-fn eval_control(
-    op: Control,
+fn eval_unconditional(
+    op: Unconditional,
     stack: &mut Stack<Vec<u8>>,
     vexec: &mut Stack<bool>,
 ) -> Result<(), Error> {

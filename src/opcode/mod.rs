@@ -7,7 +7,7 @@ use core::fmt;
 use enum_primitive::FromPrimitive;
 use serde::{de, Deserialize, Serialize, Serializer};
 
-use operation::{Control, Normal};
+use operation::{Normal, Unconditional};
 use push_value::{LargeValue, SmallValue};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -212,7 +212,7 @@ impl From<&PushValue> for Vec<u8> {
 pub enum Operation {
     /// - always evaluated
     /// - can be cast to its discriminant
-    Control(Control),
+    Unconditional(Unconditional),
     /// - only evaluated on active branch
     /// - can be cast to its discriminant
     Normal(Normal),
@@ -225,9 +225,9 @@ pub enum Operation {
 
 impl From<u8> for Operation {
     fn from(value: u8) -> Self {
-        Control::from_u8(value).map_or(
+        Unconditional::from_u8(value).map_or(
             Normal::from_u8(value).map_or(Operation::Unknown(value), Operation::Normal),
-            Operation::Control,
+            Operation::Unconditional,
         )
     }
 }
@@ -270,7 +270,7 @@ impl<'de> Deserialize<'de> for Operation {
 impl From<Operation> for u8 {
     fn from(value: Operation) -> Self {
         match value {
-            Operation::Control(op) => op.into(),
+            Operation::Unconditional(op) => op.into(),
             Operation::Normal(op) => op.into(),
             Operation::Unknown(byte) => byte,
         }

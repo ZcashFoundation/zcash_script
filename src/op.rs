@@ -4,9 +4,9 @@ use alloc::vec::Vec;
 
 use crate::{
     opcode::{
-        operation::{Control::*, Normal::*},
+        operation::{Normal::*, Unconditional::*},
         Opcode::{self, Operation, PushValue},
-        Operation::{Control, Normal},
+        Operation::{Normal, Unconditional},
     },
     pv,
 };
@@ -47,10 +47,10 @@ pub fn pushdata4(value: Vec<u8>) -> Opcode {
 }
 
 pub const NOP: Opcode = Operation(Normal(OP_NOP));
-pub const IF: Opcode = Operation(Control(OP_IF));
-pub const NOTIF: Opcode = Operation(Control(OP_NOTIF));
-pub const ELSE: Opcode = Operation(Control(OP_ELSE));
-pub const ENDIF: Opcode = Operation(Control(OP_ENDIF));
+pub const IF: Opcode = Operation(Unconditional(OP_IF));
+pub const NOTIF: Opcode = Operation(Unconditional(OP_NOTIF));
+pub const ELSE: Opcode = Operation(Unconditional(OP_ELSE));
+pub const ENDIF: Opcode = Operation(Unconditional(OP_ENDIF));
 pub const VERIFY: Opcode = Operation(Normal(OP_VERIFY));
 pub const RETURN: Opcode = Operation(Normal(OP_RETURN));
 pub const TOALTSTACK: Opcode = Operation(Normal(OP_TOALTSTACK));
@@ -116,16 +116,16 @@ pub const NOP10: Opcode = Operation(Normal(OP_NOP10));
 pub mod bad {
     use crate::{
         opcode::{
-            operation::{Control::*, Normal::*},
+            operation::{Normal::*, Unconditional::*},
             Opcode::{self, Operation, PushValue},
-            Operation::{Control, Normal},
+            Operation::{Normal, Unconditional},
         },
         pv,
     };
 
     pub const RESERVED: Opcode = PushValue(pv::bad::RESERVED);
-    pub const VERIF: Opcode = Operation(Control(OP_VERIF));
-    pub const VERNOTIF: Opcode = Operation(Control(OP_VERNOTIF));
+    pub const VERIF: Opcode = Operation(Unconditional(OP_VERIF));
+    pub const VERNOTIF: Opcode = Operation(Unconditional(OP_VERNOTIF));
     pub const VER: Opcode = Operation(Normal(OP_VER));
     pub const RESERVED1: Opcode = Operation(Normal(OP_RESERVED1));
     pub const RESERVED2: Opcode = Operation(Normal(OP_RESERVED2));
@@ -133,25 +133,25 @@ pub mod bad {
 
 pub mod disabled {
     use crate::opcode::{
-        operation::Control::*,
+        operation::Unconditional::*,
         Opcode::{self, Operation},
-        Operation::Control,
+        Operation::Unconditional,
     };
 
-    pub const CAT: Opcode = Operation(Control(OP_CAT));
-    pub const SUBSTR: Opcode = Operation(Control(OP_SUBSTR));
-    pub const LEFT: Opcode = Operation(Control(OP_LEFT));
-    pub const RIGHT: Opcode = Operation(Control(OP_RIGHT));
-    pub const INVERT: Opcode = Operation(Control(OP_INVERT));
-    pub const AND: Opcode = Operation(Control(OP_AND));
-    pub const OR: Opcode = Operation(Control(OP_OR));
-    pub const XOR: Opcode = Operation(Control(OP_XOR));
-    pub const _2MUL: Opcode = Operation(Control(OP_2MUL));
-    pub const _2DIV: Opcode = Operation(Control(OP_2DIV));
-    pub const MUL: Opcode = Operation(Control(OP_MUL));
-    pub const DIV: Opcode = Operation(Control(OP_DIV));
-    pub const MOD: Opcode = Operation(Control(OP_MOD));
-    pub const LSHIFT: Opcode = Operation(Control(OP_LSHIFT));
-    pub const RSHIFT: Opcode = Operation(Control(OP_RSHIFT));
-    pub const CODESEPARATOR: Opcode = Operation(Control(OP_CODESEPARATOR));
+    pub const CAT: Opcode = Operation(Unconditional(OP_CAT));
+    pub const SUBSTR: Opcode = Operation(Unconditional(OP_SUBSTR));
+    pub const LEFT: Opcode = Operation(Unconditional(OP_LEFT));
+    pub const RIGHT: Opcode = Operation(Unconditional(OP_RIGHT));
+    pub const INVERT: Opcode = Operation(Unconditional(OP_INVERT));
+    pub const AND: Opcode = Operation(Unconditional(OP_AND));
+    pub const OR: Opcode = Operation(Unconditional(OP_OR));
+    pub const XOR: Opcode = Operation(Unconditional(OP_XOR));
+    pub const _2MUL: Opcode = Operation(Unconditional(OP_2MUL));
+    pub const _2DIV: Opcode = Operation(Unconditional(OP_2DIV));
+    pub const MUL: Opcode = Operation(Unconditional(OP_MUL));
+    pub const DIV: Opcode = Operation(Unconditional(OP_DIV));
+    pub const MOD: Opcode = Operation(Unconditional(OP_MOD));
+    pub const LSHIFT: Opcode = Operation(Unconditional(OP_LSHIFT));
+    pub const RSHIFT: Opcode = Operation(Unconditional(OP_RSHIFT));
+    pub const CODESEPARATOR: Opcode = Operation(Unconditional(OP_CODESEPARATOR));
 }

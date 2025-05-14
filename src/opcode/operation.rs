@@ -3,10 +3,10 @@
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
 enum_from_primitive! {
-/// Control operations are evaluated regardless of whether the current branch is active.
+/// Unconditional operations are evaluated regardless of whether the current branch is active.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
-pub enum Control {
+pub enum Unconditional {
     OP_IF = 0x63,
     OP_NOTIF = 0x64,
     OP_VERIF = 0x65,
@@ -19,7 +19,7 @@ pub enum Control {
     OP_SUBSTR = 0x7f,
     OP_LEFT = 0x80,
     OP_RIGHT = 0x81,
-        // bit logic
+    // bit logic
     OP_INVERT = 0x83,
     OP_AND = 0x84,
     OP_OR = 0x85,
@@ -136,8 +136,8 @@ impl From<Normal> for u8 {
     }
 }
 
-impl From<Control> for u8 {
-    fn from(value: Control) -> Self {
+impl From<Unconditional> for u8 {
+    fn from(value: Unconditional) -> Self {
         // This is how you get the discriminant, but using `as` everywhere is too much code smell
         value as u8
     }
