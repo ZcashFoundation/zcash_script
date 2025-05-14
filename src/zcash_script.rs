@@ -216,7 +216,7 @@ impl<F: StepFn> ZcashScript for StepwiseInterpreter<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{interpreter::CallbackTransactionSignatureChecker, script::ReadError, testing::*};
+    use crate::{interpreter::CallbackTransactionSignatureChecker, opcode::ReadError, testing::*};
     use proptest::prelude::*;
 
     #[test]

@@ -1,27 +1,21 @@
 use std::num::TryFromIntError;
 
-use enum_primitive::FromPrimitive;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     interpreter,
     opcode::{
+        self,
         operation::Normal::*,
         push_value::{
-            LargeValue::{self, *},
+            LargeValue::PushdataBytelength,
             SmallValue::{self, *},
         },
-        Opcode, Operation, PushValue,
+        Opcode, Operation, PushValue, ReadError,
     },
 };
 
 pub(crate) mod num;
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct ReadError {
-    pub expected_bytes: usize,
-    pub available_bytes: usize,
-}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Error {
@@ -58,78 +52,12 @@ impl Script<'_> {
         let mut pc = self.0;
         let mut result = vec![];
         while !pc.is_empty() {
-            Self::get_op(pc).map(|(op, new_pc)| {
+            opcode::parse(pc).map(|(op, new_pc)| {
                 pc = new_pc;
                 result.push(op)
             })?;
         }
         Ok(result)
-    }
-
-    fn split_value(script: &[u8], needed_bytes: usize) -> Result<(&[u8], &[u8]), ReadError> {
-        script.split_at_checked(needed_bytes).ok_or(ReadError {
-            expected_bytes: needed_bytes,
-            available_bytes: script.len(),
-        })
-    }
-
-    /// First splits `size_size` bytes to determine the size of the value to read, then splits the
-    /// value.
-    fn split_tagged_value(script: &[u8], size_size: usize) -> Result<(&[u8], &[u8]), ReadError> {
-        Script::split_value(script, size_size).and_then(|(bytes, script)| {
-            let mut size = 0;
-            for byte in bytes.iter().rev() {
-                size <<= 8;
-                size |= usize::from(*byte);
-            }
-            Script::split_value(script, size)
-        })
-    }
-
-    pub fn get_lv(script: &[u8]) -> Result<Option<(LargeValue, &[u8])>, ReadError> {
-        match script.split_first() {
-            None => Err(ReadError {
-                expected_bytes: 1,
-                available_bytes: 0,
-            }),
-            Some((leading_byte, script)) => match leading_byte {
-                0x4c => Self::split_tagged_value(script, 1)
-                    .map(|(v, script)| Some((OP_PUSHDATA1(v.to_vec()), script))),
-                0x4d => Self::split_tagged_value(script, 2)
-                    .map(|(v, script)| Some((OP_PUSHDATA2(v.to_vec()), script))),
-                0x4e => Self::split_tagged_value(script, 4)
-                    .map(|(v, script)| Some((OP_PUSHDATA4(v.to_vec()), script))),
-                _ => {
-                    if 0x01 <= *leading_byte && *leading_byte < 0x4c {
-                        Self::split_value(script, (*leading_byte).into())
-                            .map(|(v, script)| Some((PushdataBytelength(v.to_vec()), script)))
-                    } else {
-                        Ok(None)
-                    }
-                }
-            },
-        }
-    }
-
-    pub fn get_op(script: &[u8]) -> Result<(Opcode, &[u8]), ReadError> {
-        Self::get_lv(script).and_then(|r| {
-            r.map_or(
-                match script.split_first() {
-                    None => Err(ReadError {
-                        expected_bytes: 1,
-                        available_bytes: 0,
-                    }),
-                    Some((leading_byte, script)) => Ok((
-                        SmallValue::from_u8(*leading_byte)
-                            .map_or(Opcode::Operation(Operation::from(*leading_byte)), |sv| {
-                                Opcode::PushValue(PushValue::SmallValue(sv))
-                            }),
-                        script,
-                    )),
-                },
-                |(v, script)| Ok((Opcode::PushValue(PushValue::LargeValue(v)), script)),
-            )
-        })
     }
 
     pub fn serialize(script: &[Opcode]) -> Vec<u8> {
@@ -157,7 +85,7 @@ impl Script<'_> {
         let mut pc = self.0;
         let mut last_opcode = None;
         while !pc.is_empty() {
-            let (opcode, new_pc) = match Self::get_op(pc) {
+            let (opcode, new_pc) = match opcode::parse(pc) {
                 Ok(o) => o,
                 // Stop counting when we get to an invalid opcode.
                 Err(_) => break,
@@ -199,7 +127,7 @@ impl Script<'_> {
     pub fn is_push_only(&self) -> bool {
         let mut pc = self.0;
         while !pc.is_empty() {
-            if let Ok((Opcode::PushValue(_), new_pc)) = Self::get_op(pc) {
+            if let Ok((Opcode::PushValue(_), new_pc)) = opcode::parse(pc) {
                 pc = new_pc;
             } else {
                 return false;

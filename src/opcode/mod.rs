@@ -7,6 +7,12 @@ use serde::{Deserialize, Serialize};
 use operation::{Control, Normal};
 use push_value::{LargeValue, SmallValue};
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct ReadError {
+    pub expected_bytes: usize,
+    pub available_bytes: usize,
+}
+
 /** Script opcodes */
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Deserialize, Serialize)]
 pub enum Opcode {
@@ -21,6 +27,74 @@ impl From<&Opcode> for Vec<u8> {
             Opcode::Operation(v) => vec![(*v).into()],
         }
     }
+}
+
+fn split_value(script: &[u8], needed_bytes: usize) -> Result<(&[u8], &[u8]), ReadError> {
+    script.split_at_checked(needed_bytes).ok_or(ReadError {
+        expected_bytes: needed_bytes,
+        available_bytes: script.len(),
+    })
+}
+
+/// First splits `size_size` bytes to determine the size of the value to read, then splits the
+/// value.
+fn split_tagged_value(script: &[u8], size_size: usize) -> Result<(&[u8], &[u8]), ReadError> {
+    split_value(script, size_size).and_then(|(bytes, script)| {
+        let mut size = 0;
+        for byte in bytes.iter().rev() {
+            size <<= 8;
+            size |= usize::from(*byte);
+        }
+        split_value(script, size)
+    })
+}
+
+fn get_lv(script: &[u8]) -> Result<Option<(LargeValue, &[u8])>, ReadError> {
+    use LargeValue::*;
+
+    match script.split_first() {
+        None => Err(ReadError {
+            expected_bytes: 1,
+            available_bytes: 0,
+        }),
+        Some((leading_byte, script)) => match leading_byte {
+            0x4c => split_tagged_value(script, 1)
+                .map(|(v, script)| Some((OP_PUSHDATA1(v.to_vec()), script))),
+            0x4d => split_tagged_value(script, 2)
+                .map(|(v, script)| Some((OP_PUSHDATA2(v.to_vec()), script))),
+            0x4e => split_tagged_value(script, 4)
+                .map(|(v, script)| Some((OP_PUSHDATA4(v.to_vec()), script))),
+            _ => {
+                if 0x01 <= *leading_byte && *leading_byte < 0x4c {
+                    split_value(script, (*leading_byte).into())
+                        .map(|(v, script)| Some((PushdataBytelength(v.to_vec()), script)))
+                } else {
+                    Ok(None)
+                }
+            }
+        },
+    }
+}
+
+pub fn parse(script: &[u8]) -> Result<(Opcode, &[u8]), ReadError> {
+    get_lv(script).and_then(|r| {
+        r.map_or(
+            match script.split_first() {
+                None => Err(ReadError {
+                    expected_bytes: 1,
+                    available_bytes: 0,
+                }),
+                Some((leading_byte, script)) => Ok((
+                    SmallValue::from_u8(*leading_byte)
+                        .map_or(Opcode::Operation(Operation::from(*leading_byte)), |sv| {
+                            Opcode::PushValue(PushValue::SmallValue(sv))
+                        }),
+                    script,
+                )),
+            },
+            |(v, script)| Ok((Opcode::PushValue(PushValue::LargeValue(v)), script)),
+        )
+    })
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Deserialize, Serialize)]

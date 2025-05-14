@@ -12,6 +12,7 @@ use sha2::{Digest, Sha256};
 use crate::{
     external::pubkey::PubKey,
     opcode::{
+        self,
         operation::{
             Control::{self, *},
             Normal::{self, *},
@@ -507,7 +508,7 @@ pub fn eval_step<'a>(
     //
     // Read instruction
     //
-    Script::get_op(pc)
+    opcode::parse(pc)
         .map_err(script::Error::from)
         .and_then(|(opcode, new_pc)| {
             eval_opcode(flags, opcode, script, &checker, state)
