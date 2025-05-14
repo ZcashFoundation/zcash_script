@@ -1,8 +1,10 @@
 pub mod operation;
 pub mod push_value;
 
+use core::fmt;
+
 use enum_primitive::FromPrimitive;
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Serialize, Serializer};
 
 use operation::{Control, Normal};
 use push_value::{LargeValue, SmallValue};
@@ -14,7 +16,7 @@ pub struct ReadError {
 }
 
 /** Script opcodes */
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Deserialize, Serialize)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Opcode {
     PushValue(PushValue),
     Operation(Operation),
@@ -97,7 +99,61 @@ pub fn parse(script: &[u8]) -> Result<(Opcode, &[u8]), ReadError> {
     })
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Deserialize, Serialize)]
+impl Serialize for Opcode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let bytes = Vec::<u8>::from(self);
+        match bytes[..] {
+            [opcode] => serializer.serialize_u8(opcode),
+            _ => serializer.serialize_bytes(&bytes),
+        }
+    }
+}
+
+struct OpcodeVisitor;
+
+impl<'de> de::Visitor<'de> for OpcodeVisitor {
+    type Value = Opcode;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a slice of bytes")
+    }
+
+    fn visit_bytes<E>(self, value: &[u8]) -> Result<Opcode, E>
+    where
+        E: de::Error,
+    {
+        parse(value)
+            .map_err(|_| E::custom("not enough bytes"))
+            .and_then(|(opcode, remainder)| {
+                if remainder.is_empty() {
+                    Ok(opcode)
+                } else {
+                    Err(E::custom("leftover bytes"))
+                }
+            })
+    }
+
+    fn visit_u8<E>(self, value: u8) -> Result<Opcode, E>
+    where
+        E: de::Error,
+    {
+        Self::visit_bytes(OpcodeVisitor, &[value])
+    }
+}
+
+impl<'de> Deserialize<'de> for Opcode {
+    fn deserialize<D>(deserializer: D) -> Result<Opcode, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        deserializer.deserialize_bytes(OpcodeVisitor)
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum PushValue {
     SmallValue(SmallValue),
     LargeValue(LargeValue),
@@ -119,7 +175,39 @@ impl PushValue {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Deserialize, Serialize)]
+impl Serialize for PushValue {
+    /// Wraps in an `Opcode`, then serializes that, since they have the same representation.
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        Opcode::PushValue(self.clone()).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for PushValue {
+    /// Deserializes to an `Opcode` then extracts the `PushValue`.
+    fn deserialize<D>(deserializer: D) -> Result<PushValue, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        Opcode::deserialize(deserializer).and_then(|op| match op {
+            Opcode::PushValue(pv) => Ok(pv),
+            Opcode::Operation(_) => Err(de::Error::custom("invalid PushValue")),
+        })
+    }
+}
+
+impl From<&PushValue> for Vec<u8> {
+    fn from(value: &PushValue) -> Self {
+        match value {
+            PushValue::SmallValue(v) => vec![(*v).into()],
+            PushValue::LargeValue(v) => v.into(),
+        }
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Operation {
     /// - always evaluated
     /// - can be cast to its discriminant
@@ -134,12 +222,47 @@ pub enum Operation {
     Unknown(u8),
 }
 
-impl From<&PushValue> for Vec<u8> {
-    fn from(value: &PushValue) -> Self {
-        match value {
-            PushValue::SmallValue(v) => vec![(*v).into()],
-            PushValue::LargeValue(v) => v.into(),
-        }
+impl From<u8> for Operation {
+    fn from(value: u8) -> Self {
+        Control::from_u8(value).map_or(
+            Normal::from_u8(value).map_or(Operation::Unknown(value), Operation::Normal),
+            Operation::Control,
+        )
+    }
+}
+
+impl Serialize for Operation {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u8((*self).into())
+    }
+}
+
+struct OperationVisitor;
+
+impl<'de> de::Visitor<'de> for OperationVisitor {
+    type Value = Operation;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a byte")
+    }
+
+    fn visit_u8<E>(self, value: u8) -> Result<Operation, E>
+    where
+        E: de::Error,
+    {
+        Ok(value.into())
+    }
+}
+
+impl<'de> Deserialize<'de> for Operation {
+    fn deserialize<D>(deserializer: D) -> Result<Operation, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        deserializer.deserialize_u8(OperationVisitor)
     }
 }
 
@@ -150,14 +273,5 @@ impl From<Operation> for u8 {
             Operation::Normal(op) => op.into(),
             Operation::Unknown(byte) => byte,
         }
-    }
-}
-
-impl From<u8> for Operation {
-    fn from(value: u8) -> Self {
-        Control::from_u8(value).map_or(
-            Normal::from_u8(value).map_or(Operation::Unknown(value), Operation::Normal),
-            Operation::Control,
-        )
     }
 }
