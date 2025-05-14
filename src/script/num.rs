@@ -8,7 +8,7 @@ pub enum Error {
 
 const DEFAULT_MAX_SIZE: usize = 4;
 
-pub fn parse(vch: &Vec<u8>, require_minimal: bool, max_size: Option<usize>) -> Result<i64, Error> {
+pub fn parse(vch: &[u8], require_minimal: bool, max_size: Option<usize>) -> Result<i64, Error> {
     match vch.last() {
         None => Ok(0),
         Some(vch_back) => {
