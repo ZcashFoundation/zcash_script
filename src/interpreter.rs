@@ -88,6 +88,8 @@ impl From<num::Error> for Error {
 // otherwise as UNIX timestamp.
 pub const LOCKTIME_THRESHOLD: i64 = 500_000_000; // Tue Nov  5 00:53:20 1985 UTC
 
+const MAX_MULTISIG_KEYS: u8 = 20;
+
 /// The ways in which a transparent input may commit to the transparent outputs of its
 /// transaction.
 ///
@@ -1086,7 +1088,7 @@ fn eval_operation(
             let mut keys_count =
                 u8::try_from(num::parse(stack.rget(i.into())?, require_minimal, None)?)
                     .map_err(|err| Error::PubKeyCount(Some(err)))?;
-            if keys_count > 20 {
+            if keys_count > MAX_MULTISIG_KEYS {
                 return Err(Error::PubKeyCount(None));
             };
             assert!(*op_count <= 201);
@@ -1107,7 +1109,7 @@ fn eval_operation(
             if sigs_count > keys_count {
                 return Err(Error::SigCount(None));
             };
-            assert!(i <= 21);
+            assert!(i <= MAX_MULTISIG_KEYS + 1);
             i += 1;
             let mut isig = i;
             i += sigs_count;
