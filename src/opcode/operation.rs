@@ -1,10 +1,10 @@
 #![allow(non_camel_case_types)]
 
-use serde::{Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 
 enum_from_primitive! {
 /// Control operations are evaluated regardless of whether the current branch is active.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Deserialize, Serialize)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
 pub enum Control {
     OP_IF = 0x63,
@@ -40,7 +40,7 @@ pub enum Control {
 
 enum_from_primitive! {
 /// Normal operations are only executed when they are on an active branch.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Deserialize, Serialize)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
 pub enum Normal {
     // control
