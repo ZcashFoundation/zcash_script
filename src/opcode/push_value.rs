@@ -19,31 +19,21 @@ use LargeValue::*;
 impl From<&LargeValue> for Vec<u8> {
     fn from(value: &LargeValue) -> Self {
         let bytes = value.value();
+        let byte_len = num::serialize(
+            bytes
+                .len()
+                .try_into()
+                .expect("no ‘LargeValue’ allows more than ‘i64::MAX’ bytes"),
+        );
         match value {
-            PushdataBytelength(_) => {
-                [num::serialize(bytes.len().try_into().unwrap()), bytes].concat()
-            }
-            OP_PUSHDATA1(_) => [
-                vec![0x4c],
-                num::serialize(bytes.len().try_into().unwrap()),
-                bytes,
-            ]
-            .concat(),
-            OP_PUSHDATA2(_) => [
-                vec![0x4d],
-                num::serialize(bytes.len().try_into().unwrap()),
-                bytes,
-            ]
-            .concat(),
-            OP_PUSHDATA4(_) => [
-                vec![0x4e],
-                num::serialize(bytes.len().try_into().unwrap()),
-                bytes,
-            ]
-            .concat(),
+            PushdataBytelength(_) => [byte_len, bytes].concat(),
+            OP_PUSHDATA1(_) => [vec![0x4c], byte_len, bytes].concat(),
+            OP_PUSHDATA2(_) => [vec![0x4d], byte_len, bytes].concat(),
+            OP_PUSHDATA4(_) => [vec![0x4e], byte_len, bytes].concat(),
         }
     }
 }
+
 impl LargeValue {
     pub const MAX_SIZE: usize = 520; // bytes
 
