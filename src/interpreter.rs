@@ -90,6 +90,8 @@ pub const LOCKTIME_THRESHOLD: i64 = 500_000_000; // Tue Nov  5 00:53:20 1985 UTC
 
 const MAX_MULTISIG_KEYS: u8 = 20;
 
+const MAX_OP_COUNT: u8 = 201;
+
 /// The ways in which a transparent input may commit to the transparent outputs of its
 /// transaction.
 ///
@@ -546,7 +548,7 @@ fn eval_opcode(
         Opcode::Operation(op) => {
             // Note how OP_RESERVED does not count towards the opcode limit.
             *op_count += 1;
-            if *op_count <= 201 {
+            if *op_count <= MAX_OP_COUNT {
                 match op {
                     Operation::Control(control) => eval_control(control, stack, vexec),
                     Operation::Normal(normal) => {
@@ -1091,9 +1093,9 @@ fn eval_operation(
             if keys_count > MAX_MULTISIG_KEYS {
                 return Err(Error::PubKeyCount(None));
             };
-            assert!(*op_count <= 201);
+            assert!(*op_count <= MAX_OP_COUNT);
             *op_count += keys_count;
-            if *op_count > 201 {
+            if *op_count > MAX_OP_COUNT {
                 return Err(Error::OpCount);
             };
             i += 1;
