@@ -13,7 +13,11 @@
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 #[cfg(test)]
 mod tests {
-    use std::ffi::{c_int, c_uint, c_void};
+    use alloc::vec::Vec;
+    use core::{
+        ffi::{c_int, c_uint, c_void},
+        ptr,
+    };
 
     use hex::FromHex;
 
@@ -36,7 +40,7 @@ mod tests {
                 hex::decode("e8c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
                     .unwrap();
             assert!(sighash_out_len == sighash.len() as c_uint);
-            std::ptr::copy_nonoverlapping(sighash.as_ptr(), sighash_out, sighash.len());
+            ptr::copy_nonoverlapping(sighash.as_ptr(), sighash_out, sighash.len());
         }
     }
 
@@ -54,7 +58,7 @@ mod tests {
                 hex::decode("08c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
                     .unwrap();
             assert!(sighash_out_len == sighash.len() as c_uint);
-            std::ptr::copy_nonoverlapping(sighash.as_ptr(), sighash_out, sighash.len());
+            ptr::copy_nonoverlapping(sighash.as_ptr(), sighash_out, sighash.len());
         }
     }
 
@@ -69,7 +73,7 @@ mod tests {
 
         let ret = unsafe {
             super::zcash_script_verify_callback(
-                std::ptr::null(),
+                ptr::null(),
                 Some(sighash),
                 nLockTime,
                 isFinal,
@@ -96,7 +100,7 @@ mod tests {
 
         let ret = unsafe {
             super::zcash_script_verify_callback(
-                std::ptr::null(),
+                ptr::null(),
                 Some(invalid_sighash),
                 nLockTime,
                 isFinal,
