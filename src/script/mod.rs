@@ -44,7 +44,7 @@ impl From<interpreter::Error> for Error {
 /// Maximum script length in bytes
 pub const MAX_SIZE: usize = 10_000;
 
-/** Serialized script, used inside transaction inputs and outputs */
+/// Serialized script, used inside transaction inputs and outputs
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Script<'a>(pub &'a [u8]);
 
@@ -70,7 +70,7 @@ impl Script<'_> {
             .fold(Vec::new(), |acc, op| [acc, op.into()].concat())
     }
 
-    /** Encode/decode small integers: */
+    /// Encode/decode small integers:
     pub fn decode_op_n(opcode: SmallValue) -> u32 {
         if opcode == OP_0 {
             return 0;

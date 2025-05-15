@@ -247,10 +247,8 @@ fn cast_to_bool(vch: &ValType) -> bool {
     false
 }
 
-/**
- * Script is a stack machine (like Forth) that evaluates a predicate
- * returning a bool indicating valid or not.  There are no loops.
- */
+/// Script is a stack machine (like Forth) that evaluates a predicate returning a bool indicating
+/// valid or not.  There are no loops.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Stack<T>(Vec<T>);
 
