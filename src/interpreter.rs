@@ -331,9 +331,9 @@ impl<T: Clone> Stack<T> {
 }
 
 fn is_compressed_or_uncompressed_pub_key(vch_pub_key: &[u8]) -> bool {
-    match vch_pub_key[0] {
-        0x02 | 0x03 => vch_pub_key.len() == PubKey::COMPRESSED_SIZE,
-        0x04 => vch_pub_key.len() == PubKey::SIZE,
+    match vch_pub_key.first() {
+        Some(0x02 | 0x03) => vch_pub_key.len() == PubKey::COMPRESSED_SIZE,
+        Some(0x04) => vch_pub_key.len() == PubKey::SIZE,
         _ => false, // not a public key
     }
 }
