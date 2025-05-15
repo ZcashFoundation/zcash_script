@@ -228,7 +228,7 @@ pub struct ComparisonInterpreter<T, U> {
 }
 
 pub fn cxx_rust_comparison_interpreter<'a>(
-    sighash: &'a SighashCalculator<'a>,
+    sighash: SighashCalculator<'a>,
     lock_time: u32,
     is_final: bool,
     flags: VerificationFlags,
