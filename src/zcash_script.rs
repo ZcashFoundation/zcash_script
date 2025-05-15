@@ -216,7 +216,11 @@ impl<F: StepFn> ZcashScript for StepwiseInterpreter<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{interpreter::CallbackTransactionSignatureChecker, opcode::ReadError, testing::*};
+    use crate::{
+        interpreter::CallbackTransactionSignatureChecker,
+        opcode::{self, ReadError},
+        testing::*,
+    };
     use proptest::prelude::*;
 
     #[test]
@@ -271,10 +275,13 @@ mod tests {
         // The final return value is from whichever stepper failed.
         assert_eq!(
             ret,
-            Err(Error::Ok(script::Error::Read(ReadError {
-                expected_bytes: 1,
-                available_bytes: 0,
-            })))
+            Err(Error::Ok(
+                opcode::Error::Read(ReadError {
+                    expected_bytes: 1,
+                    available_bytes: 0,
+                })
+                .into()
+            ))
         );
 
         // `State`s are large, so we just check that there was some progress in lock step, and a
@@ -285,10 +292,10 @@ mod tests {
                 diverging_result:
                     Some((
                         Ok(state),
-                        Err(script::Error::Read(ReadError {
+                        Err(script::Error::Opcode(opcode::Error::Read(ReadError {
                             expected_bytes: 1,
                             available_bytes: 0,
-                        })),
+                        }))),
                     )),
                 payload_l: (),
                 payload_r: (),

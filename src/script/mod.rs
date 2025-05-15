@@ -11,7 +11,7 @@ use crate::{
             LargeValue::PushdataBytelength,
             SmallValue::{self, *},
         },
-        Opcode, Operation, PushValue, ReadError,
+        Opcode, Operation, PushValue,
     },
 };
 
@@ -21,16 +21,16 @@ pub(crate) mod num;
 pub enum Error {
     UnknownError,
     ScriptSize(Option<TryFromIntError>),
-    Read(ReadError),
+    Opcode(opcode::Error),
     SigPushOnly,
     Interpreter(interpreter::Error),
     CleanStack,
     EvalFalse,
 }
 
-impl From<ReadError> for Error {
-    fn from(value: ReadError) -> Self {
-        Error::Read(value)
+impl From<opcode::Error> for Error {
+    fn from(value: opcode::Error) -> Self {
+        Error::Opcode(value)
     }
 }
 
@@ -48,7 +48,7 @@ pub const MAX_SIZE: usize = 10_000;
 pub struct Script<'a>(pub &'a [u8]);
 
 impl Script<'_> {
-    pub fn parse(&self) -> Result<Vec<Opcode>, ReadError> {
+    pub fn parse(&self) -> Result<Vec<Opcode>, opcode::Error> {
         let mut pc = self.0;
         let mut result = vec![];
         while !pc.is_empty() {

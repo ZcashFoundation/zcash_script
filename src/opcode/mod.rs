@@ -15,6 +15,18 @@ pub struct ReadError {
     pub available_bytes: usize,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Error {
+    Read(ReadError),
+    DisabledOpcode(Option<u8>),
+}
+
+impl From<ReadError> for Error {
+    fn from(value: ReadError) -> Self {
+        Error::Read(value)
+    }
+}
+
 /** Script opcodes */
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Opcode {
@@ -78,21 +90,27 @@ fn get_lv(script: &[u8]) -> Result<Option<(LargeValue, &[u8])>, ReadError> {
     }
 }
 
-pub fn parse(script: &[u8]) -> Result<(Opcode, &[u8]), ReadError> {
-    get_lv(script).and_then(|r| {
+pub fn parse(script: &[u8]) -> Result<(Opcode, &[u8]), Error> {
+    get_lv(script).map_err(Error::Read).and_then(|r| {
         r.map_or(
             match script.split_first() {
-                None => Err(ReadError {
+                None => Err(Error::Read(ReadError {
                     expected_bytes: 1,
                     available_bytes: 0,
-                }),
-                Some((leading_byte, script)) => Ok((
-                    SmallValue::from_u8(*leading_byte)
-                        .map_or(Opcode::Operation(Operation::from(*leading_byte)), |sv| {
-                            Opcode::PushValue(PushValue::SmallValue(sv))
-                        }),
-                    script,
-                )),
+                })),
+                Some((leading_byte, script)) => SmallValue::from_u8(*leading_byte)
+                    .map_or(
+                        match *leading_byte {
+                            0x7e | 0x7f | 0x80 | 0x81 | 0x83 | 0x84 | 0x85 | 0x86 | 0x8d | 0x8e
+                            | 0x95 | 0x96 | 0x97 | 0x98 | 0x99 | 0xab => {
+                                Err(Error::DisabledOpcode(Some(*leading_byte)))
+                            }
+
+                            unknown => Ok(Opcode::Operation(Operation::from(unknown))),
+                        },
+                        |sv| Ok(Opcode::PushValue(PushValue::SmallValue(sv))),
+                    )
+                    .map(|op| (op, script)),
             },
             |(v, script)| Ok((Opcode::PushValue(PushValue::LargeValue(v)), script)),
         )

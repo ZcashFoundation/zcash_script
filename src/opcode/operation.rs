@@ -13,28 +13,6 @@ pub enum Control {
     OP_VERNOTIF = 0x66,
     OP_ELSE = 0x67,
     OP_ENDIF = 0x68,
-
-    // splice ops
-    OP_CAT = 0x7e,
-    OP_SUBSTR = 0x7f,
-    OP_LEFT = 0x80,
-    OP_RIGHT = 0x81,
-        // bit logic
-    OP_INVERT = 0x83,
-    OP_AND = 0x84,
-    OP_OR = 0x85,
-    OP_XOR = 0x86,
-    // numeric
-    OP_2MUL = 0x8d,
-    OP_2DIV = 0x8e,
-    OP_MUL = 0x95,
-    OP_DIV = 0x96,
-    OP_MOD = 0x97,
-    OP_LSHIFT = 0x98,
-    OP_RSHIFT = 0x99,
-
-    //crypto
-    OP_CODESEPARATOR = 0xab,
 }
 }
 

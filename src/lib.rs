@@ -76,7 +76,7 @@ impl From<cxx::ScriptError> for Error {
                 Error::Ok(interpreter::Error::BadOpcode(None).into())
             }
             cxx::ScriptError_t_SCRIPT_ERR_DISABLED_OPCODE => {
-                Error::Ok(interpreter::Error::DisabledOpcode(None).into())
+                Error::Ok(opcode::Error::DisabledOpcode(None).into())
             }
             cxx::ScriptError_t_SCRIPT_ERR_INVALID_STACK_OPERATION => {
                 Error::Ok(interpreter::Error::InvalidStackOperation.into())
@@ -248,9 +248,6 @@ pub fn normalize_error(err: Error) -> Error {
                 interpreter::Error::BadOpcode(Some(_)) => {
                     interpreter::Error::BadOpcode(None).into()
                 }
-                interpreter::Error::DisabledOpcode(Some(_)) => {
-                    interpreter::Error::DisabledOpcode(None).into()
-                }
                 interpreter::Error::PubKeyCount(Some(_)) => {
                     interpreter::Error::PubKeyCount(None).into()
                 }
@@ -263,7 +260,13 @@ pub fn normalize_error(err: Error) -> Error {
                 _ => ie.into(),
             },
             script::Error::ScriptSize(Some(_)) => script::Error::ScriptSize(None),
-            script::Error::Read(_) => interpreter::Error::BadOpcode(None).into(),
+            script::Error::Opcode(operr) => match operr {
+                opcode::Error::DisabledOpcode(Some(_)) => {
+                    opcode::Error::DisabledOpcode(None).into()
+                }
+                opcode::Error::Read(_) => interpreter::Error::BadOpcode(None).into(),
+                _ => operr.into(),
+            },
             _ => serr,
         }),
         _ => err,
