@@ -55,6 +55,9 @@ pub trait ZcashScript {
     fn legacy_sigop_count_script(&self, script: &[u8]) -> Result<u32, Error>;
 }
 
+/// A thin wrapper over `verify_script` to make call sites more ergonomic.
+///
+/// **TODO**: Remove this once we have better script types.
 pub fn stepwise_verify<F>(
     script_pub_key: &[u8],
     script_sig: &[u8],
@@ -92,6 +95,8 @@ pub struct StepResults<T, U> {
 }
 
 impl<T, U> StepResults<T, U> {
+    /// Creates an empty `StepResults` given an initial payload for each of the `StepFn`s that will
+    /// be compared.
     pub fn initial(payload_l: T, payload_r: U) -> Self {
         StepResults {
             identical_states: vec![],
@@ -110,7 +115,12 @@ impl<T, U> StepResults<T, U> {
 ///
 /// This returns a very debuggable result. See `StepResults` for details.
 pub struct ComparisonStepEvaluator<'a, T, U> {
+    /// One of the two `StepFn`s to be compared. The one difference is that in the case where both
+    /// `StepFn`s fail, but with different errors, _this_ is the error that will be returned for the
+    /// script.
     pub eval_step_l: &'a dyn StepFn<Payload = T>,
+    /// One of the two `StepFn`s to be compared. The one difference is that in the case where both
+    /// `StepFn`s fail, but with different errors, _this_ error will be discarded.
     pub eval_step_r: &'a dyn StepFn<Payload = U>,
 }
 
@@ -160,6 +170,9 @@ impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
     }
 }
 
+/// This is used for any interpreter that is based on a `StepFn`.
+///
+/// The original C++ interpreter is _not_ a `StepwiseInterpreter`, but the pure Rust one is.
 pub struct StepwiseInterpreter<F>
 where
     F: StepFn,
@@ -169,6 +182,7 @@ where
 }
 
 impl<F: StepFn> StepwiseInterpreter<F> {
+    /// Creates a new interpreter from a `StepFn` and an initial payload.
     pub fn new(initial_payload: F::Payload, stepper: F) -> Self {
         StepwiseInterpreter {
             initial_payload,
@@ -177,6 +191,7 @@ impl<F: StepFn> StepwiseInterpreter<F> {
     }
 }
 
+/// This is the pure Rust interpreter, which doesn’t use the FFI.
 pub fn rust_interpreter<C: SignatureChecker + Copy>(
     flags: VerificationFlags,
     checker: C,

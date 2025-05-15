@@ -5,6 +5,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 
 use crate::{opcode::PushValue, script::num};
 
+/// Values that require data beyond the single opcode byte.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum LargeValue {
     // push value
@@ -82,6 +83,7 @@ impl<'de> Deserialize<'de> for LargeValue {
 }
 
 enum_from_primitive! {
+/// Values represented entirely by their opcode byte.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
 pub enum SmallValue {

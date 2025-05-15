@@ -1,3 +1,5 @@
+//! Managing sequences of opcodes.
+
 use std::num::TryFromIntError;
 
 use serde::{Deserialize, Serialize};
@@ -55,11 +57,16 @@ impl From<interpreter::Error> for Error {
 /// Maximum script length in bytes
 pub const MAX_SIZE: usize = 10_000;
 
-/** Serialized script, used inside transaction inputs and outputs */
+/// Serialized script, used inside transaction inputs and outputs
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Script<'a>(pub &'a [u8]);
 
 impl Script<'_> {
+    /// This parses an entire script. This is stricter than the incremental parsing that is done
+    /// during `verify_script`, because it fails on unknown opcodes no matter where they occur.
+    /// I.e., this is useful for validating and analyzing scripts before they are put into a
+    /// transaction, but not for scripts that are read from the chain, because it may fail on valid
+    /// scripts.
     pub fn parse(&self) -> Result<Vec<Opcode>, Error> {
         let mut pc = self.0;
         let mut result = vec![];
@@ -75,13 +82,14 @@ impl Script<'_> {
         Ok(result)
     }
 
+    /// Convert a sequence of `Opcode`s to the bytes that would be included in a transaction.
     pub fn serialize(script: &[Opcode]) -> Vec<u8> {
         script
             .iter()
             .fold(Vec::new(), |acc, op| [acc, op.into()].concat())
     }
 
-    /** Encode/decode small integers: */
+    /// Encode/decode small integers:
     pub fn decode_op_n(opcode: SmallValue) -> u32 {
         if opcode == OP_0 {
             return 0;

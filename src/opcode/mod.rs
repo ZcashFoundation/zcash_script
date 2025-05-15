@@ -27,7 +27,7 @@ impl From<ReadError> for Error {
     }
 }
 
-/** Script opcodes */
+/// Script opcodes
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Opcode {
     PushValue(PushValue),
@@ -186,6 +186,7 @@ impl<'de> Deserialize<'de> for Opcode {
     }
 }
 
+/// Opcodes that represent constants to be pushed onto the stack.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum PushValue {
     SmallValue(SmallValue),
@@ -193,6 +194,8 @@ pub enum PushValue {
 }
 
 impl PushValue {
+    /// Extract the value to be pushed onto the stack. This returns in `Option`, because
+    /// `OP_RESERVED` doesn’t carry a value.
     pub fn value(&self) -> Option<Vec<u8>> {
         match self {
             PushValue::LargeValue(pv) => Some(pv.value()),

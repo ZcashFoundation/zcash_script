@@ -4,6 +4,7 @@
 #![doc(html_root_url = "https://docs.rs/zcash_script/0.3.0")]
 #![allow(non_snake_case)]
 #![allow(unsafe_code)]
+#![deny(missing_docs)]
 #[macro_use]
 extern crate enum_primitive;
 
@@ -27,9 +28,13 @@ pub use interpreter::{
 };
 pub use zcash_script::*;
 
+/// An interpreter that calls the original C++ implementation via FFI.
 pub struct CxxInterpreter<'a> {
+    /// A callback to determine the sighash for a particular UTXO.
     pub sighash: SighashCalculator<'a>,
+    /// The time at which this interpreter is being run.
     pub lock_time: u32,
+    /// Whether this is the final UTXO for the transaction.
     pub is_final: bool,
 }
 
@@ -285,6 +290,9 @@ pub struct ComparisonInterpreter<T, U> {
     second: U,
 }
 
+/// An interpreter that compares the results of the C++ and Rust implementations. In the case where
+/// they differ, a warning will be logged, and the C++ interpreter will be treated as the correct
+/// result.
 pub fn cxx_rust_comparison_interpreter(
     sighash: SighashCalculator,
     lock_time: u32,
@@ -346,6 +354,7 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U>
     }
 }
 
+/// Utilities useful for tests in other modules and crates.
 #[cfg(any(test, feature = "test-dependencies"))]
 pub mod testing {
     use super::*;
@@ -400,6 +409,7 @@ pub mod testing {
     }
 
     lazy_static::lazy_static! {
+        /// The P2SH redeem script used for the static test case.
         pub static ref REDEEM_SCRIPT: Vec<Opcode> = check_multisig(
             2,
             &[
@@ -408,7 +418,9 @@ pub mod testing {
                 &<[u8; 0x21]>::from_hex("03e32096b63fd57f3308149d238dcbb24d8d28aad95c0e4e74e3e5e6a11b61bcc4").expect("valid key")
             ],
             false);
+        /// The scriptPubkey used for the static test case.
         pub static ref SCRIPT_PUBKEY: Vec<u8> = Script::serialize(&pay_to_script_hash(&REDEEM_SCRIPT));
+        /// The scriptSig used for the static test case.
         pub static ref SCRIPT_SIG: Vec<u8> = Script::serialize(&[
             push_num(0),
             push_vec(&<[u8; 0x48]>::from_hex("3045022100d2ab3e6258fe244fa442cfb38f6cef9ac9a18c54e70b2f508e83fa87e20d040502200eead947521de943831d07a350e45af8e36c2166984a8636f0a8811ff03ed09401").expect("valid sig")),
@@ -417,16 +429,19 @@ pub mod testing {
         ].map(Opcode::PushValue));
     }
 
+    /// The correct sighash for the static test case.
     pub fn sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
         <[u8; 32]>::from_hex("e8c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
             .ok()
     }
 
+    /// An incorrect sighash for the static test case – for checking failure cases.
     pub fn invalid_sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
         <[u8; 32]>::from_hex("08c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
             .ok()
     }
 
+    /// A callback that returns no sighash at all – another failure case.
     pub fn missing_sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
         None
     }

@@ -1,5 +1,7 @@
 //! Convenience definitions for all push values.
 
+#![allow(missing_docs)]
+
 use crate::opcode::{
     push_value::{LargeValue::*, SmallValue::*},
     PushValue::{self, LargeValue, SmallValue},
