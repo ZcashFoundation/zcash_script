@@ -227,14 +227,14 @@ pub struct ComparisonInterpreter<T, U> {
     second: U,
 }
 
-pub fn cxx_rust_comparison_interpreter<'a>(
-    sighash: SighashCalculator<'a>,
+pub fn cxx_rust_comparison_interpreter(
+    sighash: SighashCalculator,
     lock_time: u32,
     is_final: bool,
     flags: VerificationFlags,
 ) -> ComparisonInterpreter<
-    CxxInterpreter<'a>,
-    StepwiseInterpreter<DefaultStepEvaluator<CallbackTransactionSignatureChecker<'a>>>,
+    CxxInterpreter,
+    StepwiseInterpreter<DefaultStepEvaluator<CallbackTransactionSignatureChecker>>,
 > {
     ComparisonInterpreter {
         first: CxxInterpreter {
