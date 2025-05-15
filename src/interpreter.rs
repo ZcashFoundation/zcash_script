@@ -54,7 +54,6 @@ pub enum Error {
 
     // Logical/Format/Canonical errors
     BadOpcode(Option<u8>),
-    DisabledOpcode(Option<u8>),
     InvalidStackOperation,
     InvalidAltstackOperation,
     UnbalancedConditional,
@@ -643,7 +642,6 @@ fn eval_unconditional(
         }
 
         OP_VERIF | OP_VERNOTIF => return Err(Error::BadOpcode(Some(op.into()))),
-        _ => return Err(Error::DisabledOpcode(Some(op.into()))),
     }
     Ok(())
 }

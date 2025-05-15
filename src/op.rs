@@ -130,28 +130,3 @@ pub mod bad {
     pub const RESERVED1: Opcode = Operation(Normal(OP_RESERVED1));
     pub const RESERVED2: Opcode = Operation(Normal(OP_RESERVED2));
 }
-
-pub mod disabled {
-    use crate::opcode::{
-        operation::Unconditional::*,
-        Opcode::{self, Operation},
-        Operation::Unconditional,
-    };
-
-    pub const CAT: Opcode = Operation(Unconditional(OP_CAT));
-    pub const SUBSTR: Opcode = Operation(Unconditional(OP_SUBSTR));
-    pub const LEFT: Opcode = Operation(Unconditional(OP_LEFT));
-    pub const RIGHT: Opcode = Operation(Unconditional(OP_RIGHT));
-    pub const INVERT: Opcode = Operation(Unconditional(OP_INVERT));
-    pub const AND: Opcode = Operation(Unconditional(OP_AND));
-    pub const OR: Opcode = Operation(Unconditional(OP_OR));
-    pub const XOR: Opcode = Operation(Unconditional(OP_XOR));
-    pub const _2MUL: Opcode = Operation(Unconditional(OP_2MUL));
-    pub const _2DIV: Opcode = Operation(Unconditional(OP_2DIV));
-    pub const MUL: Opcode = Operation(Unconditional(OP_MUL));
-    pub const DIV: Opcode = Operation(Unconditional(OP_DIV));
-    pub const MOD: Opcode = Operation(Unconditional(OP_MOD));
-    pub const LSHIFT: Opcode = Operation(Unconditional(OP_LSHIFT));
-    pub const RSHIFT: Opcode = Operation(Unconditional(OP_RSHIFT));
-    pub const CODESEPARATOR: Opcode = Operation(Unconditional(OP_CODESEPARATOR));
-}
