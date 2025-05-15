@@ -1,9 +1,13 @@
+//! Errors that can occur during script verification.
+
 use std::num::TryFromIntError;
 
 use thiserror::Error;
 
 use crate::{interpreter, num, opcode, script, signature};
 
+/// Any error than can occur during script verification.
+#[allow(missing_docs)]
 #[derive(Clone, PartialEq, Eq, Debug, Error)]
 pub enum ScriptError {
     /// A error external to the script validation code. This can come from the stepper.

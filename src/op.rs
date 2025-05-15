@@ -1,5 +1,7 @@
 //! Convenience definitions for all opcodes.
 
+#![allow(missing_docs)]
+
 use crate::{
     opcode::{Control::*, Operation::*},
     pv,

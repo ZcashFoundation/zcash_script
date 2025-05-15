@@ -1,3 +1,5 @@
+//! Managing sequences of opcodes.
+
 use itertools::{Either, Itertools};
 
 use crate::{
@@ -23,7 +25,7 @@ pub enum StrictError {
     BadOpcodes(Vec<opcode::Bad>),
 }
 
-/** Serialized script, used inside transaction inputs and outputs */
+/// Serialized script, used inside transaction inputs and outputs
 #[derive(Clone, Debug)]
 pub struct Code<'a>(pub &'a [u8]);
 
@@ -49,6 +51,7 @@ impl Code<'_> {
             })
     }
 
+    /// Parse an entire script component.
     pub fn parse(&self) -> Result<Vec<opcode::PossiblyBad>, ScriptError> {
         let mut pc = self.0;
         let mut result = vec![];
@@ -63,12 +66,12 @@ impl Code<'_> {
         Ok(result)
     }
 
-    /// Convert a sequence of opcodes to the bytes that would be included in a transaction.
+    /// Convert a sequence of `Opcode`s to the bytes that would be included in a transaction.
     pub fn serialize(script: &[Opcode]) -> Vec<u8> {
         script.iter().flat_map(Vec::from).collect()
     }
 
-    /** Encode/decode small integers: */
+    /// Encode/decode small integers:
     pub fn decode_op_n(opcode: SmallValue) -> u32 {
         if opcode == OP_0 {
             return 0;

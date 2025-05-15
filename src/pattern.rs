@@ -98,6 +98,7 @@ pub fn if_else(cond: &[Opcode], thn: &[Opcode], els: &[Opcode]) -> Vec<Opcode> {
 }
 
 /// Errors that can happen when creating scripts containing `CHECK*SIG*` operations.
+#[allow(missing_docs)]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Error)]
 pub enum Error {
     #[error("CHECKMULTISIG only supports 20 keys, but you provided {0}")]

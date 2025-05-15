@@ -1,3 +1,5 @@
+//! Execution of opcodes
+
 use std::{
     cmp::{max, min},
     slice::Iter,
@@ -20,8 +22,10 @@ use crate::{
 /// otherwise as UNIX timestamp.
 const LOCKTIME_THRESHOLD: i64 = 500_000_000; // Tue Nov  5 00:53:20 1985 UTC
 
+/// The maximum number of operations allowed in a script component.
 pub const MAX_OP_COUNT: u8 = 201;
 
+/// The maximum number of pubkeys (and signatures, by implication) allowed in CHECKMULTISIG.
 pub const MAX_PUBKEY_COUNT: u8 = 20;
 
 bitflags::bitflags! {
@@ -78,7 +82,9 @@ bitflags::bitflags! {
     }
 }
 
+/// This verifies that a signature is correct for the given pubkey and script code.
 pub trait SignatureChecker {
+    /// Check that the signature is valid.
     fn check_sig(
         &self,
         _script_sig: &signature::Decoded,
@@ -88,21 +94,29 @@ pub trait SignatureChecker {
         false
     }
 
+    /// Return true if the lock time argument is more recent than the time the script was evaluated.
     fn check_lock_time(&self, _lock_time: i64) -> bool {
         false
     }
 }
 
+/// A signature checker that always fails. This is helpful in testing cases that don’t involve
+/// `CHECK*SIG`. The name comes from the C++ impl, where there is no separation between this and the
+/// trait.
 pub struct BaseSignatureChecker();
 
 impl SignatureChecker for BaseSignatureChecker {}
 
+/// A signature checker that uses a callback to get necessary information about the transaction
+/// involved.
 #[derive(Copy, Clone)]
 pub struct CallbackTransactionSignatureChecker<'a> {
+    /// The callback to be used to calculate the sighash.
     pub sighash: SighashCalculator<'a>,
     /// This is stored as an `i64` instead of the `u32` used by transactions to avoid partial
     /// conversions when reading from the stack.
     pub lock_time: i64,
+    /// Whether this is the final UTXO in the transaction.
     pub is_final: bool,
 }
 
@@ -121,20 +135,20 @@ fn cast_to_bool(vch: &ValType) -> bool {
     false
 }
 
-/**
- * Script is a stack machine (like Forth) that evaluates a predicate
- * returning a bool indicating valid or not.  There are no loops.
- */
+/// Script is a stack machine (like Forth) that evaluates a predicate returning a bool indicating
+/// valid or not.  There are no loops.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Stack<T>(Vec<T>);
 
 // NB: This isn’t in `impl Stack`, because that requires us to specify type parameters, even though
 //     this value doesn’t care about them.
+/// The maximum number of elements allowed in the _combined_ stack and altstack.
 pub const MAX_STACK_DEPTH: usize = 1000;
 
 /// Wraps a Vec (or whatever underlying implementation we choose in a way that matches the C++ impl
 /// and provides us some decent chaining)
 impl<T> Stack<T> {
+    /// Creates an empty stack.
     pub fn new() -> Self {
         Stack(vec![])
     }
@@ -148,6 +162,8 @@ impl<T> Stack<T> {
         }
     }
 
+    /// Gets an element from the stack without removing it., counting from the right. I.e.,
+    /// `rget(0)` returns the top element.
     fn rget(&self, i: usize) -> Result<&T, ScriptError> {
         let idx = self.rindex(i)?;
         self.0
@@ -155,6 +171,7 @@ impl<T> Stack<T> {
             .ok_or(ScriptError::InvalidStackOperation(None))
     }
 
+    /// Swaps the elements at two indices in the stack, counting from the right.
     fn rswap(&mut self, a: usize, b: usize) -> Result<(), ScriptError> {
         let ra = self.rindex(a)?;
         let rb = self.rindex(b)?;
@@ -162,28 +179,34 @@ impl<T> Stack<T> {
         Ok(())
     }
 
+    /// Removes and returns the top element from the stack.
     fn pop(&mut self) -> Result<T, ScriptError> {
         self.0
             .pop()
             .ok_or(ScriptError::InvalidStackOperation(Some((0, self.0.len()))))
     }
 
+    /// Adds a new element to the top of the stack.
     fn push(&mut self, value: T) {
         self.0.push(value)
     }
 
+    /// Returns true if there are no elements in the stack.
     pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
+    /// Returns the number of elements in the stack.
     pub(crate) fn len(&self) -> usize {
         self.0.len()
     }
 
+    /// Returns an iterator over the stack.
     fn iter(&self) -> Iter<'_, T> {
         self.0.iter()
     }
 
+    /// Returns a mutable reference to the last element of the stack.
     fn last_mut(&mut self) -> Result<&mut T, ScriptError> {
         let len = self.0.len();
         self.0
@@ -191,16 +214,19 @@ impl<T> Stack<T> {
             .ok_or(ScriptError::InvalidStackOperation(Some((0, len))))
     }
 
+    /// Returns a reference to the last element of the stack.
     fn last(&self) -> Result<&T, ScriptError> {
         self.0
             .last()
             .ok_or(ScriptError::InvalidStackOperation(Some((0, self.0.len()))))
     }
 
+    /// Removes an element from the stack, counting from the right.
     pub fn rremove(&mut self, start: usize) -> Result<T, ScriptError> {
         self.rindex(start).map(|rstart| self.0.remove(rstart))
     }
 
+    /// Inserts an element at the given index, counting from the right.
     fn rinsert(&mut self, i: usize, element: T) -> Result<(), ScriptError> {
         let ri = self.rindex(i)?;
         self.0.insert(ri, element);
@@ -209,6 +235,7 @@ impl<T> Stack<T> {
 }
 
 impl<T: Clone> Stack<T> {
+    /// Returns the last element of the stack as well as the remainder of the stack.
     pub fn split_last(&self) -> Result<(&T, Stack<T>), ScriptError> {
         self.0
             .split_last()
@@ -306,6 +333,7 @@ fn cast_from_bool(b: bool) -> ValType {
     }
 }
 
+/// This holds the various components that need to be carried between individual opcode evaluations.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct State {
     stack: Stack<Vec<u8>>,
@@ -355,18 +383,23 @@ impl State {
         }
     }
 
+    /// Extract the primary stack from the state.
     pub fn stack(&self) -> &Stack<Vec<u8>> {
         &self.stack
     }
 
+    /// Extract the altstack from the state.
     pub fn altstack(&self) -> &Stack<Vec<u8>> {
         &self.altstack
     }
 
+    /// Extract the op_count from the state (in most cases, you can use `increment_op_count`
+    /// instead).
     pub fn op_count(&self) -> u8 {
         self.op_count
     }
 
+    /// Extract the current conditional state from the overall state.
     pub fn vexec(&self) -> &Stack<bool> {
         &self.vexec
     }
@@ -1055,8 +1088,11 @@ fn eval_operation(
     Ok(())
 }
 
+/// A wrapper around a function that executes a single opcode from a script.
 pub trait StepFn {
+    /// Any additional data that is needed by the `StepFn`. In most cases, it can be `()`.
     type Payload: Clone;
+    /// Call the underlying function to evaluate a single opcode.
     fn call<'a>(
         &self,
         pc: &'a [u8],
@@ -1069,7 +1105,9 @@ pub trait StepFn {
 /// Produces the default stepper, which carries no payload and runs the script as before.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct DefaultStepEvaluator<C> {
+    /// The flags which can modify interpretration rules.
     pub(crate) flags: VerificationFlags,
+    /// The `SignatureChecker` used in `CHECK*SIG`.
     pub(crate) checker: C,
 }
 
@@ -1086,6 +1124,7 @@ impl<C: SignatureChecker + Copy> StepFn for DefaultStepEvaluator<C> {
     }
 }
 
+/// Execution of a script component (e.g., script sig, script pubkey, or redeem script).
 fn eval_script<F>(
     stack: Stack<Vec<u8>>,
     script: &script::Code,
@@ -1209,6 +1248,7 @@ where
     }
 }
 
+/// Full execution of a script.
 pub fn verify_script<F>(
     script_sig: &script::Code,
     script_pub_key: &script::Code,

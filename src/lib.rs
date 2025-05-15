@@ -4,6 +4,7 @@
 #![doc(html_root_url = "https://docs.rs/zcash_script/0.3.2")]
 #![allow(non_snake_case)]
 #![allow(unsafe_code)]
+#![deny(missing_docs)]
 #[macro_use]
 extern crate enum_primitive;
 
@@ -37,7 +38,7 @@ pub use zcash_script::{
     rust_interpreter, ComparisonStepEvaluator, Error, StepResults, StepwiseInterpreter, ZcashScript,
 };
 
-/** Script opcodes */
+/// Script opcodes
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Opcode {
     /// Opcodes that represent constants to be pushed onto the stack.
@@ -100,9 +101,13 @@ impl From<&Opcode> for Vec<u8> {
     }
 }
 
+/// An interpreter that calls the original C++ implementation via FFI.
 pub struct CxxInterpreter<'a> {
+    /// A callback to determine the sighash for a particular UTXO.
     pub sighash: SighashCalculator<'a>,
+    /// The time at which this interpreter is being run.
     pub lock_time: u32,
+    /// Whether this is the final UTXO for the transaction.
     pub is_final: bool,
 }
 
@@ -310,6 +315,9 @@ pub struct ComparisonInterpreter<T, U> {
     second: U,
 }
 
+/// An interpreter that compares the results of the C++ and Rust implementations. In the case where
+/// they differ, a warning will be logged, and the C++ interpreter will be treated as the correct
+/// result.
 pub fn cxx_rust_comparison_interpreter(
     sighash: SighashCalculator,
     lock_time: u32,
@@ -371,6 +379,7 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U>
     }
 }
 
+/// Utilities useful for tests in other modules and crates.
 #[cfg(any(test, feature = "test-dependencies"))]
 pub mod testing {
     use crate::{
@@ -716,6 +725,5 @@ mod tests {
             prop_assert_eq!(ret.0.map_err(|e| e.normalize()), ret.1.clone().map_err(|e| e.normalize()),
                             "original Rust result: {:?}", ret.1);
         }
-
     }
 }
