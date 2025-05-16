@@ -6,12 +6,12 @@ use crate::{
     interpreter,
     opcode::{
         self,
-        operation::Normal::*,
+        operation::Operation::*,
         push_value::{
             LargeValue::PushdataBytelength,
             SmallValue::{self, *},
         },
-        Opcode, Operation, PushValue,
+        Opcode, PushValue,
     },
 };
 
@@ -106,7 +106,7 @@ impl Script<'_> {
                 Err(_) => break,
             };
             pc = new_pc;
-            if let Ok(Opcode::Operation(Operation::Normal(op))) = opcode {
+            if let Ok(Opcode::Operation(op)) = opcode {
                 if op == OP_CHECKSIG || op == OP_CHECKSIGVERIFY {
                     n += 1;
                 } else if op == OP_CHECKMULTISIG || op == OP_CHECKMULTISIGVERIFY {
@@ -130,9 +130,9 @@ impl Script<'_> {
     /// Returns true iff this script is P2SH.
     pub fn is_pay_to_script_hash(&self) -> bool {
         self.parse().map_or(false, |ops| match &ops[..] {
-            [ Opcode::Operation(Operation::Normal(OP_HASH160)),
+            [ Opcode::Operation(OP_HASH160),
               Opcode::PushValue(PushValue::LargeValue(PushdataBytelength(v))),
-              Opcode::Operation(Operation::Normal(OP_EQUAL))
+              Opcode::Operation(OP_EQUAL)
             ] => v.len() == 0x14,
             _ => false
         })

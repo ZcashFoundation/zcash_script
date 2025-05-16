@@ -6,7 +6,7 @@ use core::fmt;
 use enum_primitive::FromPrimitive;
 use serde::{de, Deserialize, Serialize, Serializer};
 
-use operation::{Control, Normal};
+use operation::{Control, Operation};
 use push_value::{LargeValue, SmallValue};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -31,6 +31,11 @@ impl From<ReadError> for Error {
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Opcode {
     PushValue(PushValue),
+    /// - always evaluated
+    /// - can be cast to its discriminant
+    Control(Control),
+    /// - only evaluated on active branch
+    /// - can be cast to its discriminant
     Operation(Operation),
 }
 
@@ -38,6 +43,7 @@ impl From<&Opcode> for Vec<u8> {
     fn from(value: &Opcode) -> Self {
         match value {
             Opcode::PushValue(v) => v.into(),
+            Opcode::Control(v) => vec![(*v).into()],
             Opcode::Operation(v) => vec![(*v).into()],
         }
     }
@@ -104,15 +110,18 @@ pub fn parse(script: &[u8]) -> Result<(Result<Opcode, u8>, &[u8]), Error> {
                 })),
                 Some((leading_byte, script)) => SmallValue::from_u8(*leading_byte)
                     .map_or(
-                        Operation::try_from(*leading_byte).map_or(
-                            match *leading_byte {
-                                0x7e | 0x7f | 0x80 | 0x81 | 0x83 | 0x84 | 0x85 | 0x86 | 0x8d
-                                | 0x8e | 0x95 | 0x96 | 0x97 | 0x98 | 0x99 | 0xab => {
-                                    Err(Error::DisabledOpcode(Some(*leading_byte)))
-                                }
-                                unknown => Ok(Err(unknown)),
-                            },
-                            |op| Ok(Ok(Opcode::Operation(op))),
+                        Control::from_u8(*leading_byte).map_or(
+                            Operation::from_u8(*leading_byte).map_or(
+                                match *leading_byte {
+                                    0x7e | 0x7f | 0x80 | 0x81 | 0x83 | 0x84 | 0x85 | 0x86
+                                    | 0x8d | 0x8e | 0x95 | 0x96 | 0x97 | 0x98 | 0x99 | 0xab => {
+                                        Err(Error::DisabledOpcode(Some(*leading_byte)))
+                                    }
+                                    unknown => Ok(Err(unknown)),
+                                },
+                                |n| Ok(Ok(Opcode::Operation(n))),
+                            ),
+                            |un| Ok(Ok(Opcode::Control(un))),
                         ),
                         |sv| Ok(Ok(Opcode::PushValue(PushValue::SmallValue(sv)))),
                     )
@@ -227,72 +236,6 @@ impl From<&PushValue> for Vec<u8> {
         match value {
             PushValue::SmallValue(v) => vec![(*v).into()],
             PushValue::LargeValue(v) => v.into(),
-        }
-    }
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub enum Operation {
-    /// - always evaluated
-    /// - can be cast to its discriminant
-    Control(Control),
-    /// - only evaluated on active branch
-    /// - can be cast to its discriminant
-    Normal(Normal),
-}
-
-impl TryFrom<u8> for Operation {
-    type Error = ();
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        Unconditional::from_u8(value).map_or(
-            Normal::from_u8(value).map_or(Err(()), |n| Ok(Operation::Normal(n))),
-            |un| Ok(Operation::Control(un)),
-        )
-    }
-}
-
-impl Serialize for Operation {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_u8((*self).into())
-    }
-}
-
-struct OperationVisitor;
-
-impl<'de> de::Visitor<'de> for OperationVisitor {
-    type Value = Operation;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("a byte")
-    }
-
-    fn visit_u8<E>(self, value: u8) -> Result<Operation, E>
-    where
-        E: de::Error,
-    {
-        value
-            .try_into()
-            .map_err(|()| E::custom("not a valid Operation"))
-    }
-}
-
-impl<'de> Deserialize<'de> for Operation {
-    fn deserialize<D>(deserializer: D) -> Result<Operation, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        deserializer.deserialize_u8(OperationVisitor)
-    }
-}
-
-impl From<Operation> for u8 {
-    fn from(value: Operation) -> Self {
-        match value {
-            Operation::Control(op) => op.into(),
-            Operation::Normal(op) => op.into(),
         }
     }
 }

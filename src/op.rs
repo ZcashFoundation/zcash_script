@@ -2,9 +2,8 @@
 
 use crate::{
     opcode::{
-        operation::{Control::*, Normal::*},
-        Opcode::{self, Operation, PushValue},
-        Operation::{Control, Normal},
+        operation::{Control::*, Operation::*},
+        Opcode::{self, Control, Operation, PushValue},
     },
     pv,
 };
@@ -44,87 +43,86 @@ pub fn pushdata4(value: Vec<u8>) -> Opcode {
     PushValue(pv::pushdata4(value))
 }
 
-pub const NOP: Opcode = Operation(Normal(OP_NOP));
-pub const IF: Opcode = Operation(Control(OP_IF));
-pub const NOTIF: Opcode = Operation(Control(OP_NOTIF));
-pub const ELSE: Opcode = Operation(Control(OP_ELSE));
-pub const ENDIF: Opcode = Operation(Control(OP_ENDIF));
-pub const VERIFY: Opcode = Operation(Normal(OP_VERIFY));
-pub const RETURN: Opcode = Operation(Normal(OP_RETURN));
-pub const TOALTSTACK: Opcode = Operation(Normal(OP_TOALTSTACK));
-pub const FROMALTSTACK: Opcode = Operation(Normal(OP_FROMALTSTACK));
-pub const _2DROP: Opcode = Operation(Normal(OP_2DROP));
-pub const _2DUP: Opcode = Operation(Normal(OP_2DUP));
-pub const _3DUP: Opcode = Operation(Normal(OP_3DUP));
-pub const _2OVER: Opcode = Operation(Normal(OP_2OVER));
-pub const _2ROT: Opcode = Operation(Normal(OP_2ROT));
-pub const _2SWAP: Opcode = Operation(Normal(OP_2SWAP));
-pub const IFDUP: Opcode = Operation(Normal(OP_IFDUP));
-pub const DEPTH: Opcode = Operation(Normal(OP_DEPTH));
-pub const DROP: Opcode = Operation(Normal(OP_DROP));
-pub const DUP: Opcode = Operation(Normal(OP_DUP));
-pub const NIP: Opcode = Operation(Normal(OP_NIP));
-pub const OVER: Opcode = Operation(Normal(OP_NIP));
-pub const PICK: Opcode = Operation(Normal(OP_PICK));
-pub const ROLL: Opcode = Operation(Normal(OP_ROLL));
-pub const ROT: Opcode = Operation(Normal(OP_ROT));
-pub const SWAP: Opcode = Operation(Normal(OP_SWAP));
-pub const TUCK: Opcode = Operation(Normal(OP_TUCK));
-pub const SIZE: Opcode = Operation(Normal(OP_SIZE));
-pub const EQUAL: Opcode = Operation(Normal(OP_EQUAL));
-pub const EQUALVERIFY: Opcode = Operation(Normal(OP_EQUALVERIFY));
-pub const _1ADD: Opcode = Operation(Normal(OP_1ADD));
-pub const _1SUB: Opcode = Operation(Normal(OP_1SUB));
-pub const NEGATE: Opcode = Operation(Normal(OP_NEGATE));
-pub const ABS: Opcode = Operation(Normal(OP_ABS));
-pub const NOT: Opcode = Operation(Normal(OP_NOT));
-pub const _0NOTEQUAL: Opcode = Operation(Normal(OP_0NOTEQUAL));
-pub const ADD: Opcode = Operation(Normal(OP_ADD));
-pub const SUB: Opcode = Operation(Normal(OP_SUB));
-pub const BOOLAND: Opcode = Operation(Normal(OP_BOOLAND));
-pub const BOOLOR: Opcode = Operation(Normal(OP_BOOLOR));
-pub const NUMEQUAL: Opcode = Operation(Normal(OP_NUMEQUAL));
-pub const LESSTHAN: Opcode = Operation(Normal(OP_LESSTHAN));
-pub const GREATERTHAN: Opcode = Operation(Normal(OP_GREATERTHAN));
-pub const LESSTHANOREQUAL: Opcode = Operation(Normal(OP_LESSTHANOREQUAL));
-pub const GREATERTHANOREQUAL: Opcode = Operation(Normal(OP_GREATERTHANOREQUAL));
-pub const MIN: Opcode = Operation(Normal(OP_MIN));
-pub const MAX: Opcode = Operation(Normal(OP_MAX));
-pub const WITHIN: Opcode = Operation(Normal(OP_WITHIN));
-pub const RIPEMD160: Opcode = Operation(Normal(OP_RIPEMD160));
-pub const SHA1: Opcode = Operation(Normal(OP_SHA1));
-pub const SHA256: Opcode = Operation(Normal(OP_SHA256));
-pub const HASH160: Opcode = Operation(Normal(OP_HASH160));
-pub const HASH256: Opcode = Operation(Normal(OP_HASH256));
-pub const CHECKSIG: Opcode = Operation(Normal(OP_CHECKSIG));
-pub const CHECKSIGVERIFY: Opcode = Operation(Normal(OP_CHECKSIGVERIFY));
-pub const CHECKMULTISIG: Opcode = Operation(Normal(OP_CHECKMULTISIG));
-pub const CHECKMULTISIGVERIFY: Opcode = Operation(Normal(OP_CHECKMULTISIGVERIFY));
-pub const NOP1: Opcode = Operation(Normal(OP_NOP1));
-pub const CHECKLOCKTIMEVERIFY: Opcode = Operation(Normal(OP_CHECKLOCKTIMEVERIFY));
-pub const NOP3: Opcode = Operation(Normal(OP_NOP3));
-pub const NOP4: Opcode = Operation(Normal(OP_NOP4));
-pub const NOP5: Opcode = Operation(Normal(OP_NOP5));
-pub const NOP6: Opcode = Operation(Normal(OP_NOP6));
-pub const NOP7: Opcode = Operation(Normal(OP_NOP7));
-pub const NOP8: Opcode = Operation(Normal(OP_NOP8));
-pub const NOP9: Opcode = Operation(Normal(OP_NOP9));
-pub const NOP10: Opcode = Operation(Normal(OP_NOP10));
+pub const NOP: Opcode = Operation(OP_NOP);
+pub const IF: Opcode = Control(OP_IF);
+pub const NOTIF: Opcode = Control(OP_NOTIF);
+pub const ELSE: Opcode = Control(OP_ELSE);
+pub const ENDIF: Opcode = Control(OP_ENDIF);
+pub const VERIFY: Opcode = Operation(OP_VERIFY);
+pub const RETURN: Opcode = Operation(OP_RETURN);
+pub const TOALTSTACK: Opcode = Operation(OP_TOALTSTACK);
+pub const FROMALTSTACK: Opcode = Operation(OP_FROMALTSTACK);
+pub const _2DROP: Opcode = Operation(OP_2DROP);
+pub const _2DUP: Opcode = Operation(OP_2DUP);
+pub const _3DUP: Opcode = Operation(OP_3DUP);
+pub const _2OVER: Opcode = Operation(OP_2OVER);
+pub const _2ROT: Opcode = Operation(OP_2ROT);
+pub const _2SWAP: Opcode = Operation(OP_2SWAP);
+pub const IFDUP: Opcode = Operation(OP_IFDUP);
+pub const DEPTH: Opcode = Operation(OP_DEPTH);
+pub const DROP: Opcode = Operation(OP_DROP);
+pub const DUP: Opcode = Operation(OP_DUP);
+pub const NIP: Opcode = Operation(OP_NIP);
+pub const OVER: Opcode = Operation(OP_NIP);
+pub const PICK: Opcode = Operation(OP_PICK);
+pub const ROLL: Opcode = Operation(OP_ROLL);
+pub const ROT: Opcode = Operation(OP_ROT);
+pub const SWAP: Opcode = Operation(OP_SWAP);
+pub const TUCK: Opcode = Operation(OP_TUCK);
+pub const SIZE: Opcode = Operation(OP_SIZE);
+pub const EQUAL: Opcode = Operation(OP_EQUAL);
+pub const EQUALVERIFY: Opcode = Operation(OP_EQUALVERIFY);
+pub const _1ADD: Opcode = Operation(OP_1ADD);
+pub const _1SUB: Opcode = Operation(OP_1SUB);
+pub const NEGATE: Opcode = Operation(OP_NEGATE);
+pub const ABS: Opcode = Operation(OP_ABS);
+pub const NOT: Opcode = Operation(OP_NOT);
+pub const _0NOTEQUAL: Opcode = Operation(OP_0NOTEQUAL);
+pub const ADD: Opcode = Operation(OP_ADD);
+pub const SUB: Opcode = Operation(OP_SUB);
+pub const BOOLAND: Opcode = Operation(OP_BOOLAND);
+pub const BOOLOR: Opcode = Operation(OP_BOOLOR);
+pub const NUMEQUAL: Opcode = Operation(OP_NUMEQUAL);
+pub const LESSTHAN: Opcode = Operation(OP_LESSTHAN);
+pub const GREATERTHAN: Opcode = Operation(OP_GREATERTHAN);
+pub const LESSTHANOREQUAL: Opcode = Operation(OP_LESSTHANOREQUAL);
+pub const GREATERTHANOREQUAL: Opcode = Operation(OP_GREATERTHANOREQUAL);
+pub const MIN: Opcode = Operation(OP_MIN);
+pub const MAX: Opcode = Operation(OP_MAX);
+pub const WITHIN: Opcode = Operation(OP_WITHIN);
+pub const RIPEMD160: Opcode = Operation(OP_RIPEMD160);
+pub const SHA1: Opcode = Operation(OP_SHA1);
+pub const SHA256: Opcode = Operation(OP_SHA256);
+pub const HASH160: Opcode = Operation(OP_HASH160);
+pub const HASH256: Opcode = Operation(OP_HASH256);
+pub const CHECKSIG: Opcode = Operation(OP_CHECKSIG);
+pub const CHECKSIGVERIFY: Opcode = Operation(OP_CHECKSIGVERIFY);
+pub const CHECKMULTISIG: Opcode = Operation(OP_CHECKMULTISIG);
+pub const CHECKMULTISIGVERIFY: Opcode = Operation(OP_CHECKMULTISIGVERIFY);
+pub const NOP1: Opcode = Operation(OP_NOP1);
+pub const CHECKLOCKTIMEVERIFY: Opcode = Operation(OP_CHECKLOCKTIMEVERIFY);
+pub const NOP3: Opcode = Operation(OP_NOP3);
+pub const NOP4: Opcode = Operation(OP_NOP4);
+pub const NOP5: Opcode = Operation(OP_NOP5);
+pub const NOP6: Opcode = Operation(OP_NOP6);
+pub const NOP7: Opcode = Operation(OP_NOP7);
+pub const NOP8: Opcode = Operation(OP_NOP8);
+pub const NOP9: Opcode = Operation(OP_NOP9);
+pub const NOP10: Opcode = Operation(OP_NOP10);
 
 pub mod bad {
     use crate::{
         opcode::{
-            operation::{Control::*, Normal::*},
-            Opcode::{self, Operation, PushValue},
-            Operation::{Control, Normal},
+            operation::{Control::*, Operation::*},
+            Opcode::{self, Control, Operation, PushValue},
         },
         pv,
     };
 
     pub const RESERVED: Opcode = PushValue(pv::bad::RESERVED);
-    pub const VERIF: Opcode = Operation(Control(OP_VERIF));
-    pub const VERNOTIF: Opcode = Operation(Control(OP_VERNOTIF));
-    pub const VER: Opcode = Operation(Normal(OP_VER));
-    pub const RESERVED1: Opcode = Operation(Normal(OP_RESERVED1));
-    pub const RESERVED2: Opcode = Operation(Normal(OP_RESERVED2));
+    pub const VERIF: Opcode = Control(OP_VERIF);
+    pub const VERNOTIF: Opcode = Control(OP_VERNOTIF);
+    pub const VER: Opcode = Operation(OP_VER);
+    pub const RESERVED1: Opcode = Operation(OP_RESERVED1);
+    pub const RESERVED2: Opcode = Operation(OP_RESERVED2);
 }

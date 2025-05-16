@@ -20,8 +20,7 @@ enum_from_primitive! {
 /// Normal operations are only executed when they are on an active branch.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
-pub enum Normal {
-    // control
+pub enum Operation {
     OP_NOP = 0x61,
     OP_VER = 0x62,
     OP_VERIFY = 0x69,
@@ -107,8 +106,8 @@ pub enum Normal {
 }
 }
 
-impl From<Normal> for u8 {
-    fn from(value: Normal) -> Self {
+impl From<Operation> for u8 {
+    fn from(value: Operation) -> Self {
         // This is how you get the discriminant, but using `as` everywhere is too much code smell
         value as u8
     }
