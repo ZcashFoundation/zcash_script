@@ -12,8 +12,9 @@ use crate::{
     script::{
         parse_num, serialize_num,
         Control::{self, *},
-        Normal::{self, *},
-        Opcode, Operation, PushValue, Script, LOCKTIME_THRESHOLD, MAX_SCRIPT_ELEMENT_SIZE,
+        Opcode,
+        Operation::{self, *},
+        PushValue, Script, SmallValue, LOCKTIME_THRESHOLD, MAX_SCRIPT_ELEMENT_SIZE,
         MAX_SCRIPT_SIZE,
     },
     script_error::ScriptError,
@@ -313,6 +314,15 @@ impl State {
         Self::from_parts(stack, Stack::new(), 0, Stack::new())
     }
 
+    pub fn increment_op_count(&mut self) -> Result<(), ScriptError> {
+        self.op_count += 1;
+        if self.op_count <= MAX_OP_COUNT {
+            Ok(())
+        } else {
+            Err(ScriptError::OpCount)
+        }
+    }
+
     /// Create an arbitrary state.
     pub fn from_parts(
         stack: Stack<Vec<u8>>,
@@ -361,15 +371,11 @@ fn eval_step<'a>(
     //
     Script::get_op(pc).and_then(|(opcode, new_pc)| match opcode {
         Err(byte) => {
-            state.op_count += 1;
-            if state.op_count <= MAX_OP_COUNT {
-                if should_exec(&state.vexec) {
-                    Err(ScriptError::BadOpcode(Some(byte)))
-                } else {
-                    Ok(new_pc)
-                }
+            state.increment_op_count()?;
+            if should_exec(&state.vexec) {
+                Err(ScriptError::BadOpcode(Some(byte)))
             } else {
-                Err(ScriptError::OpCount.into())
+                Ok(new_pc)
             }
         }
         Ok(opcode) => eval_opcode(flags, opcode, script, &checker, state).map(|()| new_pc),
@@ -383,16 +389,15 @@ fn eval_opcode(
     checker: &dyn SignatureChecker,
     state: &mut State,
 ) -> Result<(), ScriptError> {
-    let stack = &mut state.stack;
-    let op_count = &mut state.op_count;
-    let vexec = &mut state.vexec;
-    let altstack = &mut state.altstack;
-
     (match opcode {
         Opcode::PushValue(pv) => {
             if pv.value().map_or(0, |v| v.len()) <= MAX_SCRIPT_ELEMENT_SIZE {
-                if should_exec(vexec) {
-                    eval_push_value(&pv, flags.contains(VerificationFlags::MinimalData), stack)
+                if should_exec(&state.vexec) {
+                    eval_push_value(
+                        &pv,
+                        flags.contains(VerificationFlags::MinimalData),
+                        &mut state.stack,
+                    )
                 } else {
                     Ok(())
                 }
@@ -400,30 +405,32 @@ fn eval_opcode(
                 Err(ScriptError::PushSize)
             }
         }
-        Opcode::Operation(op) => {
+        Opcode::Control(control) => {
             // Note how OP_RESERVED does not count towards the opcode limit.
-            *op_count += 1;
-            if *op_count <= MAX_OP_COUNT {
-                match op {
-                    Operation::Control(control) => eval_control(control, stack, vexec),
-                    Operation::Normal(normal) => {
-                        if should_exec(vexec) {
-                            eval_operation(
-                                normal, flags, script, checker, stack, altstack, op_count,
-                            )
-                        } else {
-                            Ok(())
-                        }
-                    }
-                }
+            state.increment_op_count()?;
+            eval_control(control, &mut state.stack, &mut state.vexec)
+        }
+        Opcode::Operation(normal) => {
+            // Note how OP_RESERVED does not count towards the opcode limit.
+            state.increment_op_count()?;
+            if should_exec(&state.vexec) {
+                eval_operation(
+                    normal,
+                    flags,
+                    script,
+                    checker,
+                    &mut state.stack,
+                    &mut state.altstack,
+                    &mut state.op_count,
+                )
             } else {
-                Err(ScriptError::OpCount)
+                Ok(())
             }
         }
     })
     .and_then(|()| {
         // Size limits
-        if stack.len() + altstack.len() > 1000 {
+        if state.stack.len() + state.altstack.len() > 1000 {
             Err(ScriptError::StackSize)
         } else {
             Ok(())
@@ -498,7 +505,7 @@ fn eval_control(
 }
 
 fn eval_operation(
-    op: Normal,
+    op: Operation,
     flags: VerificationFlags,
     script: &Script,
     checker: &dyn SignatureChecker,

@@ -323,7 +323,7 @@ pub mod testing {
     use crate::{
         interpreter::{State, StepFn, VerificationFlags},
         normalize_script_error,
-        script::{self, Normal, Script},
+        script::{self, Operation, Script},
         script_error::ScriptError,
         test_vectors::TestVector,
         Error,
@@ -359,7 +359,7 @@ pub mod testing {
             payload: &mut T::Payload,
         ) -> Result<&'a [u8], ScriptError> {
             self.0.call(
-                if pc[0] == Normal::OP_EQUAL.into() {
+                if pc[0] == Operation::OP_EQUAL.into() {
                     &pc[1..]
                 } else {
                     pc

@@ -125,7 +125,6 @@ impl TestVector {
 mod bad {
     use crate::script::{
         Control::*,
-        Normal::*,
         Opcode::{self, *},
         Operation::*,
         PushValue::SmallValue,
@@ -133,11 +132,11 @@ mod bad {
     };
 
     pub const RESERVED: Opcode = PushValue(SmallValue(OP_RESERVED));
-    pub const VERIF: Opcode = Operation(Control(OP_VERIF));
-    pub const VERNOTIF: Opcode = Operation(Control(OP_VERNOTIF));
-    pub const VER: Opcode = Operation(Normal(OP_VER));
-    pub const RESERVED1: Opcode = Operation(Normal(OP_RESERVED1));
-    pub const RESERVED2: Opcode = Operation(Normal(OP_RESERVED2));
+    pub const VERIF: Opcode = Control(OP_VERIF);
+    pub const VERNOTIF: Opcode = Control(OP_VERNOTIF);
+    pub const VER: Opcode = Operation(OP_VER);
+    pub const RESERVED1: Opcode = Operation(OP_RESERVED1);
+    pub const RESERVED2: Opcode = Operation(OP_RESERVED2);
 }
 
 const DEFAULT_FLAGS: VerificationFlags =

@@ -17,6 +17,11 @@ pub const LOCKTIME_THRESHOLD: i64 = 500_000_000; // Tue Nov  5 00:53:20 1985 UTC
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Opcode {
     PushValue(PushValue),
+    /// - always evaluated
+    /// - can be cast to its discriminant
+    Control(Control),
+    /// - only evaluated on active branch
+    /// - can be cast to its discriminant
     Operation(Operation),
 }
 
@@ -133,16 +138,6 @@ impl PushValue {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub enum Operation {
-    /// - always evaluated
-    /// - can be cast to its discriminant
-    Control(Control),
-    /// - only evaluated on active branch
-    /// - can be cast to its discriminant
-    Normal(Normal),
-}
-
 enum_from_primitive! {
 /// Control operations are evaluated regardless of whether the current branch is active.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -161,7 +156,7 @@ enum_from_primitive! {
 /// Normal operations are only executed when they are on an active branch.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[repr(u8)]
-pub enum Normal {
+pub enum Operation {
     // control
     OP_NOP = 0x61,
     OP_VER = 0x62,
@@ -248,34 +243,15 @@ pub enum Normal {
 }
 }
 
-use Normal::*;
+use Operation::*;
 
 impl From<Opcode> for u8 {
     fn from(value: Opcode) -> Self {
         match value {
             Opcode::PushValue(pv) => pv.into(),
+            Opcode::Control(ctl) => ctl.into(),
             Opcode::Operation(op) => op.into(),
         }
-    }
-}
-
-impl From<Operation> for u8 {
-    fn from(value: Operation) -> Self {
-        match value {
-            Operation::Control(op) => op.into(),
-            Operation::Normal(op) => op.into(),
-        }
-    }
-}
-
-impl TryFrom<u8> for Operation {
-    type Error = ();
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        Control::from_u8(value).map_or(
-            Normal::from_u8(value).map_or(Err(()), |norm| Ok(Operation::Normal(norm))),
-            |ctl| Ok(Operation::Control(ctl)),
-        )
     }
 }
 
@@ -288,8 +264,8 @@ impl From<PushValue> for u8 {
     }
 }
 
-impl From<Normal> for u8 {
-    fn from(value: Normal) -> Self {
+impl From<Operation> for u8 {
+    fn from(value: Operation) -> Self {
         // This is how you get the discriminant, but using `as` everywhere is too much code smell
         value as u8
     }
@@ -519,17 +495,20 @@ impl Script<'_> {
                         expected_bytes: 1,
                         available_bytes: 0,
                     }),
-                    Some((leading_byte, script)) => SmallValue::from_u8(*leading_byte)
-                        .map_or(
-                            Disabled::from_u8(*leading_byte).map_or(
-                                Ok(Operation::try_from(*leading_byte)
-                                    .map_err(|()| *leading_byte)
-                                    .map(Opcode::Operation)),
-                                |disabled| Err(ScriptError::DisabledOpcode(Some(disabled))),
+                    Some((leading_byte, script)) => Disabled::from_u8(*leading_byte).map_or(
+                        Ok((
+                            SmallValue::from_u8(*leading_byte).map_or(
+                                Control::from_u8(*leading_byte).map_or(
+                                    Operation::from_u8(*leading_byte)
+                                        .map_or(Err(*leading_byte), |op| Ok(Opcode::Operation(op))),
+                                    |ctl| Ok(Opcode::Control(ctl)),
+                                ),
+                                |sv| Ok(Opcode::PushValue(PushValue::SmallValue(sv))),
                             ),
-                            |sv| Ok(Ok(Opcode::PushValue(PushValue::SmallValue(sv)))),
-                        )
-                        .map(|op| (op, script)),
+                            script,
+                        )),
+                        |disabled| Err(ScriptError::DisabledOpcode(Some(disabled))),
+                    ),
                 },
                 |(v, script)| Ok((Ok(Opcode::PushValue(PushValue::LargeValue(v))), script)),
             )
@@ -561,7 +540,7 @@ impl Script<'_> {
                 Err(_) => break,
             };
             pc = new_pc;
-            if let Ok(Opcode::Operation(Operation::Normal(op))) = opcode {
+            if let Ok(Opcode::Operation(op)) = opcode {
                 if op == OP_CHECKSIG || op == OP_CHECKSIGVERIFY {
                     n += 1;
                 } else if op == OP_CHECKMULTISIG || op == OP_CHECKMULTISIGVERIFY {
@@ -585,9 +564,9 @@ impl Script<'_> {
     /// Returns true iff this script is P2SH.
     pub fn is_pay_to_script_hash(&self) -> bool {
         self.parse().map_or(false, |ops| match &ops[..] {
-            [ Opcode::Operation(Operation::Normal(OP_HASH160)),
+            [ Opcode::Operation(OP_HASH160),
               Opcode::PushValue(PushValue::LargeValue(PushdataBytelength(v))),
-              Opcode::Operation(Operation::Normal(OP_EQUAL))
+              Opcode::Operation(OP_EQUAL)
             ] => v.len() == 0x14,
             _ => false
         })
