@@ -2,6 +2,9 @@ version: 2
 updates:
   - package-ecosystem: cargo
     directory: '/'
+    # Update only the lockfile. We shouldn't update Cargo.toml unless it's for
+    # a security issue, or if we need a new feature of the dependency.
+    versioning-strategy: lockfile-only
     schedule:
       interval: daily
       timezone: America/New_York
