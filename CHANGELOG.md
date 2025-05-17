@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+## [0.3.1](https://github.com/ZcashFoundation/zcash_script/compare/v0.3.0...v0.3.1) - 2025-05-17
+
+### Other
+
+- Remove extra `&` from `SighashCalculator` ([#216](https://github.com/ZcashFoundation/zcash_script/pull/216))
+
 ## [0.3.0](https://github.com/ZcashFoundation/zcash_script/compare/v0.2.0...v0.3.0) - 2025-05-13
 
 - Another major API update. The previous C++ functions were moved to the `cxx`
