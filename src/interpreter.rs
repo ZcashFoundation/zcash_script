@@ -1214,23 +1214,13 @@ pub const SIGHASH_SIZE: usize = 32;
 /// reporting, but returning `None` indicates _some_ failure to produce the desired hash.
 pub type SighashCalculator<'a> = &'a dyn Fn(&[u8], HashType) -> Option<[u8; SIGHASH_SIZE]>;
 
-impl CallbackTransactionSignatureChecker<'_> {
-    pub fn verify_signature(
-        sig: &ecdsa::Signature,
-        pubkey: &PubKey,
-        sighash: &[u8; SIGHASH_SIZE],
-    ) -> bool {
-        pubkey.verify(sighash, sig)
-    }
-}
-
 impl SignatureChecker for CallbackTransactionSignatureChecker<'_> {
     fn check_sig(&self, sig: &Signature, vch_pub_key: &[u8], script_code: &Script) -> bool {
         let pubkey = PubKey(vch_pub_key);
 
         pubkey.is_valid()
             && (self.sighash)(script_code.0, sig.sighash)
-                .map(|sighash| Self::verify_signature(&sig.sig, &pubkey, &sighash))
+                .map(|sighash| pubkey.verify(&sighash, &sig.sig))
                 .unwrap_or(false)
     }
 
