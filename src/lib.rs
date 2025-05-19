@@ -163,7 +163,7 @@ extern "C" fn sighash_callback(
 }
 
 /// This steals a bit of the wrapper code from zebra_script, to provide the API that they want.
-impl<'a> ZcashScript for CxxInterpreter<'a> {
+impl ZcashScript for CxxInterpreter<'_> {
     fn verify_callback(
         &self,
         script_pub_key: &[u8],

@@ -147,7 +147,7 @@ impl Serialize for Opcode {
 
 struct OpcodeVisitor;
 
-impl<'de> de::Visitor<'de> for OpcodeVisitor {
+impl de::Visitor<'_> for OpcodeVisitor {
     type Value = Opcode;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {

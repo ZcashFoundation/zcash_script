@@ -124,7 +124,7 @@ pub struct ComparisonStepEvaluator<'a, T, U> {
     pub eval_step_r: &'a dyn StepFn<Payload = U>,
 }
 
-impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
+impl<T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'_, T, U> {
     type Payload = StepResults<T, U>;
     fn call<'b>(
         &self,
