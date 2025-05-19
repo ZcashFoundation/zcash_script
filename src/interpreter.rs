@@ -196,17 +196,13 @@ pub trait SignatureChecker {
     /// Check that the signature is valid.
     fn check_sig(
         &self,
-        _script_sig: &signature::Decoded,
-        _vch_pub_key: &[u8],
-        _script_code: &script::Code,
-    ) -> bool {
-        false
-    }
+        script_sig: &signature::Decoded,
+        vch_pub_key: &[u8],
+        script_code: &script::Code,
+    ) -> bool;
 
     /// Return true if the lock time argument is more recent than the time the script was evaluated.
-    fn check_lock_time(&self, _lock_time: i64) -> bool {
-        false
-    }
+    fn check_lock_time(&self, lock_time: i64) -> bool;
 }
 
 /// A signature checker that always fails. This is helpful in testing cases that don’t involve
@@ -214,7 +210,20 @@ pub trait SignatureChecker {
 /// trait.
 pub struct BaseSignatureChecker();
 
-impl SignatureChecker for BaseSignatureChecker {}
+impl SignatureChecker for BaseSignatureChecker {
+    fn check_sig(
+        &self,
+        _script_sig: &signature::Decoded,
+        _vch_pub_key: &[u8],
+        _script_code: &script::Code,
+    ) -> bool {
+        false
+    }
+
+    fn check_lock_time(&self, _lock_time: i64) -> bool {
+        false
+    }
+}
 
 /// A signature checker that uses a callback to get necessary information about the transaction
 /// involved.
