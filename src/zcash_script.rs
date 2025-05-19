@@ -61,7 +61,7 @@ pub fn stepwise_verify<F>(
     flags: VerificationFlags,
     payload: &mut F::Payload,
     stepper: &F,
-) -> Result<(), Error>
+) -> Result<(), script::Error>
 where
     F: StepFn,
 {
@@ -72,7 +72,6 @@ where
         payload,
         stepper,
     )
-    .map_err(Error::Ok)
 }
 
 /// A payload for comparing the results of two steppers.
@@ -144,7 +143,7 @@ impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
                         left.map(|_| state.clone()),
                         right.map(|_| right_state.clone()),
                     ));
-                    Err(script::Error::UnknownError)
+                    Err(script::Error::ExternalError("mismatched step results"))
                 }
             }
             // at least one is `Err`
@@ -210,6 +209,7 @@ impl<F: StepFn> ZcashScript for StepwiseInterpreter<F> {
             &mut payload,
             &self.stepper,
         )
+        .map_err(Error::Ok)
     }
 }
 
@@ -275,13 +275,11 @@ mod tests {
         // The final return value is from whichever stepper failed.
         assert_eq!(
             ret,
-            Err(Error::Ok(
-                opcode::Error::Read(ReadError {
-                    expected_bytes: 1,
-                    available_bytes: 0,
-                })
-                .into()
-            ))
+            Err(opcode::Error::Read(ReadError {
+                expected_bytes: 1,
+                available_bytes: 0,
+            })
+            .into())
         );
 
         // `State`s are large, so we just check that there was some progress in lock step, and a
@@ -338,7 +336,7 @@ mod tests {
         if res.diverging_result != None {
             panic!("mismatched result: {:?}", res);
         }
-        assert_eq!(ret, Err(Error::Ok(script::Error::EvalFalse)));
+        assert_eq!(ret, Err(script::Error::EvalFalse));
     }
 
     #[test]
@@ -365,7 +363,7 @@ mod tests {
         if res.diverging_result != None {
             panic!("mismatched result: {:?}", res);
         }
-        assert_eq!(ret, Err(Error::Ok(script::Error::EvalFalse)));
+        assert_eq!(ret, Err(script::Error::EvalFalse));
     }
 
     proptest! {

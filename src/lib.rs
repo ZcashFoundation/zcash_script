@@ -37,7 +37,6 @@ impl From<cxx::ScriptError> for Error {
     #[allow(non_upper_case_globals)]
     fn from(err_code: cxx::ScriptError) -> Self {
         match err_code {
-            cxx::ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR => Error::Ok(script::Error::UnknownError),
             cxx::ScriptError_t_SCRIPT_ERR_EVAL_FALSE => Error::Ok(script::Error::EvalFalse),
             cxx::ScriptError_t_SCRIPT_ERR_OP_RETURN => {
                 Error::Ok(interpreter::Error::OpReturn.into())
@@ -120,7 +119,7 @@ impl From<cxx::ScriptError> for Error {
                 Error::Ok(interpreter::Error::DiscourageUpgradableNOPs.into())
             }
 
-            unknown => Error::Unknown(unknown.into()),
+            _ => Error::Unknown(err_code.into()),
         }
     }
 }
@@ -243,32 +242,38 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
 /// Convert errors that don’t exist in the C++ code into the cases that do.
 pub fn normalize_error(err: Error) -> Error {
     match err {
-        Error::Ok(serr) => Error::Ok(match serr {
+        Error::Ok(serr) => match serr {
             script::Error::Interpreter(ie) => match ie {
                 interpreter::Error::BadOpcode(Some(_)) => {
-                    interpreter::Error::BadOpcode(None).into()
+                    Error::Ok(interpreter::Error::BadOpcode(None).into())
                 }
                 interpreter::Error::PubKeyCount(Some(_)) => {
-                    interpreter::Error::PubKeyCount(None).into()
+                    Error::Ok(interpreter::Error::PubKeyCount(None).into())
                 }
-                interpreter::Error::SigCount(Some(_)) => interpreter::Error::SigCount(None).into(),
-                interpreter::Error::Num(_) => script::Error::UnknownError,
-                interpreter::Error::SigDER(Some(_)) => interpreter::Error::SigDER(None).into(),
+                interpreter::Error::SigCount(Some(_)) => {
+                    Error::Ok(interpreter::Error::SigCount(None).into())
+                }
+                interpreter::Error::Num(_) => {
+                    Error::Unknown(cxx::ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR.into())
+                }
+                interpreter::Error::SigDER(Some(_)) => {
+                    Error::Ok(interpreter::Error::SigDER(None).into())
+                }
                 interpreter::Error::SigHashType(Some(_)) => {
-                    interpreter::Error::SigHashType(None).into()
+                    Error::Ok(interpreter::Error::SigHashType(None).into())
                 }
-                _ => ie.into(),
+                _ => Error::Ok(ie.into()),
             },
-            script::Error::ScriptSize(Some(_)) => script::Error::ScriptSize(None),
+            script::Error::ScriptSize(Some(_)) => script::Error::ScriptSize(None).into(),
             script::Error::Opcode(operr) => match operr {
                 opcode::Error::DisabledOpcode(Some(_)) => {
-                    opcode::Error::DisabledOpcode(None).into()
+                    Error::Ok(opcode::Error::DisabledOpcode(None).into())
                 }
-                opcode::Error::Read(_) => interpreter::Error::BadOpcode(None).into(),
-                _ => operr.into(),
+                opcode::Error::Read(_) => Error::Ok(interpreter::Error::BadOpcode(None).into()),
+                _ => Error::Ok(operr.into()),
             },
-            _ => serr,
-        }),
+            _ => Error::Ok(serr),
+        },
         _ => err,
     }
 }

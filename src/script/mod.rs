@@ -17,14 +17,26 @@ use crate::{
 
 pub(crate) mod num;
 
+/// All errors that can happen with a script. This includes both errors during parsing and
+/// interpretation.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Error {
-    UnknownError,
+    /// A error external to the script validation code. This can come from the stepper.
+    ///
+    /// __TODO__: Replace the `str` with a type parameter, which will be `Void` in validation code,
+    /// but can be different in the steppers.
+    ExternalError(&'static str),
+    /// The serialized length of the script is > `MAX_SIZE` bytes
     ScriptSize(Option<TryFromIntError>),
+    /// Inherit the errors that can occur when reading opcodes.
     Opcode(opcode::Error),
+    /// A scriptSig contains non-`PushValue` opcodes.
     SigPushOnly,
+    /// Inherit the errors that happen during interpretation.
     Interpreter(interpreter::Error),
+    /// The stack didn’t contain exactly one value.
     CleanStack,
+    /// After interpretation, the stack was empty or had a false value on top.
     EvalFalse,
 }
 
