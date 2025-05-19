@@ -204,6 +204,14 @@ bitflags::bitflags! {
 }
 
 pub trait SignatureChecker {
+    fn check_sig(&self, script_sig: &Signature, vch_pub_key: &[u8], script_code: &Script) -> bool;
+
+    fn check_lock_time(&self, lock_time: i64) -> bool;
+}
+
+pub struct BaseSignatureChecker();
+
+impl SignatureChecker for BaseSignatureChecker {
     fn check_sig(
         &self,
         _script_sig: &Signature,
@@ -217,10 +225,6 @@ pub trait SignatureChecker {
         false
     }
 }
-
-pub struct BaseSignatureChecker();
-
-impl SignatureChecker for BaseSignatureChecker {}
 
 #[derive(Copy, Clone)]
 pub struct CallbackTransactionSignatureChecker<'a> {
