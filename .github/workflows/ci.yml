@@ -18,7 +18,7 @@ jobs:
         with:
           command: check
 
-  # Test that "cargo package" works. This make sure it's publishable,
+  # Test that "cargo package" works. This makes sure it's publishable,
   # since we had issues where "cargo build" worked but "package" didn't.
   package:
     name: Package
@@ -76,7 +76,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # "windows-latest" was removed; see https://github.com/ZcashFoundation/zcash_script/issues/38
         os: [ubuntu-latest, macOS-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
