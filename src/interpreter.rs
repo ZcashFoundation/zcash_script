@@ -659,35 +659,25 @@ fn eval_control(
     vexec: &mut Stack<bool>,
 ) -> Result<(), Error> {
     match op {
-        OP_IF | OP_NOTIF => {
-            // <expression> if [statements] [else [statements]] endif
-            let mut value = false;
-            if should_exec(vexec) {
-                if stack.is_empty() {
-                    return Err(Error::UnbalancedConditional);
-                }
-                let vch: &ValType = stack.rget(0)?;
-                value = cast_to_bool(vch);
+        // <expression> if [statements] [else [statements]] endif
+        OP_IF | OP_NOTIF => vexec.push(
+            should_exec(vexec) && {
+                let value = cast_to_bool(&stack.pop().map_err(|_| Error::UnbalancedConditional)?);
                 if op == OP_NOTIF {
-                    value = !value
-                };
-                stack.pop()?;
-            }
-            vexec.push(value);
-        }
+                    !value
+                } else {
+                    value
+                }
+            },
+        ),
 
-        OP_ELSE => {
-            if vexec.is_empty() {
-                return Err(Error::UnbalancedConditional);
-            }
-            vexec.last_mut().map(|last| *last = !*last)?;
-        }
+        OP_ELSE => vexec
+            .last_mut()
+            .map_err(|_| Error::UnbalancedConditional)
+            .map(|last| *last = !*last)?,
 
         OP_ENDIF => {
-            if vexec.is_empty() {
-                return Err(Error::UnbalancedConditional);
-            }
-            vexec.pop()?;
+            vexec.pop().map_err(|_| Error::UnbalancedConditional)?;
         }
 
         OP_VERIF | OP_VERNOTIF => return Err(Error::BadOpcode(Some(op.into()))),
@@ -760,10 +750,6 @@ fn eval_operation(
                     return Err(Error::DiscourageUpgradableNOPs);
                 }
             } else {
-                if stack.is_empty() {
-                    return Err(Error::InvalidStackOperation);
-                }
-
                 // Note that elsewhere numeric opcodes are limited to
                 // operands in the range -2**31+1 to 2**31-1, however it is
                 // legal for opcodes to produce results exceeding that
@@ -807,11 +793,7 @@ fn eval_operation(
         OP_VERIFY => {
             // (true -- ) or
             // (false -- false) and return
-            if stack.is_empty() {
-                return Err(Error::InvalidStackOperation);
-            }
-            let value = cast_to_bool(stack.rget(0)?);
-            if value {
+            if cast_to_bool(stack.rget(0)?) {
                 stack.pop()?;
             } else {
                 return Err(Error::Verify);
@@ -823,36 +805,24 @@ fn eval_operation(
         //
         // Stack ops
         //
-        OP_TOALTSTACK => {
-            if stack.is_empty() {
-                return Err(Error::InvalidStackOperation);
-            }
-            altstack.push(stack.rget(0)?.clone());
-            stack.pop()?;
-        }
+        OP_TOALTSTACK => altstack.push(stack.pop()?),
 
-        OP_FROMALTSTACK => {
-            if altstack.is_empty() {
-                return Err(Error::InvalidAltstackOperation);
-            }
-            stack.push(altstack.rget(0)?.clone());
-            altstack.pop()?;
-        }
+        OP_FROMALTSTACK => stack.push(
+            altstack
+                .pop()
+                .map_err(|_| Error::InvalidAltstackOperation)?,
+        ),
 
         OP_2DROP => {
             if stack.len() < 2 {
                 return Err(Error::InvalidStackOperation);
             }
-
             stack.pop()?;
             stack.pop()?;
         }
 
         OP_2DUP => {
             // (x1 x2 -- x1 x2 x1 x2)
-            if stack.len() < 2 {
-                return Err(Error::InvalidStackOperation);
-            }
             let vch1 = stack.rget(1)?.clone();
             let vch2 = stack.rget(0)?.clone();
             stack.push(vch1);
@@ -861,9 +831,6 @@ fn eval_operation(
 
         OP_3DUP => {
             // (x1 x2 x3 -- x1 x2 x3 x1 x2 x3)
-            if stack.len() < 3 {
-                return Err(Error::InvalidStackOperation);
-            }
             let vch1 = stack.rget(2)?.clone();
             let vch2 = stack.rget(1)?.clone();
             let vch3 = stack.rget(0)?.clone();
@@ -874,9 +841,6 @@ fn eval_operation(
 
         OP_2OVER => {
             // (x1 x2 x3 x4 -- x1 x2 x3 x4 x1 x2)
-            if stack.len() < 4 {
-                return Err(Error::InvalidStackOperation);
-            }
             let vch1 = stack.rget(3)?.clone();
             let vch2 = stack.rget(2)?.clone();
             stack.push(vch1);
@@ -885,9 +849,6 @@ fn eval_operation(
 
         OP_2ROT => {
             // (x1 x2 x3 x4 x5 x6 -- x3 x4 x5 x6 x1 x2)
-            if stack.len() < 6 {
-                return Err(Error::InvalidStackOperation);
-            }
             let vch1 = stack.rget(5)?.clone();
             let vch2 = stack.rget(4)?.clone();
             stack.rerase(5, Some(3))?;
@@ -897,64 +858,36 @@ fn eval_operation(
 
         OP_2SWAP => {
             // (x1 x2 x3 x4 -- x3 x4 x1 x2)
-            if stack.len() < 4 {
-                return Err(Error::InvalidStackOperation);
-            }
             stack.rswap(3, 1)?;
             stack.rswap(2, 0)?;
         }
 
         OP_IFDUP => {
             // (x - 0 | x x)
-            if stack.is_empty() {
-                return Err(Error::InvalidStackOperation);
-            }
             let vch = stack.rget(0)?;
             if cast_to_bool(vch) {
-                stack.push(vch.to_vec())
+                stack.push(vch.clone())
             }
         }
 
-        OP_DEPTH => {
-            // -- stacksize
-            let bn = i64::try_from(stack.len()).map_err(|err| Error::StackSize(Some(err)))?;
-            stack.push(num::serialize(bn))
-        }
+        // -- stacksize
+        OP_DEPTH => stack.push(num::serialize(
+            i64::try_from(stack.len()).map_err(|err| Error::StackSize(Some(err)))?,
+        )),
 
         OP_DROP => {
             // (x -- )
-            if stack.is_empty() {
-                return Err(Error::InvalidStackOperation);
-            }
             stack.pop()?;
         }
 
-        OP_DUP => {
-            // (x -- x x)
-            if stack.is_empty() {
-                return Err(Error::InvalidStackOperation);
-            }
+        // (x -- x x)
+        OP_DUP => stack.push(stack.rget(0)?.clone()),
 
-            let vch = stack.rget(0)?;
-            stack.push(vch.clone());
-        }
+        // (x1 x2 -- x2)
+        OP_NIP => stack.rerase(1, None)?,
 
-        OP_NIP => {
-            // (x1 x2 -- x2)
-            if stack.len() < 2 {
-                return Err(Error::InvalidStackOperation);
-            }
-            stack.rerase(1, None)?;
-        }
-
-        OP_OVER => {
-            // (x1 x2 -- x1 x2 x1)
-            if stack.len() < 2 {
-                return Err(Error::InvalidStackOperation);
-            }
-            let vch = stack.rget(1)?;
-            stack.push(vch.clone());
-        }
+        // (x1 x2 -- x1 x2 x1)
+        OP_OVER => stack.push(stack.rget(1)?.clone()),
 
         OP_PICK | OP_ROLL => {
             // (xn ... x2 x1 x0 n - xn ... x2 x1 x0 xn)
@@ -979,39 +912,21 @@ fn eval_operation(
             // (x1 x2 x3 -- x2 x3 x1)
             //  x2 x1 x3  after first swap
             //  x2 x3 x1  after second swap
-            if stack.len() < 3 {
-                return Err(Error::InvalidStackOperation);
-            }
             stack.rswap(2, 1)?;
             stack.rswap(1, 0)?;
         }
 
-        OP_SWAP => {
-            // (x1 x2 -- x2 x1)
-            if stack.len() < 2 {
-                return Err(Error::InvalidStackOperation);
-            }
-            stack.rswap(1, 0)?;
-        }
+        // (x1 x2 -- x2 x1)
+        OP_SWAP => stack.rswap(1, 0)?,
 
-        OP_TUCK => {
-            // (x1 x2 -- x2 x1 x2)
-            if stack.len() < 2 {
-                return Err(Error::InvalidStackOperation);
-            }
-            let vch = stack.rget(0)?.clone();
-            stack.rinsert(1, vch)?
-        }
+        // (x1 x2 -- x2 x1 x2)
+        OP_TUCK => stack.rinsert(1, stack.rget(0)?.clone())?,
 
-        OP_SIZE => {
-            // (in -- in size)
-            if stack.is_empty() {
-                return Err(Error::InvalidStackOperation);
-            }
-            let bn = i64::try_from(stack.rget(0)?.len())
-                .expect("stack element size <= MAX_SCRIPT_ELEMENT_SIZE");
-            stack.push(num::serialize(bn))
-        }
+        // (in -- in size)
+        OP_SIZE => stack.push(num::serialize(
+            i64::try_from(stack.rget(0)?.len())
+                .expect("stack element size <= MAX_SCRIPT_ELEMENT_SIZE"),
+        )),
 
         //
         // Bitwise logic
@@ -1061,17 +976,13 @@ fn eval_operation(
 
         OP_WITHIN => {
             // (x min max -- out)
-            if stack.len() < 3 {
-                return Err(Error::InvalidStackOperation);
-            }
             let bn1 = num::parse(stack.rget(2)?, require_minimal, None)?;
             let bn2 = num::parse(stack.rget(1)?, require_minimal, None)?;
             let bn3 = num::parse(stack.rget(0)?, require_minimal, None)?;
-            let value = bn2 <= bn1 && bn1 < bn3;
             stack.pop()?;
             stack.pop()?;
             stack.pop()?;
-            stack.push(cast_from_bool(value))
+            stack.push(cast_from_bool(bn2 <= bn1 && bn1 < bn3))
         }
 
         //
@@ -1079,10 +990,7 @@ fn eval_operation(
         //
         OP_RIPEMD160 | OP_SHA1 | OP_SHA256 | OP_HASH160 | OP_HASH256 => {
             // (in -- hash)
-            if stack.is_empty() {
-                return Err(Error::InvalidStackOperation);
-            }
-            let vch = stack.rget(0)?;
+            let vch = stack.pop()?;
             let mut vch_hash = vec![];
             if op == OP_RIPEMD160 {
                 vch_hash = Ripemd160::digest(vch).to_vec();
@@ -1097,16 +1005,11 @@ fn eval_operation(
             } else if op == OP_HASH256 {
                 vch_hash = Sha256::digest(Sha256::digest(vch)).to_vec();
             }
-            stack.pop()?;
             stack.push(vch_hash)
         }
 
         OP_CHECKSIG | OP_CHECKSIGVERIFY => {
             // (sig pubkey -- bool)
-            if stack.len() < 2 {
-                return Err(Error::InvalidStackOperation);
-            }
-
             let vch_sig = stack.rget(1)?.clone();
             let vch_pub_key = stack.rget(0)?.clone();
 
@@ -1131,9 +1034,6 @@ fn eval_operation(
             //     20 signatures, plus a couple other fields. u8 also gives us total
             //     conversions to the other types we deal with here (`isize` and `i64`).
             let mut i: u8 = 0;
-            if stack.len() < i.into() {
-                return Err(Error::InvalidStackOperation);
-            };
 
             let mut keys_count =
                 u8::try_from(num::parse(stack.rget(i.into())?, require_minimal, None)?)
@@ -1149,9 +1049,6 @@ fn eval_operation(
             i += 1;
             let mut ikey = i;
             i += keys_count;
-            if stack.len() <= i.into() {
-                return Err(Error::InvalidStackOperation);
-            }
 
             let mut sigs_count =
                 u8::try_from(num::parse(stack.rget(i.into())?, require_minimal, None)?)
@@ -1203,13 +1100,10 @@ fn eval_operation(
             // Unfortunately this is a potential source of mutability,
             // so optionally verify it is exactly equal to zero prior
             // to removing it from the stack.
-            if stack.is_empty() {
-                return Err(Error::InvalidStackOperation);
-            }
-            if flags.contains(VerificationFlags::NullDummy) && !stack.rget(0)?.is_empty() {
+            let dummy = stack.pop()?;
+            if flags.contains(VerificationFlags::NullDummy) && !dummy.is_empty() {
                 return Err(Error::SigNullDummy);
             }
-            stack.pop()?;
 
             stack.push(cast_from_bool(success));
 
