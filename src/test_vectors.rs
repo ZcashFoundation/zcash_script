@@ -13413,4 +13413,21 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
         // FIXME: Should return `Ok(())` (see #240).
         result: Err(ScriptError::EvalFalse),
     },
+
+    // Zcash-specific tests
+
+    // 201 opcodes followed by a disabled opcode. This hits an edge case where the Rust impl will
+    // first complain about the disabled opcode, but the C++ impl will first complain about the
+    // op_count overflow. Mostly this ensures we’re normalizing those cases to the same thing.
+    TestVector {
+        script_sig: &[N(1)],
+        script_pubkey: &[
+            H(
+                "616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161",
+            ),
+            D(OP_CAT),
+        ],
+        flags: DEFAULT_FLAGS,
+        result: Err(ScriptError::DisabledOpcode(Some(OP_CAT))),
+    },
 ];

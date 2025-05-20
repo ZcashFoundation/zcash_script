@@ -29,7 +29,11 @@ pub use interpreter::{
 };
 use script_error::ScriptError;
 use signature::HashType;
-pub use zcash_script::*;
+use zcash_script::*;
+pub use zcash_script::{
+    rust_interpreter, stepwise_verify, ComparisonStepEvaluator, StepResults, StepwiseInterpreter,
+    ZcashScript,
+};
 
 pub struct CxxInterpreter<'a> {
     pub sighash: SighashCalculator<'a>,
@@ -41,7 +45,9 @@ impl From<cxx::ScriptError> for Error {
     #[allow(non_upper_case_globals)]
     fn from(err_code: cxx::ScriptError) -> Self {
         match err_code {
-            cxx::ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR => Error::Ok(ScriptError::UnknownError),
+            cxx::ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR => {
+                Error::Ok(zcash_script::AMBIGUOUS_UNKNOWN_NUM_HIGHS_ERROR)
+            }
             cxx::ScriptError_t_SCRIPT_ERR_EVAL_FALSE => Error::Ok(ScriptError::EvalFalse),
             cxx::ScriptError_t_SCRIPT_ERR_OP_RETURN => Error::Ok(ScriptError::OpReturn),
 
@@ -221,26 +227,10 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
     )
 }
 
-fn normalize_script_error(err: ScriptError) -> ScriptError {
-    match err {
-        ScriptError::BadOpcode(Some(_)) => ScriptError::BadOpcode(None),
-        ScriptError::DisabledOpcode(Some(_)) => ScriptError::DisabledOpcode(None),
-        ScriptError::SignatureEncoding(sig_err) => match sig_err {
-            signature::Error::SigHashType(Some(_)) => signature::Error::SigHashType(None).into(),
-            signature::Error::SigDER(Some(_)) => signature::Error::SigDER(None).into(),
-            signature::Error::SigHighS => ScriptError::UnknownError,
-            _ => sig_err.into(),
-        },
-        ScriptError::ReadError { .. } => ScriptError::BadOpcode(None),
-        ScriptError::ScriptNumError(_) => ScriptError::UnknownError,
-        _ => err,
-    }
-}
-
 /// Convert errors that don’t exist in the C++ code into the cases that do.
 pub fn normalize_error(err: Error) -> Error {
     match err {
-        Error::Ok(serr) => Error::Ok(normalize_script_error(serr)),
+        Error::Ok(serr) => Error::Ok(zcash_script::normalize_error(serr)),
         _ => err,
     }
 }
@@ -300,7 +290,7 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U>
     ) -> Result<(), Error> {
         let (cxx, rust) =
             check_verify_callback(&self.first, &self.second, script_pub_key, script_sig, flags);
-        if rust.map_err(normalize_error) != cxx {
+        if rust.map_err(normalize_error) != cxx.map_err(normalize_error) {
             // probably want to distinguish between
             // - one succeeding when the other fails (bad), and
             // - differing error codes (maybe not bad).
@@ -376,7 +366,10 @@ pub mod testing {
         }) {
             Ok(()) => (),
             Err(actual) => {
-                if try_normalized_error && tv.result.map_err(normalize_script_error) == actual {
+                if try_normalized_error
+                    && tv.result.map_err(zcash_script::normalize_error)
+                        == actual.map_err(zcash_script::normalize_error)
+                {
                     ()
                 } else {
                     panic!(
@@ -445,7 +438,10 @@ mod tests {
             flags,
         );
 
-        assert_eq!(ret.0, ret.1.map_err(normalize_error));
+        assert_eq!(
+            ret.0.map_err(normalize_error),
+            ret.1.map_err(normalize_error)
+        );
         assert!(ret.0.is_ok());
     }
 
@@ -475,7 +471,10 @@ mod tests {
             flags,
         );
 
-        assert_eq!(ret.0, ret.1.map_err(normalize_error));
+        assert_eq!(
+            ret.0.map_err(normalize_error),
+            ret.1.map_err(normalize_error)
+        );
         assert_eq!(ret.0, Err(Error::Ok(ScriptError::EvalFalse)));
     }
 
@@ -506,7 +505,10 @@ mod tests {
             flags,
         );
 
-        assert_eq!(ret.0, ret.1.map_err(normalize_error));
+        assert_eq!(
+            ret.0.map_err(normalize_error),
+            ret.1.map_err(normalize_error)
+        );
         assert_eq!(ret.0, Err(Error::Ok(ScriptError::EvalFalse)));
     }
 
@@ -573,7 +575,7 @@ mod tests {
                 &sig[..],
                 flags,
             );
-            prop_assert_eq!(ret.0, ret.1.map_err(normalize_error),
+            prop_assert_eq!(ret.0.map_err(normalize_error), ret.1.map_err(normalize_error),
                             "original Rust result: {:?}", ret.1);
         }
 
@@ -608,7 +610,7 @@ mod tests {
                 &sig[..],
                 flags,
             );
-            prop_assert_eq!(ret.0, ret.1.map_err(normalize_error),
+            prop_assert_eq!(ret.0.map_err(normalize_error), ret.1.map_err(normalize_error),
                             "original Rust result: {:?}", ret.1);
         }
 

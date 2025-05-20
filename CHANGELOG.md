@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `HashType` and `SignedOutputs` are no longer re-exported at the top level, access them via `signature::`
 - `script_error::ScriptError` no longer has a defined primitive representation, as the variants have changed and the use of the representation had already been removed
 - `interpreter::CallbackTransactionSignatureChecker::verify_signature` was an internal function that was accidentally exposed
+- `ScriptError::Ok` has been removed, as it was never used
 
 ### Changed
 
@@ -22,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `interpreter::Signature` is now `signature::Decoded`
 - `interpreter::SignatureChecker::check_sig` takes a `&signature::Decoded` instead of a `&[u8]`
 - `signature::HashType` now has private fields, but there are now functions with the same names for reading
+- `ScriptError::UnknownError` has been replaced by `ScriptError::ExternalError`
+- `BadOpcode` and `DisabledOpcode` in `ScriptError` now take parameters
 
 ### Added
 
