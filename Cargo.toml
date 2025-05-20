@@ -1,6 +1,6 @@
 [package]
 name = "zcash_script"
-version = "0.3.0"
+version = "0.3.1"
 authors = [
     "Electric Coin Company <info@electriccoin.co>",
     "Greg Pfeil <greg@technomadic.org>",
@@ -73,25 +73,21 @@ ripemd = "0.1"
 secp256k1 = "0.30"
 sha-1 = "0.10"
 sha2 = "0.10"
-tracing = "0.1.41"
+tracing = "0.1"
 
 [build-dependencies]
-# The `bindgen` dependency should automatically upgrade to match the version used by zebra-state's `rocksdb` dependency in:
-# https://github.com/ZcashFoundation/zebra/blob/main/zebra-state/Cargo.toml
-#
-# Treat minor versions with a zero major version as compatible (cargo doesn't by default).
-bindgen = ">= 0.64.0"
-
-# These dependencies are shared with a lot of other Zebra dependencies,
-# so they are configured to automatically upgrade to match Zebra.
-# But we try to use the latest versions here, to catch any bugs in `zcash_script`'s CI.
-cc = { version = "1.2.11", features = ["parallel"] }
+# We want zcash-script to be compatible with whatever version of `bindgen` that
+# is being indirectly used by Zebra via the `rocksdb` dependency. To avoid
+# having to update zcash-script every time Zebra updates its `rocksdb`
+# dependency, we allow any version of `bindgen`, even major version bumps, by
+# using the `>=` operator. There is some chance that this breaks the build if a
+# breaking API change affects us, but we can always fix it then.
+bindgen = ">= 0.69.5"
+# Same reasoning as above
+cc = { version = ">= 1.2.11", features = ["parallel"] }
 
 [dev-dependencies]
-# These dependencies are shared with a lot of other Zebra dependencies.
-# (See above.)
-#
-# Treat minor versions with a zero major version as compatible (cargo doesn't by default).
+# Same reasoning as above
 hex = ">= 0.4.3"
 lazy_static = "1.5.0"
 proptest = "1.6"
