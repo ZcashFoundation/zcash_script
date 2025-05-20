@@ -13,8 +13,12 @@ pub enum ScriptNumError {
 
 #[derive(Clone, PartialEq, Eq, Debug, Error)]
 pub enum ScriptError {
-    #[error("unknown error")]
-    UnknownError,
+    /// A error external to the script validation code. This can come from the stepper.
+    ///
+    /// __TODO__: Replace the `str` with a type parameter, which will be `Void` in validation code,
+    /// but can be different in the steppers.
+    #[error("external error: {}", .0)]
+    ExternalError(&'static str),
 
     #[error("script evaluation failed")]
     EvalFalse,
@@ -58,8 +62,7 @@ pub enum ScriptError {
     NumEqualVerify,
 
     // Logical/Format/Canonical errors
-    /// __TODO__: `Option` can go away once C++ support is removed.
-    #[error("bad opcode encountered: {}", .0.map_or("unknown".to_owned(), |op| op.to_string()))]
+    #[error("bad opcode encountered")]
     BadOpcode(Option<u8>),
 
     /// __TODO__: `Option` can go away once C++ support is removed.
