@@ -1,7 +1,9 @@
 use crate::{
     interpreter::{
-        verify_script, DefaultStepEvaluator, SignatureChecker, State, StepFn, VerificationFlags,
+        self, verify_script, DefaultStepEvaluator, SignatureChecker, State, StepFn,
+        VerificationFlags,
     },
+    opcode,
     script::{self, Script},
 };
 
@@ -107,6 +109,50 @@ impl<T, U> StepResults<T, U> {
     }
 }
 
+/// This case is only generated in comparisons. It merges the `interpreter::Error::OpCount` case
+/// with the `opcode::Error::DisabledOpcode` case. This is because there is an edge case when there
+/// is a disabled opcode as the `MAX_OP_COUNT + 1` operation (not opcode) in a script. In this case,
+/// the C++ implementation checks the op_count first, while the Rust implementation fails on
+/// disabled opcodes as soon as they’re read (since the script is guaranteed to fail if they occur,
+/// even in an inactive branch). To allow comparison tests to pass (especially property & fuzz
+/// tests), we need these two failure cases to be seen as identical.
+pub const AMBIGUOUS_COUNT_DISABLED_ERROR: script::Error =
+    script::Error::ExternalError("ambiguous OpCount or DisabledOpcode error");
+
+/// This case is only generated in comparisons. It merges `interpreter::Error::Num`, which can only
+/// come from the Rust implementation, with `ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR`, which can only
+/// come from the C++ implementation, but in at least all of the cases that the `Num` failure would
+/// happen.
+pub const AMBIGUOUS_UNKNOWN_NUM_ERROR: script::Error =
+    script::Error::ExternalError("ambiguous Unknown or Num error");
+
+/// Convert errors that don’t exist in the C++ code into the cases that do.
+pub fn normalize_error(err: script::Error) -> script::Error {
+    match err {
+        script::Error::Interpreter(ie) => match ie {
+            interpreter::Error::OpCount => AMBIGUOUS_COUNT_DISABLED_ERROR,
+            interpreter::Error::BadOpcode(Some(_)) => interpreter::Error::BadOpcode(None).into(),
+            interpreter::Error::PubKeyCount(Some(_)) => {
+                interpreter::Error::PubKeyCount(None).into()
+            }
+            interpreter::Error::SigCount(Some(_)) => interpreter::Error::SigCount(None).into(),
+            interpreter::Error::Num(_) => AMBIGUOUS_UNKNOWN_NUM_ERROR,
+            interpreter::Error::SigDER(Some(_)) => interpreter::Error::SigDER(None).into(),
+            interpreter::Error::SigHashType(Some(_)) => {
+                interpreter::Error::SigHashType(None).into()
+            }
+            _ => ie.into(),
+        },
+        script::Error::ScriptSize(Some(_)) => script::Error::ScriptSize(None),
+        script::Error::Opcode(operr) => match operr {
+            opcode::Error::DisabledOpcode(_) => AMBIGUOUS_COUNT_DISABLED_ERROR,
+
+            opcode::Error::Read(_) => interpreter::Error::BadOpcode(None).into(),
+        },
+        _ => err,
+    }
+}
+
 /// This compares two `ZcashScript` implementations in a deep way – checking the entire `State` step
 /// by step. Note that this has some tradeoffs: one is performance. Another is that it doesn’t run
 /// the entire codepath of either implementation. The setup/wrapup code is specific to this
@@ -158,7 +204,7 @@ impl<T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'_, T, U> {
             }
             // at least one is `Err`
             (_, _) => {
-                if left != right {
+                if left.map_err(normalize_error) != right.map_err(normalize_error) {
                     payload.diverging_result = Some((
                         left.map(|_| state.clone()),
                         right.map(|_| right_state.clone()),

@@ -42,12 +42,15 @@ impl From<cxx::ScriptError> for Error {
     #[allow(non_upper_case_globals)]
     fn from(err_code: cxx::ScriptError) -> Self {
         match err_code {
-            cxx::ScriptError_t_SCRIPT_ERR_EVAL_FALSE => Error::Ok(script::Error::EvalFalse),
+            cxx::ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR => {
+                zcash_script::AMBIGUOUS_UNKNOWN_NUM_ERROR.into()
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_EVAL_FALSE => script::Error::EvalFalse.into(),
             cxx::ScriptError_t_SCRIPT_ERR_OP_RETURN => {
                 Error::Ok(interpreter::Error::OpReturn.into())
             }
 
-            cxx::ScriptError_t_SCRIPT_ERR_SCRIPT_SIZE => Error::Ok(script::Error::ScriptSize(None)),
+            cxx::ScriptError_t_SCRIPT_ERR_SCRIPT_SIZE => script::Error::ScriptSize(None).into(),
             cxx::ScriptError_t_SCRIPT_ERR_PUSH_SIZE => {
                 Error::Ok(interpreter::Error::PushSize(None).into())
             }
@@ -108,7 +111,7 @@ impl From<cxx::ScriptError> for Error {
             cxx::ScriptError_t_SCRIPT_ERR_MINIMALDATA => {
                 Error::Ok(interpreter::Error::MinimalData.into())
             }
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_PUSHONLY => Error::Ok(script::Error::SigPushOnly),
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_PUSHONLY => script::Error::SigPushOnly.into(),
             cxx::ScriptError_t_SCRIPT_ERR_SIG_HIGH_S => {
                 Error::Ok(interpreter::Error::SigHighS.into())
             }
@@ -118,7 +121,7 @@ impl From<cxx::ScriptError> for Error {
             cxx::ScriptError_t_SCRIPT_ERR_PUBKEYTYPE => {
                 Error::Ok(interpreter::Error::PubKeyType.into())
             }
-            cxx::ScriptError_t_SCRIPT_ERR_CLEANSTACK => Error::Ok(script::Error::CleanStack),
+            cxx::ScriptError_t_SCRIPT_ERR_CLEANSTACK => script::Error::CleanStack.into(),
 
             cxx::ScriptError_t_SCRIPT_ERR_DISCOURAGE_UPGRADABLE_NOPS => {
                 Error::Ok(interpreter::Error::DiscourageUpgradableNOPs.into())
@@ -247,38 +250,7 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
 /// Convert errors that don’t exist in the C++ code into the cases that do.
 pub fn normalize_error(err: Error) -> Error {
     match err {
-        Error::Ok(serr) => match serr {
-            script::Error::Interpreter(ie) => match ie {
-                interpreter::Error::BadOpcode(Some(_)) => {
-                    Error::Ok(interpreter::Error::BadOpcode(None).into())
-                }
-                interpreter::Error::PubKeyCount(Some(_)) => {
-                    Error::Ok(interpreter::Error::PubKeyCount(None).into())
-                }
-                interpreter::Error::SigCount(Some(_)) => {
-                    Error::Ok(interpreter::Error::SigCount(None).into())
-                }
-                interpreter::Error::Num(_) => {
-                    Error::Unknown(cxx::ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR.into())
-                }
-                interpreter::Error::SigDER(Some(_)) => {
-                    Error::Ok(interpreter::Error::SigDER(None).into())
-                }
-                interpreter::Error::SigHashType(Some(_)) => {
-                    Error::Ok(interpreter::Error::SigHashType(None).into())
-                }
-                _ => Error::Ok(ie.into()),
-            },
-            script::Error::ScriptSize(Some(_)) => script::Error::ScriptSize(None).into(),
-            script::Error::Opcode(operr) => match operr {
-                opcode::Error::DisabledOpcode(Some(_)) => {
-                    Error::Ok(opcode::Error::DisabledOpcode(None).into())
-                }
-                opcode::Error::Read(_) => Error::Ok(interpreter::Error::BadOpcode(None).into()),
-                _ => Error::Ok(operr.into()),
-            },
-            _ => Error::Ok(serr),
-        },
+        Error::Ok(serr) => zcash_script::normalize_error(serr).into(),
         _ => err,
     }
 }
@@ -341,7 +313,7 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U>
     ) -> Result<(), Error> {
         let (cxx, rust) =
             check_verify_callback(&self.first, &self.second, script_pub_key, script_sig, flags);
-        if rust.map_err(normalize_error) != cxx {
+        if rust.map_err(normalize_error) != cxx.map_err(normalize_error) {
             // probably want to distinguish between
             // - one succeeding when the other fails (bad), and
             // - differing error codes (maybe not bad).
@@ -479,7 +451,10 @@ mod tests {
             flags,
         );
 
-        assert_eq!(ret.0, ret.1.map_err(normalize_error));
+        assert_eq!(
+            ret.0.map_err(normalize_error),
+            ret.1.map_err(normalize_error)
+        );
         assert!(ret.0.is_ok());
     }
 
@@ -509,7 +484,10 @@ mod tests {
             flags,
         );
 
-        assert_eq!(ret.0, ret.1.map_err(normalize_error));
+        assert_eq!(
+            ret.0.map_err(normalize_error),
+            ret.1.map_err(normalize_error)
+        );
         assert_eq!(ret.0, Err(Error::Ok(script::Error::EvalFalse)));
     }
 
@@ -540,7 +518,10 @@ mod tests {
             flags,
         );
 
-        assert_eq!(ret.0, ret.1.map_err(normalize_error));
+        assert_eq!(
+            ret.0.map_err(normalize_error),
+            ret.1.map_err(normalize_error)
+        );
         assert_eq!(ret.0, Err(Error::Ok(script::Error::EvalFalse)));
     }
 
@@ -576,7 +557,7 @@ mod tests {
                 &sig[..],
                 flags,
             );
-            prop_assert_eq!(ret.0, ret.1.map_err(normalize_error),
+            prop_assert_eq!(ret.0.map_err(normalize_error), ret.1.map_err(normalize_error),
                             "original Rust result: {:?}", ret.1);
         }
 
@@ -611,7 +592,7 @@ mod tests {
                 &sig[..],
                 flags,
             );
-            prop_assert_eq!(ret.0, ret.1.map_err(normalize_error),
+            prop_assert_eq!(ret.0.map_err(normalize_error), ret.1.map_err(normalize_error),
                             "original Rust result: {:?}", ret.1);
         }
     }
