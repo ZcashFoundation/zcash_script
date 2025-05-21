@@ -1,4 +1,13 @@
+# Note [explicit >= version requirements]
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Some dependencies are shared with a lot of other Zebra dependencies, so they have an explicit `>=`
+# in the version requirement (e.g., `version = ">= 0.1.2"`), which bypasses Cargo’s usual SemVer
+# bounds (https://doc.rust-lang.org/cargo/reference/semver.html#change-categories). This allows them
+# to match the specific version required by Zebra while using the latest version in CI to catch any
+# breaking changes in newer releases.
+
 [package]
+rust-version = "1.85" # C++ linking was broken in rust 1.82–1.84
 name = "zcash_script"
 version = "0.3.1"
 authors = [
@@ -64,31 +73,30 @@ path = "src/lib.rs"
 
 [features]
 external-secp = []
-test-dependencies = []
+test-dependencies = ["dep:hex", "dep:lazy_static"]
 
 [dependencies]
 bitflags = "2.8"
 enum_primitive = "0.1"
+hex = { version = ">= 0.4.3", optional = true } # See Note [explicit >= version requirements]
+lazy_static = { version = "1.5.0", optional = true }
 ripemd = "0.1"
 secp256k1 = "0.30"
+serde = { version = "1.0", features = ["derive"] }
+serde_repr = "0.1"
 sha-1 = "0.10"
 sha2 = "0.10"
 tracing = "0.1"
 
 [build-dependencies]
-# We want zcash-script to be compatible with whatever version of `bindgen` that
-# is being indirectly used by Zebra via the `rocksdb` dependency. To avoid
-# having to update zcash-script every time Zebra updates its `rocksdb`
-# dependency, we allow any version of `bindgen`, even major version bumps, by
-# using the `>=` operator. There is some chance that this breaks the build if a
-# breaking API change affects us, but we can always fix it then.
+# See Note [explicit >= version requirements]
+# In the case of `bindgen`, it’s to match Zebra’s indirect dependency on `rockdb`.
 bindgen = ">= 0.69.5"
-# Same reasoning as above
+# See Note [explicit >= version requirements]
 cc = { version = ">= 1.2.11", features = ["parallel"] }
 
 [dev-dependencies]
-# Same reasoning as above
-hex = ">= 0.4.3"
+hex = ">= 0.4.3" # See Note [explicit >= version requirements]
 lazy_static = "1.5.0"
 proptest = "1.6"
 

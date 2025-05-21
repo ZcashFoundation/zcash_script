@@ -4,14 +4,18 @@
 #![doc(html_root_url = "https://docs.rs/zcash_script/0.3.0")]
 #![allow(non_snake_case)]
 #![allow(unsafe_code)]
+#![deny(missing_docs)]
 #[macro_use]
 extern crate enum_primitive;
 
 pub mod cxx;
 mod external;
 pub mod interpreter;
-mod script;
-pub mod script_error;
+pub mod op;
+mod opcode;
+pub mod pattern;
+pub mod pv;
+pub mod script;
 mod zcash_script;
 
 use std::os::raw::{c_int, c_uint, c_void};
@@ -22,12 +26,15 @@ pub use interpreter::{
     CallbackTransactionSignatureChecker, DefaultStepEvaluator, HashType, SighashCalculator,
     SignedOutputs, VerificationFlags,
 };
-use script_error::ScriptError;
 pub use zcash_script::*;
 
+/// An interpreter that calls the original C++ implementation via FFI.
 pub struct CxxInterpreter<'a> {
+    /// A callback to determine the sighash for a particular UTXO.
     pub sighash: SighashCalculator<'a>,
+    /// The time at which this interpreter is being run.
     pub lock_time: u32,
+    /// Whether this is the final UTXO for the transaction.
     pub is_final: bool,
 }
 
@@ -35,60 +42,92 @@ impl From<cxx::ScriptError> for Error {
     #[allow(non_upper_case_globals)]
     fn from(err_code: cxx::ScriptError) -> Self {
         match err_code {
-            cxx::ScriptError_t_SCRIPT_ERR_OK => Error::Ok(ScriptError::Ok),
-            cxx::ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR => Error::Ok(ScriptError::UnknownError),
-            cxx::ScriptError_t_SCRIPT_ERR_EVAL_FALSE => Error::Ok(ScriptError::EvalFalse),
-            cxx::ScriptError_t_SCRIPT_ERR_OP_RETURN => Error::Ok(ScriptError::OpReturn),
-
-            cxx::ScriptError_t_SCRIPT_ERR_SCRIPT_SIZE => Error::Ok(ScriptError::ScriptSize),
-            cxx::ScriptError_t_SCRIPT_ERR_PUSH_SIZE => Error::Ok(ScriptError::PushSize),
-            cxx::ScriptError_t_SCRIPT_ERR_OP_COUNT => Error::Ok(ScriptError::OpCount),
-            cxx::ScriptError_t_SCRIPT_ERR_STACK_SIZE => Error::Ok(ScriptError::StackSize),
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_COUNT => Error::Ok(ScriptError::SigCount),
-            cxx::ScriptError_t_SCRIPT_ERR_PUBKEY_COUNT => Error::Ok(ScriptError::PubKeyCount),
-
-            cxx::ScriptError_t_SCRIPT_ERR_VERIFY => Error::Ok(ScriptError::Verify),
-            cxx::ScriptError_t_SCRIPT_ERR_EQUALVERIFY => Error::Ok(ScriptError::EqualVerify),
-            cxx::ScriptError_t_SCRIPT_ERR_CHECKMULTISIGVERIFY => {
-                Error::Ok(ScriptError::CheckMultisigVerify)
+            cxx::ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR => {
+                zcash_script::AMBIGUOUS_UNKNOWN_NUM_ERROR.into()
             }
-            cxx::ScriptError_t_SCRIPT_ERR_CHECKSIGVERIFY => Error::Ok(ScriptError::CheckSigVerify),
-            cxx::ScriptError_t_SCRIPT_ERR_NUMEQUALVERIFY => Error::Ok(ScriptError::NumEqualVerify),
+            cxx::ScriptError_t_SCRIPT_ERR_EVAL_FALSE => script::Error::EvalFalse.into(),
+            cxx::ScriptError_t_SCRIPT_ERR_OP_RETURN => {
+                Error::Ok(interpreter::Error::OpReturn.into())
+            }
 
-            cxx::ScriptError_t_SCRIPT_ERR_BAD_OPCODE => Error::Ok(ScriptError::BadOpcode),
-            cxx::ScriptError_t_SCRIPT_ERR_DISABLED_OPCODE => Error::Ok(ScriptError::DisabledOpcode),
+            cxx::ScriptError_t_SCRIPT_ERR_SCRIPT_SIZE => script::Error::ScriptSize(None).into(),
+            cxx::ScriptError_t_SCRIPT_ERR_PUSH_SIZE => {
+                Error::Ok(interpreter::Error::PushSize(None).into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_OP_COUNT => Error::Ok(interpreter::Error::OpCount.into()),
+            cxx::ScriptError_t_SCRIPT_ERR_STACK_SIZE => {
+                Error::Ok(interpreter::Error::StackSize(None).into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_COUNT => {
+                Error::Ok(interpreter::Error::SigCount(None).into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_PUBKEY_COUNT => {
+                Error::Ok(interpreter::Error::PubKeyCount(None).into())
+            }
+
+            cxx::ScriptError_t_SCRIPT_ERR_VERIFY => Error::Ok(interpreter::Error::Verify.into()),
+            cxx::ScriptError_t_SCRIPT_ERR_EQUALVERIFY => {
+                Error::Ok(interpreter::Error::EqualVerify.into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_CHECKMULTISIGVERIFY => {
+                Error::Ok(interpreter::Error::CheckMultisigVerify.into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_CHECKSIGVERIFY => {
+                Error::Ok(interpreter::Error::CheckSigVerify.into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_NUMEQUALVERIFY => {
+                Error::Ok(interpreter::Error::NumEqualVerify.into())
+            }
+
+            cxx::ScriptError_t_SCRIPT_ERR_BAD_OPCODE => {
+                Error::Ok(interpreter::Error::BadOpcode(None).into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_DISABLED_OPCODE => {
+                Error::Ok(opcode::Error::DisabledOpcode(None).into())
+            }
             cxx::ScriptError_t_SCRIPT_ERR_INVALID_STACK_OPERATION => {
-                Error::Ok(ScriptError::InvalidStackOperation)
+                Error::Ok(interpreter::Error::InvalidStackOperation.into())
             }
             cxx::ScriptError_t_SCRIPT_ERR_INVALID_ALTSTACK_OPERATION => {
-                Error::Ok(ScriptError::InvalidAltstackOperation)
+                Error::Ok(interpreter::Error::InvalidAltstackOperation.into())
             }
             cxx::ScriptError_t_SCRIPT_ERR_UNBALANCED_CONDITIONAL => {
-                Error::Ok(ScriptError::UnbalancedConditional)
+                Error::Ok(interpreter::Error::UnbalancedConditional.into())
             }
 
             cxx::ScriptError_t_SCRIPT_ERR_NEGATIVE_LOCKTIME => {
-                Error::Ok(ScriptError::NegativeLockTime)
+                Error::Ok(interpreter::Error::NegativeLockTime.into())
             }
             cxx::ScriptError_t_SCRIPT_ERR_UNSATISFIED_LOCKTIME => {
-                Error::Ok(ScriptError::UnsatisfiedLockTime)
+                Error::Ok(interpreter::Error::UnsatisfiedLockTime.into())
             }
 
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_HASHTYPE => Error::Ok(ScriptError::SigHashType),
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_DER => Error::Ok(ScriptError::SigDER),
-            cxx::ScriptError_t_SCRIPT_ERR_MINIMALDATA => Error::Ok(ScriptError::MinimalData),
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_PUSHONLY => Error::Ok(ScriptError::SigPushOnly),
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_HIGH_S => Error::Ok(ScriptError::SigHighS),
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_NULLDUMMY => Error::Ok(ScriptError::SigNullDummy),
-            cxx::ScriptError_t_SCRIPT_ERR_PUBKEYTYPE => Error::Ok(ScriptError::PubKeyType),
-            cxx::ScriptError_t_SCRIPT_ERR_CLEANSTACK => Error::Ok(ScriptError::CleanStack),
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_HASHTYPE => {
+                Error::Ok(interpreter::Error::SigHashType(None).into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_DER => {
+                Error::Ok(interpreter::Error::SigDER(None).into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_MINIMALDATA => {
+                Error::Ok(interpreter::Error::MinimalData.into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_PUSHONLY => script::Error::SigPushOnly.into(),
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_HIGH_S => {
+                Error::Ok(interpreter::Error::SigHighS.into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_NULLDUMMY => {
+                Error::Ok(interpreter::Error::SigNullDummy.into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_PUBKEYTYPE => {
+                Error::Ok(interpreter::Error::PubKeyType.into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_CLEANSTACK => script::Error::CleanStack.into(),
 
             cxx::ScriptError_t_SCRIPT_ERR_DISCOURAGE_UPGRADABLE_NOPS => {
-                Error::Ok(ScriptError::DiscourageUpgradableNOPs)
+                Error::Ok(interpreter::Error::DiscourageUpgradableNOPs.into())
             }
 
-            cxx::ScriptError_t_SCRIPT_ERR_VERIFY_SCRIPT => Error::VerifyScript,
-            unknown => Error::Unknown(unknown.into()),
+            _ => Error::Unknown(err_code.into()),
         }
     }
 }
@@ -127,7 +166,7 @@ extern "C" fn sighash_callback(
 }
 
 /// This steals a bit of the wrapper code from zebra_script, to provide the API that they want.
-impl<'a> ZcashScript for CxxInterpreter<'a> {
+impl ZcashScript for CxxInterpreter<'_> {
     fn verify_callback(
         &self,
         script_pub_key: &[u8],
@@ -147,12 +186,12 @@ impl<'a> ZcashScript for CxxInterpreter<'a> {
                 script_pub_key
                     .len()
                     .try_into()
-                    .map_err(Error::InvalidScriptSize)?,
+                    .map_err(|err| script::Error::ScriptSize(Some(err)))?,
                 signature_script.as_ptr(),
                 signature_script
                     .len()
                     .try_into()
-                    .map_err(Error::InvalidScriptSize)?,
+                    .map_err(|err| script::Error::ScriptSize(Some(err)))?,
                 flags.bits(),
                 &mut err,
             )
@@ -171,7 +210,7 @@ impl<'a> ZcashScript for CxxInterpreter<'a> {
         script
             .len()
             .try_into()
-            .map_err(Error::InvalidScriptSize)
+            .map_err(|err| script::Error::ScriptSize(Some(err)).into())
             .map(|script_len| unsafe {
                 cxx::zcash_script_legacy_sigop_count_script(script.as_ptr(), script_len)
             })
@@ -211,11 +250,7 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
 /// Convert errors that don’t exist in the C++ code into the cases that do.
 pub fn normalize_error(err: Error) -> Error {
     match err {
-        Error::Ok(serr) => Error::Ok(match serr {
-            ScriptError::ReadError { .. } => ScriptError::BadOpcode,
-            ScriptError::ScriptNumError(_) => ScriptError::UnknownError,
-            _ => serr,
-        }),
+        Error::Ok(serr) => zcash_script::normalize_error(serr).into(),
         _ => err,
     }
 }
@@ -227,6 +262,9 @@ pub struct ComparisonInterpreter<T, U> {
     second: U,
 }
 
+/// An interpreter that compares the results of the C++ and Rust implementations. In the case where
+/// they differ, a warning will be logged, and the C++ interpreter will be treated as the correct
+/// result.
 pub fn cxx_rust_comparison_interpreter(
     sighash: SighashCalculator,
     lock_time: u32,
@@ -275,7 +313,7 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U>
     ) -> Result<(), Error> {
         let (cxx, rust) =
             check_verify_callback(&self.first, &self.second, script_pub_key, script_sig, flags);
-        if rust.map_err(normalize_error) != cxx {
+        if rust.map_err(normalize_error) != cxx.map_err(normalize_error) {
             // probably want to distinguish between
             // - one succeeding when the other fails (bad), and
             // - differing error codes (maybe not bad).
@@ -288,13 +326,17 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U>
     }
 }
 
+/// Utilities useful for tests in other modules and crates.
 #[cfg(any(test, feature = "test-dependencies"))]
 pub mod testing {
     use super::*;
     use crate::{
         interpreter::{State, StepFn},
-        script::{Operation, Script},
+        opcode::{operation::Operation, Opcode},
+        pattern::*,
+        script::{self, Script},
     };
+    use hex::FromHex;
 
     /// Ensures that flags represent a supported state. This avoids crashes in the C++ code, which
     /// break various tests.
@@ -309,7 +351,7 @@ pub mod testing {
     }
 
     /// A `usize` one larger than the longest allowed script, for testing bounds.
-    pub const OVERFLOW_SCRIPT_SIZE: usize = script::MAX_SCRIPT_SIZE + 1;
+    pub const OVERFLOW_SCRIPT_SIZE: usize = script::MAX_SIZE + 1;
 
     /// This is the same as `DefaultStepEvaluator`, except that it skips `OP_EQUAL`, allowing us to
     /// test comparison failures.
@@ -324,7 +366,7 @@ pub mod testing {
             script: &Script,
             state: &mut State,
             payload: &mut T::Payload,
-        ) -> Result<&'a [u8], ScriptError> {
+        ) -> Result<&'a [u8], script::Error> {
             self.0.call(
                 if pc[0] == Operation::OP_EQUAL.into() {
                     &pc[1..]
@@ -337,38 +379,50 @@ pub mod testing {
             )
         }
     }
+
+    lazy_static::lazy_static! {
+        /// The P2SH redeem script used for the static test case.
+        pub static ref REDEEM_SCRIPT: Vec<Opcode> = check_multisig(
+            2,
+            &[
+                &<[u8; 0x21]>::from_hex("03b2cc71d23eb30020a4893982a1e2d352da0d20ee657fa02901c432758909ed8f").expect("valid key"),
+                &<[u8; 0x21]>::from_hex("029d1e9a9354c0d2aee9ffd0f0cea6c39bbf98c4066cf143115ba2279d0ba7dabe").expect("valid key"),
+                &<[u8; 0x21]>::from_hex("03e32096b63fd57f3308149d238dcbb24d8d28aad95c0e4e74e3e5e6a11b61bcc4").expect("valid key")
+            ],
+            false);
+        /// The scriptPubkey used for the static test case.
+        pub static ref SCRIPT_PUBKEY: Vec<u8> = Script::serialize(&pay_to_script_hash(&REDEEM_SCRIPT));
+        /// The scriptSig used for the static test case.
+        pub static ref SCRIPT_SIG: Vec<u8> = Script::serialize(&[
+            push_num(0),
+            push_vec(&<[u8; 0x48]>::from_hex("3045022100d2ab3e6258fe244fa442cfb38f6cef9ac9a18c54e70b2f508e83fa87e20d040502200eead947521de943831d07a350e45af8e36c2166984a8636f0a8811ff03ed09401").expect("valid sig")),
+            push_vec(&<[u8; 0x47]>::from_hex("3044022013e15d865010c257eef133064ef69a780b4bc7ebe6eda367504e806614f940c3022062fdbc8c2d049f91db2042d6c9771de6f1ef0b3b1fea76c1ab5542e44ed29ed801").expect("valid sig")),
+            push_script(&REDEEM_SCRIPT)
+        ].map(Opcode::PushValue));
+    }
+
+    /// The correct sighash for the static test case.
+    pub fn sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
+        <[u8; 32]>::from_hex("e8c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
+            .ok()
+    }
+
+    /// An incorrect sighash for the static test case – for checking failure cases.
+    pub fn invalid_sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
+        <[u8; 32]>::from_hex("08c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
+            .ok()
+    }
+
+    /// A callback that returns no sighash at all – another failure case.
+    pub fn missing_sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
+        None
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{testing::*, *};
-    use hex::FromHex;
     use proptest::prelude::*;
-
-    lazy_static::lazy_static! {
-        pub static ref SCRIPT_PUBKEY: Vec<u8> = <Vec<u8>>::from_hex("a914c117756dcbe144a12a7c33a77cfa81aa5aeeb38187").unwrap();
-        pub static ref SCRIPT_SIG: Vec<u8> = <Vec<u8>>::from_hex("00483045022100d2ab3e6258fe244fa442cfb38f6cef9ac9a18c54e70b2f508e83fa87e20d040502200eead947521de943831d07a350e45af8e36c2166984a8636f0a8811ff03ed09401473044022013e15d865010c257eef133064ef69a780b4bc7ebe6eda367504e806614f940c3022062fdbc8c2d049f91db2042d6c9771de6f1ef0b3b1fea76c1ab5542e44ed29ed8014c69522103b2cc71d23eb30020a4893982a1e2d352da0d20ee657fa02901c432758909ed8f21029d1e9a9354c0d2aee9ffd0f0cea6c39bbf98c4066cf143115ba2279d0ba7dabe2103e32096b63fd57f3308149d238dcbb24d8d28aad95c0e4e74e3e5e6a11b61bcc453ae").expect("Block bytes are in valid hex representation");
-    }
-
-    fn sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
-        hex::decode("e8c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
-            .unwrap()
-            .as_slice()
-            .first_chunk::<32>()
-            .copied()
-    }
-
-    fn invalid_sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
-        hex::decode("08c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
-            .unwrap()
-            .as_slice()
-            .first_chunk::<32>()
-            .copied()
-    }
-
-    fn missing_sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
-        None
-    }
 
     #[test]
     fn it_works() {
@@ -397,7 +451,10 @@ mod tests {
             flags,
         );
 
-        assert_eq!(ret.0, ret.1.map_err(normalize_error));
+        assert_eq!(
+            ret.0.map_err(normalize_error),
+            ret.1.map_err(normalize_error)
+        );
         assert!(ret.0.is_ok());
     }
 
@@ -427,8 +484,11 @@ mod tests {
             flags,
         );
 
-        assert_eq!(ret.0, ret.1.map_err(normalize_error));
-        assert_eq!(ret.0, Err(Error::Ok(ScriptError::EvalFalse)));
+        assert_eq!(
+            ret.0.map_err(normalize_error),
+            ret.1.map_err(normalize_error)
+        );
+        assert_eq!(ret.0, Err(Error::Ok(script::Error::EvalFalse)));
     }
 
     #[test]
@@ -458,8 +518,11 @@ mod tests {
             flags,
         );
 
-        assert_eq!(ret.0, ret.1.map_err(normalize_error));
-        assert_eq!(ret.0, Err(Error::Ok(ScriptError::EvalFalse)));
+        assert_eq!(
+            ret.0.map_err(normalize_error),
+            ret.1.map_err(normalize_error)
+        );
+        assert_eq!(ret.0, Err(Error::Ok(script::Error::EvalFalse)));
     }
 
     proptest! {
@@ -494,7 +557,7 @@ mod tests {
                 &sig[..],
                 flags,
             );
-            prop_assert_eq!(ret.0, ret.1.map_err(normalize_error),
+            prop_assert_eq!(ret.0.map_err(normalize_error), ret.1.map_err(normalize_error),
                             "original Rust result: {:?}", ret.1);
         }
 
@@ -529,7 +592,7 @@ mod tests {
                 &sig[..],
                 flags,
             );
-            prop_assert_eq!(ret.0, ret.1.map_err(normalize_error),
+            prop_assert_eq!(ret.0.map_err(normalize_error), ret.1.map_err(normalize_error),
                             "original Rust result: {:?}", ret.1);
         }
     }

@@ -1,8 +1,11 @@
-use std::num::TryFromIntError;
-
-use super::interpreter::*;
-use super::script::*;
-use super::script_error::*;
+use crate::{
+    interpreter::{
+        self, verify_script, DefaultStepEvaluator, SignatureChecker, State, StepFn,
+        VerificationFlags,
+    },
+    opcode,
+    script::{self, Script},
+};
 
 /// This maps to `zcash_script_error_t`, but most of those cases aren’t used any more. This only
 /// replicates the still-used cases, and then an `Unknown` bucket for anything else that might
@@ -10,16 +13,18 @@ use super::script_error::*;
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Error {
     /// Any failure that results in the script being invalid.
-    Ok(ScriptError),
-    /// An exception was caught.
-    VerifyScript,
-    /// The script size can’t fit in a `u32`, as required by the C++ code.
-    InvalidScriptSize(TryFromIntError),
+    Ok(script::Error),
     /// Some other failure value recovered from C++.
     ///
     /// __NB__: Linux uses `u32` for the underlying C++ enum while Windows uses `i32`, so `i64` can
     ///         hold either.
     Unknown(i64),
+}
+
+impl From<script::Error> for Error {
+    fn from(value: script::Error) -> Self {
+        Error::Ok(value)
+    }
 }
 
 /// The external API of zcash_script. This is defined to make it possible to compare the C++ and
@@ -52,13 +57,16 @@ pub trait ZcashScript {
     fn legacy_sigop_count_script(&self, script: &[u8]) -> Result<u32, Error>;
 }
 
+/// A thin wrapper over `verify_script` to make call sites more ergonomic.
+///
+/// **TODO**: Remove this once we have better script types.
 pub fn stepwise_verify<F>(
     script_pub_key: &[u8],
     script_sig: &[u8],
     flags: VerificationFlags,
     payload: &mut F::Payload,
     stepper: &F,
-) -> Result<(), Error>
+) -> Result<(), script::Error>
 where
     F: StepFn,
 {
@@ -69,7 +77,6 @@ where
         payload,
         stepper,
     )
-    .map_err(Error::Ok)
 }
 
 /// A payload for comparing the results of two steppers.
@@ -82,7 +89,7 @@ pub struct StepResults<T, U> {
     /// If the execution matched the entire way, then this contains `None`. If there was a
     /// divergence, then this contains `Some` with a pair of `Result`s – one representing each
     /// stepper’s outcome at the point at which they diverged.
-    pub diverging_result: Option<(Result<State, ScriptError>, Result<State, ScriptError>)>,
+    pub diverging_result: Option<(Result<State, script::Error>, Result<State, script::Error>)>,
     /// The final payload of the first stepper.
     pub payload_l: T,
     /// The final payload of the second stepper.
@@ -90,6 +97,8 @@ pub struct StepResults<T, U> {
 }
 
 impl<T, U> StepResults<T, U> {
+    /// Creates an empty `StepResults` given an initial payload for each of the `StepFn`s that will
+    /// be compared.
     pub fn initial(payload_l: T, payload_r: U) -> Self {
         StepResults {
             identical_states: vec![],
@@ -97,6 +106,50 @@ impl<T, U> StepResults<T, U> {
             payload_l,
             payload_r,
         }
+    }
+}
+
+/// This case is only generated in comparisons. It merges the `interpreter::Error::OpCount` case
+/// with the `opcode::Error::DisabledOpcode` case. This is because there is an edge case when there
+/// is a disabled opcode as the `MAX_OP_COUNT + 1` operation (not opcode) in a script. In this case,
+/// the C++ implementation checks the op_count first, while the Rust implementation fails on
+/// disabled opcodes as soon as they’re read (since the script is guaranteed to fail if they occur,
+/// even in an inactive branch). To allow comparison tests to pass (especially property & fuzz
+/// tests), we need these two failure cases to be seen as identical.
+pub const AMBIGUOUS_COUNT_DISABLED_ERROR: script::Error =
+    script::Error::ExternalError("ambiguous OpCount or DisabledOpcode error");
+
+/// This case is only generated in comparisons. It merges `interpreter::Error::Num`, which can only
+/// come from the Rust implementation, with `ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR`, which can only
+/// come from the C++ implementation, but in at least all of the cases that the `Num` failure would
+/// happen.
+pub const AMBIGUOUS_UNKNOWN_NUM_ERROR: script::Error =
+    script::Error::ExternalError("ambiguous Unknown or Num error");
+
+/// Convert errors that don’t exist in the C++ code into the cases that do.
+pub fn normalize_error(err: script::Error) -> script::Error {
+    match err {
+        script::Error::Interpreter(ie) => match ie {
+            interpreter::Error::OpCount => AMBIGUOUS_COUNT_DISABLED_ERROR,
+            interpreter::Error::BadOpcode(Some(_)) => interpreter::Error::BadOpcode(None).into(),
+            interpreter::Error::PubKeyCount(Some(_)) => {
+                interpreter::Error::PubKeyCount(None).into()
+            }
+            interpreter::Error::SigCount(Some(_)) => interpreter::Error::SigCount(None).into(),
+            interpreter::Error::Num(_) => AMBIGUOUS_UNKNOWN_NUM_ERROR,
+            interpreter::Error::SigDER(Some(_)) => interpreter::Error::SigDER(None).into(),
+            interpreter::Error::SigHashType(Some(_)) => {
+                interpreter::Error::SigHashType(None).into()
+            }
+            _ => ie.into(),
+        },
+        script::Error::ScriptSize(Some(_)) => script::Error::ScriptSize(None),
+        script::Error::Opcode(operr) => match operr {
+            opcode::Error::DisabledOpcode(_) => AMBIGUOUS_COUNT_DISABLED_ERROR,
+
+            opcode::Error::Read(_) => interpreter::Error::BadOpcode(None).into(),
+        },
+        _ => err,
     }
 }
 
@@ -108,11 +161,16 @@ impl<T, U> StepResults<T, U> {
 ///
 /// This returns a very debuggable result. See `StepResults` for details.
 pub struct ComparisonStepEvaluator<'a, T, U> {
+    /// One of the two `StepFn`s to be compared. The one difference is that in the case where both
+    /// `StepFn`s fail, but with different errors, _this_ is the error that will be returned for the
+    /// script.
     pub eval_step_l: &'a dyn StepFn<Payload = T>,
+    /// One of the two `StepFn`s to be compared. The one difference is that in the case where both
+    /// `StepFn`s fail, but with different errors, _this_ error will be discarded.
     pub eval_step_r: &'a dyn StepFn<Payload = U>,
 }
 
-impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
+impl<T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'_, T, U> {
     type Payload = StepResults<T, U>;
     fn call<'b>(
         &self,
@@ -120,7 +178,7 @@ impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
         script: &Script,
         state: &mut State,
         payload: &mut StepResults<T, U>,
-    ) -> Result<&'b [u8], ScriptError> {
+    ) -> Result<&'b [u8], script::Error> {
         let mut right_state = (*state).clone();
         let left = self
             .eval_step_l
@@ -141,12 +199,12 @@ impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
                         left.map(|_| state.clone()),
                         right.map(|_| right_state.clone()),
                     ));
-                    Err(ScriptError::UnknownError)
+                    Err(script::Error::ExternalError("mismatched step results"))
                 }
             }
             // at least one is `Err`
             (_, _) => {
-                if left != right {
+                if left.map_err(normalize_error) != right.map_err(normalize_error) {
                     payload.diverging_result = Some((
                         left.map(|_| state.clone()),
                         right.map(|_| right_state.clone()),
@@ -158,6 +216,9 @@ impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
     }
 }
 
+/// This is used for any interpreter that is based on a `StepFn`.
+///
+/// The original C++ interpreter is _not_ a `StepwiseInterpreter`, but the pure Rust one is.
 pub struct StepwiseInterpreter<F>
 where
     F: StepFn,
@@ -167,6 +228,7 @@ where
 }
 
 impl<F: StepFn> StepwiseInterpreter<F> {
+    /// Creates a new interpreter from a `StepFn` and an initial payload.
     pub fn new(initial_payload: F::Payload, stepper: F) -> Self {
         StepwiseInterpreter {
             initial_payload,
@@ -175,6 +237,7 @@ impl<F: StepFn> StepwiseInterpreter<F> {
     }
 }
 
+/// This is the pure Rust interpreter, which doesn’t use the FFI.
 pub fn rust_interpreter<C: SignatureChecker + Copy>(
     flags: VerificationFlags,
     checker: C,
@@ -207,40 +270,19 @@ impl<F: StepFn> ZcashScript for StepwiseInterpreter<F> {
             &mut payload,
             &self.stepper,
         )
+        .map_err(Error::Ok)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::*;
-    use hex::FromHex;
+    use crate::{
+        interpreter::CallbackTransactionSignatureChecker,
+        opcode::{self, ReadError},
+        testing::*,
+    };
     use proptest::prelude::*;
-
-    lazy_static::lazy_static! {
-        pub static ref SCRIPT_PUBKEY: Vec<u8> = <Vec<u8>>::from_hex("a914c117756dcbe144a12a7c33a77cfa81aa5aeeb38187").unwrap();
-        pub static ref SCRIPT_SIG: Vec<u8> = <Vec<u8>>::from_hex("00483045022100d2ab3e6258fe244fa442cfb38f6cef9ac9a18c54e70b2f508e83fa87e20d040502200eead947521de943831d07a350e45af8e36c2166984a8636f0a8811ff03ed09401473044022013e15d865010c257eef133064ef69a780b4bc7ebe6eda367504e806614f940c3022062fdbc8c2d049f91db2042d6c9771de6f1ef0b3b1fea76c1ab5542e44ed29ed8014c69522103b2cc71d23eb30020a4893982a1e2d352da0d20ee657fa02901c432758909ed8f21029d1e9a9354c0d2aee9ffd0f0cea6c39bbf98c4066cf143115ba2279d0ba7dabe2103e32096b63fd57f3308149d238dcbb24d8d28aad95c0e4e74e3e5e6a11b61bcc453ae").expect("Block bytes are in valid hex representation");
-    }
-
-    fn sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
-        hex::decode("e8c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
-            .unwrap()
-            .as_slice()
-            .first_chunk::<32>()
-            .copied()
-    }
-
-    fn invalid_sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
-        hex::decode("08c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
-            .unwrap()
-            .as_slice()
-            .first_chunk::<32>()
-            .copied()
-    }
-
-    fn missing_sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
-        None
-    }
 
     #[test]
     fn it_works() {
@@ -294,10 +336,11 @@ mod tests {
         // The final return value is from whichever stepper failed.
         assert_eq!(
             ret,
-            Err(Error::Ok(ScriptError::ReadError {
+            Err(opcode::Error::Read(ReadError {
                 expected_bytes: 1,
                 available_bytes: 0,
-            }))
+            })
+            .into())
         );
 
         // `State`s are large, so we just check that there was some progress in lock step, and a
@@ -308,20 +351,20 @@ mod tests {
                 diverging_result:
                     Some((
                         Ok(state),
-                        Err(ScriptError::ReadError {
+                        Err(script::Error::Opcode(opcode::Error::Read(ReadError {
                             expected_bytes: 1,
                             available_bytes: 0,
-                        }),
+                        }))),
                     )),
                 payload_l: (),
                 payload_r: (),
             } => {
                 assert!(
                     identical_states.len() == 6
-                        && state.stack().size() == 4
-                        && state.altstack().empty()
+                        && state.stack().len() == 4
+                        && state.altstack().is_empty()
                         && state.op_count() == 2
-                        && state.vexec().empty()
+                        && state.vexec().is_empty()
                 );
             }
             _ => {
@@ -354,7 +397,7 @@ mod tests {
         if res.diverging_result != None {
             panic!("mismatched result: {:?}", res);
         }
-        assert_eq!(ret, Err(Error::Ok(ScriptError::EvalFalse)));
+        assert_eq!(ret, Err(script::Error::EvalFalse));
     }
 
     #[test]
@@ -381,7 +424,7 @@ mod tests {
         if res.diverging_result != None {
             panic!("mismatched result: {:?}", res);
         }
-        assert_eq!(ret, Err(Error::Ok(ScriptError::EvalFalse)));
+        assert_eq!(ret, Err(script::Error::EvalFalse));
     }
 
     proptest! {
