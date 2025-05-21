@@ -7,6 +7,7 @@
 # breaking changes in newer releases.
 
 [package]
+rust-version = "1.85" # C++ linking was broken in rust 1.82–1.84
 name = "zcash_script"
 version = "0.3.1"
 authors = [
