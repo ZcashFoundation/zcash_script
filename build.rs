@@ -35,9 +35,12 @@ fn bindgen_headers() -> Result<()> {
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
-        // This should not reference a version newer than rust-toolchain.toml. See
-        // rust-lang/rust-bindgen#3049 for a potential future solution.
-        .rust_target(bindgen::RustTarget::Stable_1_73)
+        // Remove this once rust-lang/rust-bindgen#3049 is fixed.
+        .rust_target(
+            env!("CARGO_PKG_RUST_VERSION")
+                .parse()
+                .expect("package.rust-version is set in Cargo.toml"),
+        )
         // Finish the builder and generate the bindings.
         .generate()
         .map_err(|_| Error::GenerateBindings)?;
