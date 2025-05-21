@@ -137,7 +137,7 @@ impl Script<'_> {
 
     /// Returns true iff this script is P2SH.
     pub fn is_pay_to_script_hash(&self) -> bool {
-        self.parse().map_or(false, |ops| match &ops[..] {
+        self.parse().is_ok_and(|ops| match &ops[..] {
             [ Opcode::Operation(OP_HASH160),
               Opcode::PushValue(PushValue::LargeValue(PushdataBytelength(v))),
               Opcode::Operation(OP_EQUAL)
@@ -148,8 +148,7 @@ impl Script<'_> {
 
     /// Called by `IsStandardTx` and P2SH/BIP62 VerifyScript (which makes it consensus-critical).
     pub fn is_push_only(&self) -> bool {
-        self.parse().map_or(false, |op| {
-            op.iter().all(|op| matches!(op, Opcode::PushValue(_)))
-        })
+        self.parse()
+            .is_ok_and(|op| op.iter().all(|op| matches!(op, Opcode::PushValue(_))))
     }
 }

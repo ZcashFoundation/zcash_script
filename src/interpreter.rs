@@ -1261,7 +1261,7 @@ where
     } else {
         let data_stack = eval_script(Stack::new(), script_sig, payload, stepper)?;
         let pub_key_stack = eval_script(data_stack.clone(), script_pub_key, payload, stepper)?;
-        if pub_key_stack.last().map_or(false, cast_to_bool) {
+        if pub_key_stack.last().is_ok_and(cast_to_bool) {
             // Additional validation for spend-to-script-hash transactions:
             let result_stack = if flags.contains(VerificationFlags::P2SH)
                 && script_pub_key.is_pay_to_script_hash()
@@ -1278,7 +1278,7 @@ where
                             eval_script(remaining_stack, &Script(pub_key_2), payload, stepper)
                         })
                         .and_then(|p2sh_stack| {
-                            if p2sh_stack.last().map_or(false, cast_to_bool) {
+                            if p2sh_stack.last().is_ok_and(cast_to_bool) {
                                 Ok(p2sh_stack)
                             } else {
                                 Err(script::Error::EvalFalse)
