@@ -33,7 +33,7 @@ fuzz_target!(|tup: (u32, bool, &[u8], &[u8], u32)| {
         flags,
     );
     assert_eq!(
-        ret.0,
+        ret.0.map_err(normalize_error),
         ret.1.map_err(normalize_error),
         "original Rust result: {:?}",
         ret.1
