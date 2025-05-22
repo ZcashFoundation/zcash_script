@@ -10,6 +10,8 @@ extern crate enum_primitive;
 pub mod cxx;
 mod external;
 pub mod interpreter;
+pub mod op;
+pub mod pv;
 mod script;
 pub mod script_error;
 mod zcash_script;
@@ -74,8 +76,8 @@ impl From<cxx::ScriptError> for Error {
                 Error::Ok(ScriptError::UnsatisfiedLockTime)
             }
 
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_HASHTYPE => Error::Ok(ScriptError::SigHashType),
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_DER => Error::Ok(ScriptError::SigDER),
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_HASHTYPE => Error::Ok(ScriptError::SigHashType(None)),
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_DER => Error::Ok(ScriptError::SigDER(None)),
             cxx::ScriptError_t_SCRIPT_ERR_MINIMALDATA => Error::Ok(ScriptError::MinimalData),
             cxx::ScriptError_t_SCRIPT_ERR_SIG_PUSHONLY => Error::Ok(ScriptError::SigPushOnly),
             cxx::ScriptError_t_SCRIPT_ERR_SIG_HIGH_S => Error::Ok(ScriptError::SigHighS),
@@ -212,6 +214,8 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
 pub fn normalize_error(err: Error) -> Error {
     match err {
         Error::Ok(serr) => Error::Ok(match serr {
+            ScriptError::SigHashType(Some(_)) => ScriptError::SigHashType(None),
+            ScriptError::SigDER(Some(_)) => ScriptError::SigDER(None),
             ScriptError::ReadError { .. } => ScriptError::BadOpcode,
             ScriptError::ScriptNumError(_) => ScriptError::UnknownError,
             _ => serr,
@@ -293,7 +297,7 @@ pub mod testing {
     use super::*;
     use crate::{
         interpreter::{State, StepFn},
-        script::{Operation, Script},
+        script::{Normal, Script},
     };
 
     /// Ensures that flags represent a supported state. This avoids crashes in the C++ code, which
@@ -326,7 +330,7 @@ pub mod testing {
             payload: &mut T::Payload,
         ) -> Result<&'a [u8], ScriptError> {
             self.0.call(
-                if pc[0] == Operation::OP_EQUAL.into() {
+                if pc[0] == Normal::OP_EQUAL.into() {
                     &pc[1..]
                 } else {
                     pc
