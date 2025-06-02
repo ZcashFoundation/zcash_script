@@ -28,7 +28,7 @@ impl std::error::Error for Error {}
 // to pull a newer version, so this silences the deprecation on that job.
 #[allow(deprecated)]
 fn bindgen_headers() -> Result<()> {
-    println!("cargo:rerun-if-changed=depend/zcash/src/script/zcash_script.h");
+    println!("cargo:rerun-if-changed=depend/zcash/src/script/zcash_script.cpp");
 
     let bindings = bindgen::Builder::default()
         .header("depend/zcash/src/script/zcash_script.h")

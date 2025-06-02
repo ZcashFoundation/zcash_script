@@ -44,6 +44,7 @@ pub struct HashType {
 }
 
 /// Things that can go wrong when constructing a `HashType` from bit flags.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum InvalidHashType {
     /// Either or both of the two least-significant bits must be set.
     UnknownSignedOutputs,
@@ -192,6 +193,10 @@ impl<T: Clone> Stack<T> {
         Stack(vec![])
     }
 
+    pub fn from_parts(v: Vec<T>) -> Self {
+        Stack(v)
+    }
+
     fn reverse_index(&self, i: isize) -> Result<usize, ScriptError> {
         usize::try_from(-i)
             .map(|a| self.0.len() - a)
@@ -257,6 +262,10 @@ impl<T: Clone> Stack<T> {
 
     pub fn end(&self) -> usize {
         self.0.len()
+    }
+
+    pub fn as_mut_ptr(&mut self) -> *mut T {
+        self.0.as_mut_ptr()
     }
 }
 
@@ -753,6 +762,9 @@ pub fn eval_step<'a>(
                         let mut value = false;
                         if exec {
                             if stack.size() < 1 {
+                                // TODO: This preserves what I think is a bug in the C++ impl – I
+                                //       think this should return
+                                //       [ScriptError::InvalidStackOperation], like every other similar case.
                                 return set_error(ScriptError::UnbalancedConditional);
                             }
                             let vch: &ValType = stack.top(-1)?;
@@ -1238,7 +1250,7 @@ pub trait StepFn {
     fn call<'a>(
         &self,
         pc: &'a [u8],
-        script: &Script,
+        script: &'a Script,
         state: &mut State,
         payload: &mut Self::Payload,
     ) -> Result<&'a [u8], ScriptError>;
@@ -1256,7 +1268,7 @@ impl<C: SignatureChecker + Copy> StepFn for DefaultStepEvaluator<C> {
     fn call<'a>(
         &self,
         pc: &'a [u8],
-        script: &Script,
+        script: &'a Script,
         state: &mut State,
         _payload: &mut (),
     ) -> Result<&'a [u8], ScriptError> {
