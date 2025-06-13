@@ -240,12 +240,8 @@ impl<T: Clone> Stack<T> {
             .map(|(last, rem)| (last, Stack(rem.to_vec())))
     }
 
-    pub fn rerase(&mut self, start: usize, end: Option<usize>) -> Result<(), ScriptError> {
-        let rstart = self.rindex(start)?;
-        for _ in 0..end.map_or(1, |e| start - e) {
-            self.0.remove(rstart);
-        }
-        Ok(())
+    pub fn rremove(&mut self, start: usize) -> Result<T, ScriptError> {
+        self.rindex(start).map(|rstart| self.0.remove(rstart))
     }
 
     pub fn rinsert(&mut self, i: usize, element: T) -> Result<(), ScriptError> {
@@ -860,7 +856,8 @@ pub fn eval_step<'a>(
                         }
                         let vch1 = stack.rget(5)?.clone();
                         let vch2 = stack.rget(4)?.clone();
-                        stack.rerase(5, Some(3))?;
+                        stack.rremove(5)?;
+                        stack.rremove(4)?;
                         stack.push(vch1);
                         stack.push(vch2);
                     }
@@ -914,7 +911,7 @@ pub fn eval_step<'a>(
                         if stack.len() < 2 {
                             return Err(ScriptError::InvalidStackOperation);
                         }
-                        stack.rerase(1, None)?;
+                        stack.rremove(1)?;
                     }
 
                     OP_OVER => {
@@ -940,7 +937,7 @@ pub fn eval_step<'a>(
                         }
                         let vch: ValType = stack.rget(n.into())?.clone();
                         if op == OP_ROLL {
-                            stack.rerase(n.into(), None)?;
+                            stack.rremove(n.into())?;
                         }
                         stack.push(vch)
                     }
