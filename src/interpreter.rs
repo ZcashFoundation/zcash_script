@@ -1100,9 +1100,6 @@ pub fn eval_step<'a>(
                         //     20 signatures, plus a couple other fields. u8 also gives us total
                         //     conversions to the other types we deal with here (`isize` and `i64`).
                         let mut i: u8 = 0;
-                        if stack.len() < i.into() {
-                            return Err(ScriptError::InvalidStackOperation);
-                        };
 
                         let mut keys_count =
                             u8::try_from(parse_num(stack.rget(i.into())?, require_minimal, None)?)
