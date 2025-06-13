@@ -1340,6 +1340,38 @@ impl SignatureChecker for CallbackTransactionSignatureChecker<'_> {
     }
 }
 
+/// Additional validation for spend-to-script-hash transactions:
+fn eval_p2sh<F>(
+    data_stack: Stack<Vec<u8>>,
+    script_sig: &Script,
+    payload: &mut F::Payload,
+    stepper: &F,
+) -> Result<Stack<Vec<u8>>, ScriptError>
+where
+    F: StepFn,
+{
+    // script_sig must be literals-only or validation fails
+    if script_sig.is_push_only() {
+        // stack cannot be empty here, because if it was the P2SH HASH <> EQUAL scriptPubKey would
+        // be evaluated with an empty stack and the `eval_script` in the caller would return false.
+        assert!(!data_stack.is_empty());
+        data_stack
+            .split_last()
+            .and_then(|(pub_key_2, remaining_stack)| {
+                eval_script(remaining_stack, &Script(pub_key_2), payload, stepper)
+            })
+            .and_then(|p2sh_stack| {
+                if p2sh_stack.last().map_or(false, cast_to_bool) {
+                    Ok(p2sh_stack)
+                } else {
+                    Err(ScriptError::EvalFalse)
+                }
+            })
+    } else {
+        Err(ScriptError::SigPushOnly)
+    }
+}
+
 pub fn verify_script<F>(
     script_sig: &Script,
     script_pub_key: &Script,
@@ -1356,48 +1388,27 @@ where
         let data_stack = eval_script(Stack::new(), script_sig, payload, stepper)?;
         let pub_key_stack = eval_script(data_stack.clone(), script_pub_key, payload, stepper)?;
         if pub_key_stack.last().map_or(false, cast_to_bool) {
-            // Additional validation for spend-to-script-hash transactions:
-            let result_stack = if flags.contains(VerificationFlags::P2SH)
-                && script_pub_key.is_pay_to_script_hash()
-            {
-                // script_sig must be literals-only or validation fails
-                if script_sig.is_push_only() {
-                    data_stack
-                        // stack cannot be empty here, because if it was the P2SH HASH <> EQUAL
-                        // scriptPubKey would be evaluated with an empty stack and the `eval_script`
-                        // above would return false.
-                        .split_last()
-                        .and_then(|(pub_key_2, remaining_stack)| {
-                            eval_script(remaining_stack, &Script(pub_key_2), payload, stepper)
-                        })
-                        .and_then(|p2sh_stack| {
-                            if p2sh_stack.last().map_or(false, cast_to_bool) {
-                                Ok(p2sh_stack)
-                            } else {
-                                Err(ScriptError::EvalFalse)
-                            }
-                        })
-                } else {
-                    Err(ScriptError::SigPushOnly)
-                }?
+            if flags.contains(VerificationFlags::P2SH) && script_pub_key.is_pay_to_script_hash() {
+                eval_p2sh(data_stack, script_sig, payload, stepper)
             } else {
-                pub_key_stack
-            };
-
-            // The CLEANSTACK check is only performed after potential P2SH evaluation,
-            // as the non-P2SH evaluation of a P2SH script will obviously not result in
-            // a clean stack (the P2SH inputs remain).
-            if flags.contains(VerificationFlags::CleanStack) {
-                // Disallow CLEANSTACK without P2SH, because Bitcoin did.
-                assert!(flags.contains(VerificationFlags::P2SH));
-                if result_stack.len() == 1 {
-                    Ok(())
-                } else {
-                    Err(ScriptError::CleanStack)
-                }
-            } else {
-                Ok(())
+                Ok(pub_key_stack)
             }
+            .and_then(|result_stack| {
+                // The CLEANSTACK check is only performed after potential P2SH evaluation, as the
+                // non-P2SH evaluation of a P2SH script will obviously not result in a clean stack
+                // (the P2SH inputs remain).
+                if flags.contains(VerificationFlags::CleanStack) {
+                    // Disallow CLEANSTACK without P2SH, because Bitcoin did.
+                    assert!(flags.contains(VerificationFlags::P2SH));
+                    if result_stack.len() == 1 {
+                        Ok(())
+                    } else {
+                        Err(ScriptError::CleanStack)
+                    }
+                } else {
+                    Ok(())
+                }
+            })
         } else {
             Err(ScriptError::EvalFalse)
         }
