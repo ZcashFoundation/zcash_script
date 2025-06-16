@@ -1,5 +1,7 @@
 use std::num::TryFromIntError;
 
+use thiserror::Error;
+
 use super::interpreter::*;
 use super::script::*;
 use super::script_error::*;
@@ -7,7 +9,7 @@ use super::script_error::*;
 /// This maps to `zcash_script_error_t`, but most of those cases aren’t used any more. This only
 /// replicates the still-used cases, and then an `Unknown` bucket for anything else that might
 /// happen.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Error)]
 pub enum Error {
     /// Any failure that results in the script being invalid.
     Ok(ScriptError),
