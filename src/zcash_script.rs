@@ -22,6 +22,17 @@ pub enum Error {
     Unknown(i64),
 }
 
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::Ok(e) => write!(f, "{e}"),
+            Error::VerifyScript => write!(f, "script verification failed"),
+            Error::InvalidScriptSize(e) => write!(f, "invalid script size: {e}"),
+            Error::Unknown(code) => write!(f, "unknown error code: {code}",),
+        }
+    }
+}
+
 /// The external API of zcash_script. This is defined to make it possible to compare the C++ and
 /// Rust implementations.
 pub trait ZcashScript {
