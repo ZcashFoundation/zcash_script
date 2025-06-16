@@ -1,4 +1,6 @@
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+use thiserror::Error;
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Error)]
 pub enum ScriptNumError {
     NonMinimalEncoding,
     Overflow { max_num_size: usize, actual: usize },
