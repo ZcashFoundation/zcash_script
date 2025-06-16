@@ -23,7 +23,7 @@ impl std::fmt::Display for ScriptNumError {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Error)]
 #[repr(i32)]
 pub enum ScriptError {
     Ok = 0, // Unused (except in converting the C++ error to Rust)
