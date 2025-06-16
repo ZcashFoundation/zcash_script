@@ -4,6 +4,23 @@ pub enum ScriptNumError {
     Overflow { max_num_size: usize, actual: usize },
 }
 
+impl std::fmt::Display for ScriptNumError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ScriptNumError::NonMinimalEncoding => {
+                write!(f, "Non-minimal encoding of script number")
+            }
+            ScriptNumError::Overflow {
+                max_num_size,
+                actual,
+            } => write!(
+                f,
+                "Script number overflow: max: {max_num_size}, actual: {actual}",
+            ),
+        }
+    }
+}
+
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[repr(i32)]
 pub enum ScriptError {
