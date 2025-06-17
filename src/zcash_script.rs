@@ -12,27 +12,23 @@ use super::script_error::*;
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Error)]
 pub enum Error {
     /// Any failure that results in the script being invalid.
+    #[error("{0}")]
     Ok(ScriptError),
+
     /// An exception was caught.
+    #[error("script verification failed")]
     VerifyScript,
+
     /// The script size can’t fit in a `u32`, as required by the C++ code.
+    #[error("invalid script size: {0}")]
     InvalidScriptSize(TryFromIntError),
+
     /// Some other failure value recovered from C++.
     ///
     /// __NB__: Linux uses `u32` for the underlying C++ enum while Windows uses `i32`, so `i64` can
     ///         hold either.
+    #[error("unknown error code: {0}")]
     Unknown(i64),
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::Ok(e) => write!(f, "{e}"),
-            Error::VerifyScript => write!(f, "script verification failed"),
-            Error::InvalidScriptSize(e) => write!(f, "invalid script size: {e}"),
-            Error::Unknown(code) => write!(f, "unknown error code: {code}",),
-        }
-    }
 }
 
 /// The external API of zcash_script. This is defined to make it possible to compare the C++ and
