@@ -12,127 +12,120 @@ pub enum ScriptNumError {
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Error)]
 #[repr(i32)]
 pub enum ScriptError {
+    #[error("Ok")]
     Ok = 0, // Unused (except in converting the C++ error to Rust)
+
+    #[error("unknown error")]
     UnknownError,
+
+    #[error("script evaluation failed")]
     EvalFalse,
+
+    #[error("OP_RETURN encountered")]
     OpReturn,
 
     // Max sizes
+    #[error("Script size exceeded maximum")]
     ScriptSize,
+
+    #[error("push size exceeded maximum")]
     PushSize,
+
+    #[error("operation count exceeded maximum")]
     OpCount,
+
+    #[error("stack size exceeded maximum")]
     StackSize,
+
+    #[error("signature count exceeded maximum")]
     SigCount,
+
+    #[error("public key count exceeded maximum")]
     PubKeyCount,
 
     // Failed verify operations
+    #[error("verify operation failed")]
     Verify,
+
+    #[error("equal verify operation failed")]
     EqualVerify,
+
+    #[error("check multisig verify operation failed")]
     CheckMultisigVerify,
+
+    #[error("check sig verify operation failed")]
     CheckSigVerify,
+
+    #[error("num equal verfiy operation failed")]
     NumEqualVerify,
 
     // Logical/Format/Canonical errors
+    #[error("bad opcode encountered")]
     BadOpcode,
+
+    #[error("disabled opcode encountered")]
     DisabledOpcode,
+
+    #[error("invalid stack operation encountered")]
     InvalidStackOperation,
+
+    #[error("invalid altstack operation encountered")]
     InvalidAltstackOperation,
+
+    #[error("unbalanced conditional encountered")]
     UnbalancedConditional,
 
     // OP_CHECKLOCKTIMEVERIFY
+    #[error("negative lock time encountered")]
     NegativeLockTime,
+
+    #[error("unsatisfied locktime condition")]
     UnsatisfiedLockTime,
 
     // BIP62
+    #[error("signature hash type error")]
     SigHashType,
+
+    #[error("signature DER encoding error")]
     SigDER,
+
+    #[error("minimal data requirement not met")]
     MinimalData,
+
+    #[error("signature push only requirement not met")]
     SigPushOnly,
+
+    #[error("signature s value is too high")]
     SigHighS,
+
+    #[error("signature null dummy error")]
     SigNullDummy,
+
+    #[error("public key type error")]
     PubKeyType,
+
+    #[error("clean stack requirement not met")]
     CleanStack,
 
     // softfork safeness
+    #[error("discouraged upgradable NOPs encountered")]
     DiscourageUpgradableNOPs,
 
+    #[error(
+        "read error: expected {expected_bytes} bytes, but only {available_bytes} bytes available"
+    )]
     ReadError {
         expected_bytes: usize,
         available_bytes: usize,
     },
 
     /// Corresponds to the `scriptnum_error` exception in C++.
+    #[error("script number error: {0}")]
     ScriptNumError(ScriptNumError),
 }
 
 impl From<ScriptNumError> for ScriptError {
     fn from(value: ScriptNumError) -> Self {
         ScriptError::ScriptNumError(value)
-    }
-}
-
-impl std::fmt::Display for ScriptError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ScriptError::Ok => write!(f, "Ok"),
-            ScriptError::UnknownError => write!(f, "Unknown error"),
-            ScriptError::EvalFalse => write!(f, "Script evaluation failed"),
-            ScriptError::OpReturn => write!(f, "OP_RETURN encountered"),
-
-            // Max sizes
-            ScriptError::ScriptSize => write!(f, "Script size exceeded maximum"),
-            ScriptError::PushSize => write!(f, "Push size exceeded maximum"),
-            ScriptError::OpCount => write!(f, "Operation count exceeded maximum"),
-            ScriptError::StackSize => write!(f, "Stack size exceeded maximum"),
-            ScriptError::SigCount => write!(f, "Signature count exceeded maximum"),
-            ScriptError::PubKeyCount => write!(f, "Public key count exceeded maximum"),
-
-            // Failed verify operations
-            ScriptError::Verify => write!(f, "Verify operation failed"),
-            ScriptError::EqualVerify => write!(f, "Equal verify operation failed"),
-            ScriptError::CheckMultisigVerify => write!(f, "Check multisig verify operation failed"),
-            ScriptError::CheckSigVerify => write!(f, "Check signature verify operation failed"),
-            ScriptError::NumEqualVerify => write!(f, "Number equal verify operation failed"),
-
-            // Logical/Format/Canonical errors
-            ScriptError::BadOpcode => write!(f, "Bad opcode encountered"),
-            ScriptError::DisabledOpcode => write!(f, "Disabled opcode encountered"),
-            ScriptError::InvalidStackOperation => write!(f, "Invalid stack operation"),
-            ScriptError::InvalidAltstackOperation => write!(f, "Invalid altstack operation"),
-            ScriptError::UnbalancedConditional => write!(f, "Unbalanced conditional encountered"),
-
-            // OP_CHECKLOCKTIMEVERIFY
-            ScriptError::NegativeLockTime => write!(f, "Negative lock time encountered"),
-            ScriptError::UnsatisfiedLockTime => write!(f, "Unsatisfied lock time condition"),
-
-            // BIP62
-            ScriptError::SigHashType => write!(f, "Signature hash type error"),
-            ScriptError::SigDER => write!(f, "Signature DER encoding error"),
-            ScriptError::MinimalData => write!(f, "Minimal data requirement not met"),
-            ScriptError::SigPushOnly => write!(f, "Signature push only requirement not met"),
-            ScriptError::SigHighS => write!(f, "Signature S value is too high"),
-            ScriptError::SigNullDummy => write!(f, "Signature null dummy error"),
-            ScriptError::PubKeyType => write!(f, "Public key type error"),
-            ScriptError::CleanStack => write!(f, "Clean stack requirement not met"),
-
-            // softfork safeness
-            ScriptError::DiscourageUpgradableNOPs => {
-                write!(f, "Discouraged upgradable NOPs encountered")
-            }
-
-            ScriptError::ReadError {
-                expected_bytes,
-                available_bytes,
-            } => {
-                write!(
-                    f,
-                    "Read error: expected {expected_bytes} bytes, but only {available_bytes} bytes available",
-                )
-            }
-
-            ScriptError::ScriptNumError(script_num_error) => {
-                write!(f, "Script number error: {}", script_num_error)
-            }
-        }
     }
 }
