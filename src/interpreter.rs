@@ -1118,6 +1118,7 @@ pub fn eval_step<'a>(
                         if stack.len() <= i.into() {
                             return Err(ScriptError::InvalidStackOperation);
                         }
+                        assert!(i <= 21);
 
                         let mut sigs_count =
                             u8::try_from(parse_num(stack.rget(i.into())?, require_minimal, None)?)
@@ -1125,7 +1126,6 @@ pub fn eval_step<'a>(
                         if sigs_count > keys_count {
                             return Err(ScriptError::SigCount);
                         };
-                        assert!(i <= 21);
                         i += 1;
                         let mut isig = i;
                         i += sigs_count;
