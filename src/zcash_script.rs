@@ -1,5 +1,7 @@
 use std::num::TryFromIntError;
 
+use thiserror::Error;
+
 use super::interpreter::*;
 use super::script::*;
 use super::script_error::*;
@@ -7,18 +9,25 @@ use super::script_error::*;
 /// This maps to `zcash_script_error_t`, but most of those cases aren’t used any more. This only
 /// replicates the still-used cases, and then an `Unknown` bucket for anything else that might
 /// happen.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Error)]
 pub enum Error {
     /// Any failure that results in the script being invalid.
+    #[error("{0}")]
     Ok(ScriptError),
+
     /// An exception was caught.
+    #[error("script verification failed")]
     VerifyScript,
+
     /// The script size can’t fit in a `u32`, as required by the C++ code.
+    #[error("invalid script size: {0}")]
     InvalidScriptSize(TryFromIntError),
+
     /// Some other failure value recovered from C++.
     ///
     /// __NB__: Linux uses `u32` for the underlying C++ enum while Windows uses `i32`, so `i64` can
     ///         hold either.
+    #[error("unknown error code: {0}")]
     Unknown(i64),
 }
 
