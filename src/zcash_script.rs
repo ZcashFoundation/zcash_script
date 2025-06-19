@@ -318,10 +318,10 @@ mod tests {
             } => {
                 assert!(
                     identical_states.len() == 6
-                        && state.stack().size() == 4
-                        && state.altstack().empty()
+                        && state.stack().len() == 4
+                        && state.altstack().is_empty()
                         && state.op_count() == 2
-                        && state.vexec().empty()
+                        && state.vexec().is_empty()
                 );
             }
             _ => {
