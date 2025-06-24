@@ -1,6 +1,6 @@
 [package]
 name = "zcash_script"
-version = "0.3.1"
+version = "0.3.2"
 authors = [
     "Electric Coin Company <info@electriccoin.co>",
     "Greg Pfeil <greg@technomadic.org>",
