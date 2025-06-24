@@ -6,6 +6,9 @@
 
 #include "zcash_script.h"
 
+#include <iostream>
+#include <vector>
+
 #include "script/interpreter.h"
 #include "script/script_error.h"
 #include "version.h"
@@ -58,5 +61,93 @@ int zcash_script_verify_callback(
             script_err);
     } catch (const std::exception&) {
         return set_error(script_err, SCRIPT_ERR_VERIFY_SCRIPT);
+    }
+}
+
+std::vector<std::vector<unsigned char>> create_stack(
+    unsigned char const* const* elems,
+    size_t const* elemLens,
+    size_t len)
+{
+    std::vector<std::vector<unsigned char>> stack(len);
+    std::vector<size_t> realStackElemLen(elemLens, elemLens + len);
+    for (size_t i = 0; i < len; ++i) {
+        std::vector<unsigned char> elem(elems[i], elems[i] + realStackElemLen[i]);
+        stack[i] = elem;
+    }
+    return stack;
+}
+
+/// Copy the vector back to the C-compatible components for FFI.
+void update_stack(
+    std::vector<std::vector<unsigned char>> const& stack,
+    unsigned char const**& elems,
+    size_t*& elemLens,
+    size_t& len)
+{
+    std::vector<unsigned char const*>* stackPtr = new std::vector<unsigned char const*>(stack.size());
+    std::vector<size_t>* stackLenPtr = new std::vector<size_t>(stack.size());
+    auto real_it = stack.begin();
+    auto ptr_it = stackPtr->begin();
+    auto len_ptr_it = stackLenPtr->begin();
+    for (;
+         real_it != stack.end();
+         ++real_it, ++ptr_it, ++len_ptr_it) {
+        *ptr_it = real_it->data();
+        *len_ptr_it = real_it->size();
+    }
+    elems = stackPtr->data();
+    elemLens = stackLenPtr->data();
+    len = stack.size();
+}
+
+int zcash_script_eval_step(
+    unsigned int flags,
+    const void* ctx,
+    void (*sighash)(unsigned char* sighash, unsigned int sighashLen, const void* ctx, const unsigned char* scriptCode, unsigned int scriptCodeLen, int hashType),
+    int64_t nLockTime,
+    uint8_t isFinal,
+    struct ZcashScriptState* state,
+    unsigned char const* script,
+    size_t scriptLen,
+    size_t* pc,
+    ScriptError* serror)
+{
+    try {
+        CScript scriptCode(script, script + scriptLen);
+        std::vector<std::vector<unsigned char>> realStack =
+            create_stack(state->stack, state->stackElemLen, state->stackLen);
+        std::vector<std::vector<unsigned char>> realAltstack =
+            create_stack(state->altstack, state->altstackElemLen, state->altstackLen);
+        std::vector<bool> realVfExec(state->vfExec, state->vfExec + state->vfExecLen);
+        State* realState = new State{realStack, realAltstack, realVfExec, state->nOpCount};
+        CScript::const_iterator it = scriptCode.begin() + *pc;
+        CScriptNum nLockTimeNum = CScriptNum(nLockTime);
+
+        bool result = EvalStep(
+            *realState,
+            scriptCode,
+            it,
+            flags,
+            CallbackTransactionSignatureChecker(ctx, sighash, nLockTimeNum, isFinal != 0),
+            0,
+            serror);
+        *pc = it - scriptCode.begin();
+        update_stack(realState->stack, state->stack, state->stackElemLen, state->stackLen);
+        update_stack(realState->altstack, state->altstack, state->altstackElemLen, state->altstackLen);
+        std::vector<char>* vfExecPtr = new std::vector<char>(realState->vfExec.size());
+        auto ereal_it = realState->vfExec.begin();
+        auto eptr_it = vfExecPtr->begin();
+        for (;
+             ereal_it != realState->vfExec.end();
+             ++ereal_it, ++eptr_it) {
+            *eptr_it = *ereal_it;
+        }
+        state->vfExec = vfExecPtr->data();
+        state->vfExecLen = realState->vfExec.size();
+        state->nOpCount = realState->nOpCount;
+        return result;
+    } catch (const std::exception&) {
+        return set_error(serror, SCRIPT_ERR_VERIFY_SCRIPT);
     }
 }

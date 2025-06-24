@@ -194,7 +194,6 @@ class CScriptNum
  * throwing an exception if arithmetic is done or the result is interpreted as an integer.
  */
 public:
-
     explicit CScriptNum(const int64_t& n)
     {
         m_value = n;
