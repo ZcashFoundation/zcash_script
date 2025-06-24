@@ -2,12 +2,14 @@ use secp256k1;
 use thiserror::Error;
 
 /// Things that can go wrong when constructing a `HashType` from bit flags.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Error)]
 pub enum InvalidHashType {
     /// Either or both of the two least-significant bits must be set.
+    #[error("unknowned signed outputs")]
     UnknownSignedOutputs,
     /// With v5 transactions, bits other than those specified for `HashType` must be 0. The `i32`
     /// includes only the bits that are undefined by `HashType`.
+    #[error("extra bits set")]
     ExtraBitsSet(i32),
 }
 
@@ -94,7 +96,13 @@ pub enum ScriptError {
     UnsatisfiedLockTime,
 
     // BIP62
-    #[error("signature hash type error")]
+    #[error(
+        "{}",
+        .0.map_or(
+            "unknown signature hash type error".to_owned(),
+            |iht| format!("signature hash type error: {}", iht)
+        )
+    )]
     SigHashType(Option<InvalidHashType>),
 
     #[error("signature DER encoding error")]
