@@ -21,8 +21,12 @@ impl PubKey<'_> {
         };
 
         if let Ok(pubkey) = PublicKey::from_slice(self.0) {
+            let mut normalized_sig = *sig;
+            // libsecp256k1's ECDSA verification requires lower-S signatures, which have
+            // not historically been enforced in Bitcoin or Zcash, so normalize them first.
+            normalized_sig.normalize_s();
             let secp = Secp256k1::verification_only();
-            secp.verify_ecdsa(&Message::from_digest(*hash), sig, &pubkey)
+            secp.verify_ecdsa(&Message::from_digest(*hash), &normalized_sig, &pubkey)
                 .is_ok()
         } else {
             false
