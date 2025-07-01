@@ -1,6 +1,8 @@
+//! This module does not include tests that require support for `DERSIG`.
+
 use crate::{interpreter::VerificationFlags, op::*, script_error::ScriptError};
 
-use super::{bad, Entry::*, TestVector, DEFAULT_FLAGS, EMPTY_FLAGS, NOP2};
+use super::{bad, Entry::*, TestVector, DEFAULT_FLAGS, EMPTY_FLAGS};
 
 // It is evaluated as if there was a crediting coinbase transaction with two 0 pushes as scriptSig,
 // and one output of 0 satoshi and given scriptPubKey, followed by a spending transaction which
@@ -1666,7 +1668,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
         script_sig: &[N(1)],
         script_pubkey: &[
             O(NOP1),
-            O(NOP2),
+            O(CHECKLOCKTIMEVERIFY),
             O(NOP3),
             O(NOP4),
             O(NOP5),
@@ -1685,7 +1687,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
         script_sig: &[
             A("NOP_1_to_10"),
             O(NOP1),
-            O(NOP2),
+            O(CHECKLOCKTIMEVERIFY),
             O(NOP3),
             O(NOP4),
             O(NOP5),
@@ -2929,7 +2931,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
     },
     TestVector {
         script_sig: &[O(NOP)],
-        script_pubkey: &[O(NOP2), N(1)],
+        script_pubkey: &[O(CHECKLOCKTIMEVERIFY), N(1)],
         flags: DEFAULT_FLAGS,
         result: Ok(()),
     },
@@ -7296,6 +7298,44 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
         ],
         flags: EMPTY_FLAGS,
         // FIXME: Should return `Ok(())` (see #240).
+        result: Err(ScriptError::EvalFalse),
+    },
+    // P2SH(P2PK) with non-push scriptSig but no P2SH or SIGPUSHONLY
+    TestVector {
+        script_sig: &[
+            H("47"),
+            H(
+                "3044022018a2a81a93add5cb5f5da76305718e4ea66045ec4888b28d84cb22fae7f4645b02201e6daa5ed5d2e4b2b2027cf7ffd43d8d9844dd49f74ef86899ec8e669dfd39aa01",
+            ),
+            O(NOP8),
+            H("23"),
+            H("2103363d90d447b00c9c99ceac05b6262ee053441c7e55552ffe526bad8f83ff4640ac"),
+        ],
+        script_pubkey: &[
+            O(HASH160),
+            H("14"),
+            H("215640c2f72f0d16b4eced26762035a42ffed39a"),
+            O(EQUAL),
+        ],
+        flags: EMPTY_FLAGS,
+        result: Ok(()),
+    },
+    // P2PK with non-push scriptSig but with P2SH validation
+    TestVector {
+        script_sig: &[
+            H("47"),
+            H(
+                "304402203e4516da7253cf068effec6b95c41221c0cf3a8e6ccb8cbf1725b562e9afde2c022054e1c258c2981cdfba5df1f46661fb6541c44f77ca0092f3600331abfffb125101",
+            ),
+            O(NOP8),
+        ],
+        script_pubkey: &[
+            H("21"),
+            H("03363d90d447b00c9c99ceac05b6262ee053441c7e55552ffe526bad8f83ff4640"),
+            O(CHECKSIG),
+        ],
+        flags: EMPTY_FLAGS,
+        // FIXME: This should return `Ok(())`
         result: Err(ScriptError::EvalFalse),
     },
     // 2-of-2 with two identical keys and sigs pushed

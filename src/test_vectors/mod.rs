@@ -3,7 +3,6 @@ pub(crate) mod valid;
 
 use crate::{
     interpreter::VerificationFlags,
-    op,
     script::{serialize_num, Opcode},
     script_error::ScriptError,
 };
@@ -109,8 +108,6 @@ impl TestVector {
         }
     }
 }
-
-pub(crate) const NOP2: Opcode = op::CHECKLOCKTIMEVERIFY;
 
 pub(crate) mod bad {
     use crate::script::{

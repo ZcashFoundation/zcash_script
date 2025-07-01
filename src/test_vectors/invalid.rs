@@ -1,6 +1,8 @@
+//! This module does not include tests that require support for `DERSIG`.
+
 use crate::{interpreter::VerificationFlags, op::*, script_error::ScriptError};
 
-use super::{bad, disabled, Entry::*, TestVector, DEFAULT_FLAGS, EMPTY_FLAGS, NOP2};
+use super::{bad, disabled, Entry::*, TestVector, DEFAULT_FLAGS, EMPTY_FLAGS};
 
 // It is evaluated as if there was a crediting coinbase transaction with two 0 pushes as scriptSig,
 // and one output of 0 satoshi and given scriptPubKey, followed by a spending transaction which
@@ -1024,7 +1026,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
         script_sig: &[N(1)],
         script_pubkey: &[
             O(NOP1),
-            O(NOP2),
+            O(CHECKLOCKTIMEVERIFY),
             O(NOP3),
             O(NOP4),
             O(NOP5),
@@ -1043,7 +1045,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
         script_sig: &[
             A("NOP_1_to_10"),
             O(NOP1),
-            O(NOP2),
+            O(CHECKLOCKTIMEVERIFY),
             O(NOP3),
             O(NOP4),
             O(NOP5),
@@ -1066,7 +1068,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
     },
     TestVector {
         script_sig: &[N(1)],
-        script_pubkey: &[O(NOP2)],
+        script_pubkey: &[O(CHECKLOCKTIMEVERIFY)],
         flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
         result: Err(ScriptError::DiscourageUpgradableNOPs),
     },
@@ -4615,6 +4617,33 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
         flags: VerificationFlags::StrictEnc,
         result: Err(ScriptError::SigDER),
     },
+    // 2-of-3 with one valid and one invalid signature due to parse error, nSigs > validSigs
+    TestVector {
+        script_sig: &[
+            N(0),
+            H("47"),
+            H(
+                "304402205451ce65ad844dbb978b8bdedf5082e33b43cae8279c30f2c74d9e9ee49a94f802203fe95a7ccf74da7a232ee523ef4a53cb4d14bdd16289680cdb97a63819b8f42f01",
+            ),
+            H("46"),
+            H(
+                "304402205451ce65ad844dbb978b8bdedf5082e33b43cae8279c30f2c74d9e9ee49a94f802203fe95a7ccf74da7a232ee523ef4a53cb4d14bdd16289680cdb97a63819b8f42f",
+            ),
+        ],
+        script_pubkey: &[
+            N(2),
+            H("21"),
+            H("02a673638cb9587cb68ea08dbef685c6f2d2a751a8b3c6f2a7e9a4999e6e4bfaf5"),
+            H("21"),
+            H("02a673638cb9587cb68ea08dbef685c6f2d2a751a8b3c6f2a7e9a4999e6e4bfaf5"),
+            H("21"),
+            H("02a673638cb9587cb68ea08dbef685c6f2d2a751a8b3c6f2a7e9a4999e6e4bfaf5"),
+            N(3),
+            O(CHECKMULTISIG),
+        ],
+        flags: DEFAULT_FLAGS,
+        result: Err(ScriptError::SigDER),
+    },
     // Increase DERSIG test coverage
 
     // Overly long signature is incorrectly encoded
@@ -5369,16 +5398,18 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             H(
                 "304402203e4516da7253cf068effec6b95c41221c0cf3a8e6ccb8cbf1725b562e9afde2c022054e1c258c2981cdfba5df1f46661fb6541c44f77ca0092f3600331abfffb125101",
             ),
+            O(NOP8),
             H("23"),
             H("2103363d90d447b00c9c99ceac05b6262ee053441c7e55552ffe526bad8f83ff4640ac"),
         ],
         script_pubkey: &[
-            H("21"),
-            H("03363d90d447b00c9c99ceac05b6262ee053441c7e55552ffe526bad8f83ff4640"),
-            O(CHECKSIG),
+            O(HASH160),
+            H("14"),
+            H("215640c2f72f0d16b4eced26762035a42ffed39a"),
+            O(EQUAL),
         ],
-        flags: EMPTY_FLAGS,
-        result: Err(ScriptError::SigDER),
+        flags: VerificationFlags::P2SH,
+        result: Err(ScriptError::SigPushOnly),
     },
     // P2SH(P2PK) with non-push scriptSig
     TestVector {
@@ -5387,43 +5418,18 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             H(
                 "304402203e4516da7253cf068effec6b95c41221c0cf3a8e6ccb8cbf1725b562e9afde2c022054e1c258c2981cdfba5df1f46661fb6541c44f77ca0092f3600331abfffb125101",
             ),
+            O(NOP8),
             H("23"),
             H("2103363d90d447b00c9c99ceac05b6262ee053441c7e55552ffe526bad8f83ff4640ac"),
         ],
         script_pubkey: &[
-            H("21"),
-            H("03363d90d447b00c9c99ceac05b6262ee053441c7e55552ffe526bad8f83ff4640"),
-            O(CHECKSIG),
+            O(HASH160),
+            H("14"),
+            H("215640c2f72f0d16b4eced26762035a42ffed39a"),
+            O(EQUAL),
         ],
         flags: VerificationFlags::SigPushOnly,
-        result: Err(ScriptError::SigDER),
-    },
-    // 2-of-3 with one valid and one invalid signature due to parse error, nSigs > validSigs
-    TestVector {
-        script_sig: &[
-            N(0),
-            H("47"),
-            H(
-                "304402205451ce65ad844dbb978b8bdedf5082e33b43cae8279c30f2c74d9e9ee49a94f802203fe95a7ccf74da7a232ee523ef4a53cb4d14bdd16289680cdb97a63819b8f42f01",
-            ),
-            H("46"),
-            H(
-                "304402205451ce65ad844dbb978b8bdedf5082e33b43cae8279c30f2c74d9e9ee49a94f802203fe95a7ccf74da7a232ee523ef4a53cb4d14bdd16289680cdb97a63819b8f42f",
-            ),
-        ],
-        script_pubkey: &[
-            N(2),
-            H("21"),
-            H("02a673638cb9587cb68ea08dbef685c6f2d2a751a8b3c6f2a7e9a4999e6e4bfaf5"),
-            H("21"),
-            H("02a673638cb9587cb68ea08dbef685c6f2d2a751a8b3c6f2a7e9a4999e6e4bfaf5"),
-            H("21"),
-            H("02a673638cb9587cb68ea08dbef685c6f2d2a751a8b3c6f2a7e9a4999e6e4bfaf5"),
-            N(3),
-            O(CHECKMULTISIG),
-        ],
-        flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::SigDER),
+        result: Err(ScriptError::SigPushOnly),
     },
     // P2PK with unnecessary input
     TestVector {
