@@ -1,5 +1,4 @@
-pub(crate) mod invalid;
-pub(crate) mod valid;
+mod vectors;
 
 use crate::{
     interpreter::VerificationFlags,
@@ -150,3 +149,5 @@ pub(crate) mod disabled {
 pub(crate) const DEFAULT_FLAGS: VerificationFlags =
     VerificationFlags::P2SH.union(VerificationFlags::StrictEnc);
 pub(crate) const EMPTY_FLAGS: VerificationFlags = VerificationFlags::empty();
+
+pub(crate) use vectors::TEST_VECTORS;

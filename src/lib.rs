@@ -370,7 +370,7 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use super::{testing::*, *};
-    use crate::test_vectors::{invalid, valid};
+    use crate::test_vectors::TEST_VECTORS;
     use hex::FromHex;
     use proptest::prelude::*;
 
@@ -487,18 +487,7 @@ mod tests {
 
     #[test]
     fn test_vectors_for_cxx() {
-        for tv in invalid::TEST_VECTORS {
-            run_test_vector(tv, &|sig, pubkey, flags| {
-                CxxInterpreter {
-                    sighash: &missing_sighash,
-                    lock_time: 0,
-                    is_final: false,
-                }
-                .verify_callback(pubkey, sig, flags)
-            })
-        }
-
-        for tv in valid::TEST_VECTORS {
+        for tv in TEST_VECTORS {
             run_test_vector(tv, &|sig, pubkey, flags| {
                 CxxInterpreter {
                     sighash: &missing_sighash,
@@ -512,7 +501,7 @@ mod tests {
 
     #[test]
     fn test_vectors_for_rust() {
-        for tv in invalid::TEST_VECTORS {
+        for tv in TEST_VECTORS {
             run_test_vector(tv, &|sig, pubkey, flags| {
                 rust_interpreter(
                     flags,
@@ -524,20 +513,6 @@ mod tests {
                 )
                 .verify_callback(&pubkey, &sig, flags)
                 .map_err(normalize_error)
-            })
-        }
-
-        for tv in valid::TEST_VECTORS {
-            run_test_vector(tv, &|sig, pubkey, flags| {
-                rust_interpreter(
-                    flags,
-                    CallbackTransactionSignatureChecker {
-                        sighash: &missing_sighash,
-                        lock_time: 0,
-                        is_final: false,
-                    },
-                )
-                .verify_callback(&pubkey, &sig, flags)
             })
         }
     }
