@@ -1,4 +1,9 @@
-//! This module does not include tests that require support for `DERSIG`.
+//! This module does not include tests that require support for
+//! - `CHECKSEQUENCEVERIFY``,
+//! - `DERSIG`,
+//! - `MINIMALIF`,
+//! - `NULLFAIL`, or
+//! - `WITNESS`.
 
 use crate::{interpreter::VerificationFlags, op::*, script_error::ScriptError};
 
@@ -953,19 +958,19 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
         result: Ok(()),
     },
     TestVector {
-        script_sig: &[N(549755813887)],
+        script_sig: &[H("05ffffffff7f")],
         script_pubkey: &[O(SIZE), N(5), O(EQUAL)],
         flags: DEFAULT_FLAGS,
         result: Ok(()),
     },
     TestVector {
-        script_sig: &[N(549755813888)],
+        script_sig: &[H("06000000008000")],
         script_pubkey: &[O(SIZE), N(6), O(EQUAL)],
         flags: DEFAULT_FLAGS,
         result: Ok(()),
     },
     TestVector {
-        script_sig: &[N(9223372036854775807)],
+        script_sig: &[H("08ffffffffffffff7f")],
         script_pubkey: &[O(SIZE), N(8), O(EQUAL)],
         flags: DEFAULT_FLAGS,
         result: Ok(()),
@@ -1025,19 +1030,19 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
         result: Ok(()),
     },
     TestVector {
-        script_sig: &[N(-549755813887)],
+        script_sig: &[H("05ffffffffff")],
         script_pubkey: &[O(SIZE), N(5), O(EQUAL)],
         flags: DEFAULT_FLAGS,
         result: Ok(()),
     },
     TestVector {
-        script_sig: &[N(-549755813888)],
+        script_sig: &[H("06000000008080")],
         script_pubkey: &[O(SIZE), N(6), O(EQUAL)],
         flags: DEFAULT_FLAGS,
         result: Ok(()),
     },
     TestVector {
-        script_sig: &[N(-9223372036854775807)],
+        script_sig: &[H("08ffffffffffffffff")],
         script_pubkey: &[O(SIZE), N(8), O(EQUAL)],
         flags: DEFAULT_FLAGS,
         result: Ok(()),
@@ -1215,6 +1220,90 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
         script_sig: &[N(0), N(0), O(BOOLOR)],
         script_pubkey: &[O(NOT)],
         flags: DEFAULT_FLAGS,
+        result: Ok(()),
+    },
+    // negative-0 negative-0 BOOLOR
+    TestVector {
+        script_sig: &[H("01"), H("80")],
+        script_pubkey: &[O(DUP), O(BOOLOR)],
+        flags: DEFAULT_FLAGS,
+        result: Err(ScriptError::EvalFalse),
+    },
+    // non-minimal-0  non-minimal-0 BOOLOR
+    TestVector {
+        script_sig: &[H("01"), H("00")],
+        script_pubkey: &[O(DUP), O(BOOLOR)],
+        flags: DEFAULT_FLAGS,
+        result: Err(ScriptError::EvalFalse),
+    },
+    // -1 -1 BOOLOR
+    TestVector {
+        script_sig: &[H("01"), H("81")],
+        script_pubkey: &[O(DUP), O(BOOLOR)],
+        flags: DEFAULT_FLAGS,
+        result: Ok(()),
+    },
+    // negative-0 negative-0 BOOLAND
+    TestVector {
+        script_sig: &[H("01"), H("80")],
+        script_pubkey: &[O(DUP), O(BOOLAND)],
+        flags: DEFAULT_FLAGS,
+        result: Err(ScriptError::EvalFalse),
+    },
+    // non-minimal-0  non-minimal-0 BOOLAND
+    TestVector {
+        script_sig: &[H("01"), H("00")],
+        script_pubkey: &[O(DUP), O(BOOLAND)],
+        flags: DEFAULT_FLAGS,
+        result: Err(ScriptError::EvalFalse),
+    },
+    // -1 -1 BOOLAND
+    TestVector {
+        script_sig: &[H("01"), H("81")],
+        script_pubkey: &[O(DUP), O(BOOLAND)],
+        flags: DEFAULT_FLAGS,
+        result: Ok(()),
+    },
+    // non-minimal-0 NOT
+    TestVector {
+        script_sig: &[H("01"), H("00")],
+        script_pubkey: &[O(NOT)],
+        flags: DEFAULT_FLAGS,
+        result: Ok(()),
+    },
+    // negative-0 NOT
+    TestVector {
+        script_sig: &[H("01"), H("80")],
+        script_pubkey: &[O(NOT)],
+        flags: DEFAULT_FLAGS,
+        result: Ok(()),
+    },
+    // negative 1 NOT
+    TestVector {
+        script_sig: &[H("01"), H("81")],
+        script_pubkey: &[O(NOT)],
+        flags: DEFAULT_FLAGS,
+        result: Err(ScriptError::EvalFalse),
+    },
+    // -0 0 NUMEQUAL
+    TestVector {
+        script_sig: &[H("01"), H("80"), N(0)],
+        script_pubkey: &[O(NUMEQUAL)],
+        flags: VerificationFlags::P2SH,
+        result: Ok(()),
+    },
+    // non-minimal-0 0 NUMEQUAL
+    TestVector {
+        script_sig: &[H("01"), H("00"), N(0)],
+        script_pubkey: &[O(NUMEQUAL)],
+        flags: VerificationFlags::P2SH,
+        result: Ok(()),
+    },
+    // non-minimal-0 0 NUMEQUAL
+    TestVector {
+        script_sig: &[H("02"), H("00"), H("00"), N(0)],
+        script_pubkey: &[O(NUMEQUAL)],
+        flags: VerificationFlags::P2SH,
         result: Ok(()),
     },
     TestVector {
@@ -1719,7 +1808,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             .union(VerificationFlags::DiscourageUpgradableNOPs),
         result: Ok(()),
     },
-    // opcodes above NOP10 invalid if executed
+    // opcodes above MAX_OPCODE invalid if executed
     TestVector {
         script_sig: &[N(0)],
         script_pubkey: &[O(IF), H("ba"), O(ELSE), N(1), O(ENDIF)],
@@ -2422,19 +2511,19 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
         result: Ok(()),
     },
     TestVector {
-        script_sig: &[N(549755813887)],
+        script_sig: &[H("05ffffffff7f")],
         script_pubkey: &[H("05"), H("FFFFFFFF7F"), O(EQUAL)],
         flags: DEFAULT_FLAGS,
         result: Ok(()),
     },
     TestVector {
-        script_sig: &[N(549755813888)],
+        script_sig: &[H("06000000008000")],
         script_pubkey: &[H("06"), H("FFFFFFFF7F"), O(EQUAL)],
         flags: DEFAULT_FLAGS,
         result: Ok(()),
     },
     TestVector {
-        script_sig: &[N(9223372036854775807)],
+        script_sig: &[H("08ffffffffffffff7f")],
         script_pubkey: &[H("08"), H("FFFFFFFFFFFFFF7F"), O(EQUAL)],
         flags: DEFAULT_FLAGS,
         result: Ok(()),
@@ -2501,19 +2590,19 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
         result: Ok(()),
     },
     TestVector {
-        script_sig: &[N(-549755813887)],
+        script_sig: &[H("05ffffffffff")],
         script_pubkey: &[H("05"), H("FFFFFFFFFF"), O(EQUAL)],
         flags: DEFAULT_FLAGS,
         result: Ok(()),
     },
     TestVector {
-        script_sig: &[N(-549755813888)],
+        script_sig: &[H("06000000008080")],
         script_pubkey: &[H("06"), H("000000008080"), O(EQUAL)],
         flags: DEFAULT_FLAGS,
         result: Ok(()),
     },
     TestVector {
-        script_sig: &[N(-9223372036854775807)],
+        script_sig: &[H("08ffffffffffffffff")],
         script_pubkey: &[H("08"), H("FFFFFFFFFFFFFFFF"), O(EQUAL)],
         flags: DEFAULT_FLAGS,
         result: Ok(()),
@@ -7564,10 +7653,72 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
     },
     TestVector {
         script_sig: &[N(1)],
+        script_pubkey: &[O(DUP), N(1), O(ADD), N(2), O(EQUALVERIFY), N(0), O(EQUAL)],
+        flags: DEFAULT_FLAGS,
+        result: Err(ScriptError::EvalFalse),
+    },
+    TestVector {
+        script_sig: &[O(NOP)],
+        script_pubkey: &[O(NIP)],
+        flags: DEFAULT_FLAGS,
+        result: Err(ScriptError::InvalidStackOperation),
+    },
+    TestVector {
+        script_sig: &[O(NOP)],
+        script_pubkey: &[N(1), O(NIP)],
+        flags: DEFAULT_FLAGS,
+        result: Err(ScriptError::InvalidStackOperation),
+    },
+    TestVector {
+        script_sig: &[O(NOP)],
+        script_pubkey: &[N(1), N(0), O(NIP)],
+        flags: DEFAULT_FLAGS,
+        result: Err(ScriptError::EvalFalse),
+    },
+    TestVector {
+        script_sig: &[O(NOP)],
+        script_pubkey: &[O(OVER), N(1)],
+        flags: DEFAULT_FLAGS,
+        result: Err(ScriptError::InvalidStackOperation),
+    },
+    TestVector {
+        script_sig: &[N(1)],
+        script_pubkey: &[O(OVER)],
+        flags: DEFAULT_FLAGS,
+        result: Err(ScriptError::InvalidStackOperation),
+    },
+    TestVector {
+        script_sig: &[N(0), N(1)],
+        script_pubkey: &[O(OVER), O(DEPTH), N(3), O(EQUALVERIFY)],
+        flags: DEFAULT_FLAGS,
+        result: Err(ScriptError::EvalFalse),
+    },
+    TestVector {
+        script_sig: &[N(19), N(20), N(21)],
+        script_pubkey: &[O(PICK), N(19), O(EQUALVERIFY), O(DEPTH), N(2), O(EQUAL)],
+        flags: DEFAULT_FLAGS,
+        result: Err(ScriptError::InvalidStackOperation),
+    },
+    TestVector {
+        script_sig: &[O(NOP)],
+        script_pubkey: &[N(0), O(PICK)],
+        flags: DEFAULT_FLAGS,
+        result: Err(ScriptError::InvalidStackOperation),
+    },
+    TestVector {
+        script_sig: &[N(1)],
         script_pubkey: &[N(2), N(3), O(_2SWAP), N(1)],
         flags: DEFAULT_FLAGS,
         result: Err(ScriptError::InvalidStackOperation),
     },
+    TestVector {
+        script_sig: &[O(NOP)],
+        script_pubkey: &[O(SIZE), N(1)],
+        flags: DEFAULT_FLAGS,
+        result: Err(ScriptError::InvalidStackOperation),
+    },
+    // TEST DISABLED OP CODES (CVE-2010-5137)
+
     // CAT disabled
     TestVector {
         script_sig: &[A("a"), A("b")],
@@ -7609,12 +7760,6 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
         script_pubkey: &[O(IF), O(disabled::RIGHT), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
         result: Err(ScriptError::DisabledOpcode),
-    },
-    TestVector {
-        script_sig: &[O(NOP)],
-        script_pubkey: &[O(SIZE), N(1)],
-        flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::InvalidStackOperation),
     },
     // INVERT disabled
     TestVector {
@@ -7936,12 +8081,6 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
     },
     TestVector {
         script_sig: &[N(1)],
-        script_pubkey: &[O(CHECKLOCKTIMEVERIFY)],
-        flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
-        result: Err(ScriptError::DiscourageUpgradableNOPs),
-    },
-    TestVector {
-        script_sig: &[N(1)],
         script_pubkey: &[O(NOP3)],
         flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
         result: Err(ScriptError::DiscourageUpgradableNOPs),
@@ -8014,7 +8153,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
         flags: DEFAULT_FLAGS,
         result: Err(ScriptError::BadOpcode),
     },
-    // opcodes above NOP10 invalid if executed
+    // opcodes above MAX_OPCODE invalid if executed
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("ba"), O(ELSE), N(1), O(ENDIF)],
@@ -8693,7 +8832,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
         flags: DEFAULT_FLAGS,
         result: Err(ScriptError::BadOpcode),
     },
-    // 0xba == OP_NOP10 + 1
+    // 0xba == MAX_OPCODE + 1
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[H("ba")],
@@ -10377,7 +10516,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
         flags: DEFAULT_FLAGS,
         result: Err(ScriptError::InvalidStackOperation),
     },
-    // Fails due to 201 sig op limit
+    // Fails due to 201 script operation limit
     TestVector {
         script_sig: &[],
         script_pubkey: &[
@@ -11748,6 +11887,30 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
         flags: VerificationFlags::P2SH,
         result: Err(ScriptError::EvalFalse),
     },
+    // P2SH(P2PKH)
+    TestVector {
+        script_sig: &[
+            H("47"),
+            H(
+                "30440220781ba4f59a7b207a10db87628bc2168df4d59b844b397d2dbc9a5835fb2f2b7602206ed8fbcc1072fe2dfc5bb25909269e5dc42ffcae7ec2bc81d59692210ff30c2b01",
+            ),
+            H("41"),
+            H(
+                "0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8",
+            ),
+            H("19"),
+            H("76a91491b24bf9f5288532960ac687abb035127b1d28a588ac"),
+        ],
+        script_pubkey: &[
+            O(HASH160),
+            H("14"),
+            H("7f67f0521934a57d3039f77f9f32cf313f3ac74b"),
+            O(EQUAL),
+        ],
+        flags: VerificationFlags::P2SH,
+        // FIXME: This should return `Ok(())`
+        result: Err(ScriptError::EvalFalse),
+    },
     // P2SH(P2PKH), bad sig but no VERIFY_P2SH
     TestVector {
         script_sig: &[
@@ -12034,6 +12197,18 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
         flags: EMPTY_FLAGS,
         result: Ok(()),
     },
+    // BIP66 example 4, with non-null DER-compliant signature
+    TestVector {
+        script_sig: &[H("09"), H("300602010102010101")],
+        script_pubkey: &[
+            H("21"),
+            H("038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508"),
+            O(CHECKSIG),
+            O(NOT),
+        ],
+        flags: EMPTY_FLAGS,
+        result: Ok(()),
+    },
     // BIP66 example 5
     TestVector {
         script_sig: &[N(1)],
@@ -12080,6 +12255,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             O(CHECKMULTISIG),
         ],
         flags: EMPTY_FLAGS,
+        // FIXME: Should this be returning `SigDER`?
         result: Err(ScriptError::EvalFalse),
     },
     // BIP66 example 8
