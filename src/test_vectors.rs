@@ -9434,7 +9434,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             O(ENDIF),
         ],
         flags: EMPTY_FLAGS,
-        result: Err(ScriptError::SigDER),
+        result: Err(ScriptError::SigDER(None)),
     },
     // 202 CHECKMULTISIGS, fails due to 201 op limit
     TestVector {
@@ -11771,7 +11771,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             O(NOT),
         ],
         flags: VerificationFlags::StrictEnc,
-        result: Err(ScriptError::SigDER),
+        result: Err(ScriptError::SigDER(None)),
     },
     // 2-of-3 with one valid and one invalid signature due to parse error, nSigs > validSigs
     TestVector {
@@ -11798,7 +11798,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             O(CHECKMULTISIG),
         ],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::SigDER),
+        result: Err(ScriptError::SigDER(None)),
     },
     // Increase DERSIG test coverage
 
@@ -11812,7 +11812,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
         ],
         script_pubkey: &[N(0), O(CHECKSIG), O(NOT)],
         flags: EMPTY_FLAGS,
-        result: Err(ScriptError::SigDER),
+        result: Err(ScriptError::SigDER(None)),
     },
     // Missing S is incorrectly encoded
     TestVector {
@@ -11822,7 +11822,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
         ],
         script_pubkey: &[N(0), O(CHECKSIG), O(NOT)],
         flags: EMPTY_FLAGS,
-        result: Err(ScriptError::SigDER),
+        result: Err(ScriptError::SigDER(None)),
     },
     // S with invalid S length is incorrectly encoded
     TestVector {
@@ -11832,7 +11832,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
         ],
         script_pubkey: &[N(0), O(CHECKSIG), O(NOT)],
         flags: EMPTY_FLAGS,
-        result: Err(ScriptError::SigDER),
+        result: Err(ScriptError::SigDER(None)),
     },
     // Non-integer R is incorrectly encoded
     TestVector {
@@ -11842,7 +11842,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
         ],
         script_pubkey: &[N(0), O(CHECKSIG), O(NOT)],
         flags: EMPTY_FLAGS,
-        result: Err(ScriptError::SigDER),
+        result: Err(ScriptError::SigDER(None)),
     },
     // Non-integer S is incorrectly encoded
     TestVector {
@@ -11852,21 +11852,21 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
         ],
         script_pubkey: &[N(0), O(CHECKSIG), O(NOT)],
         flags: EMPTY_FLAGS,
-        result: Err(ScriptError::SigDER),
+        result: Err(ScriptError::SigDER(None)),
     },
     // Zero-length R is incorrectly encoded
     TestVector {
         script_sig: &[H("17"), H("3014020002107777777777777777777777777777777701")],
         script_pubkey: &[N(0), O(CHECKSIG), O(NOT)],
         flags: EMPTY_FLAGS,
-        result: Err(ScriptError::SigDER),
+        result: Err(ScriptError::SigDER(None)),
     },
     // Zero-length S is incorrectly encoded
     TestVector {
         script_sig: &[H("17"), H("3014021077777777777777777777777777777777020001")],
         script_pubkey: &[N(0), O(CHECKSIG), O(NOT)],
         flags: EMPTY_FLAGS,
-        result: Err(ScriptError::SigDER),
+        result: Err(ScriptError::SigDER(None)),
     },
     // Negative S is incorrectly encoded
     TestVector {
@@ -11876,7 +11876,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
         ],
         script_pubkey: &[N(0), O(CHECKSIG), O(NOT)],
         flags: EMPTY_FLAGS,
-        result: Err(ScriptError::SigDER),
+        result: Err(ScriptError::SigDER(None)),
     },
     // Automatically generated test cases
 
@@ -12222,7 +12222,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             O(CHECKSIG),
         ],
         flags: EMPTY_FLAGS,
-        result: Err(ScriptError::SigDER),
+        result: Err(ScriptError::SigDER(None)),
     },
     // P2PK with too much S padding
     TestVector {
@@ -12238,7 +12238,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             O(CHECKSIG),
         ],
         flags: EMPTY_FLAGS,
-        result: Err(ScriptError::SigDER),
+        result: Err(ScriptError::SigDER(None)),
     },
     // P2PK with too little R padding
     TestVector {
@@ -12254,7 +12254,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             O(CHECKSIG),
         ],
         flags: EMPTY_FLAGS,
-        result: Err(ScriptError::SigDER),
+        result: Err(ScriptError::SigDER(None)),
     },
     // P2PK NOT with bad sig with too much R padding
     TestVector {
@@ -12271,7 +12271,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             O(NOT),
         ],
         flags: EMPTY_FLAGS,
-        result: Err(ScriptError::SigDER),
+        result: Err(ScriptError::SigDER(None)),
     },
     // P2PK NOT with too much R padding
     TestVector {
@@ -12288,7 +12288,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             O(NOT),
         ],
         flags: EMPTY_FLAGS,
-        result: Err(ScriptError::SigDER),
+        result: Err(ScriptError::SigDER(None)),
     },
     // BIP66 example 1
     TestVector {
@@ -12304,7 +12304,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             O(CHECKSIG),
         ],
         flags: EMPTY_FLAGS,
-        result: Err(ScriptError::SigDER),
+        result: Err(ScriptError::SigDER(None)),
     },
     // BIP66 example 2
     TestVector {
@@ -12321,7 +12321,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             O(NOT),
         ],
         flags: EMPTY_FLAGS,
-        result: Err(ScriptError::SigDER),
+        result: Err(ScriptError::SigDER(None)),
     },
     // BIP66 example 3
     TestVector {
@@ -12367,7 +12367,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             O(CHECKSIG),
         ],
         flags: EMPTY_FLAGS,
-        result: Err(ScriptError::SigDER),
+        result: Err(ScriptError::SigDER(None)),
     },
     // BIP66 example 6
     TestVector {
@@ -12379,7 +12379,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             O(NOT),
         ],
         flags: EMPTY_FLAGS,
-        result: Err(ScriptError::SigDER),
+        result: Err(ScriptError::SigDER(None)),
     },
     // BIP66 example 7
     TestVector {
@@ -12404,7 +12404,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             O(CHECKMULTISIG),
         ],
         flags: EMPTY_FLAGS,
-        // FIXME: Should this be returning `SigDER`?
+        // FIXME: Should this be returning `SigDER(None)`?
         result: Err(ScriptError::EvalFalse),
     },
     // BIP66 example 8
@@ -12454,7 +12454,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             O(CHECKMULTISIG),
         ],
         flags: EMPTY_FLAGS,
-        result: Err(ScriptError::SigDER),
+        result: Err(ScriptError::SigDER(None)),
     },
     // BIP66 example 10
     TestVector {
@@ -12477,7 +12477,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             O(NOT),
         ],
         flags: EMPTY_FLAGS,
-        result: Err(ScriptError::SigDER),
+        result: Err(ScriptError::SigDER(None)),
     },
     // BIP66 example 11
     TestVector {
@@ -12538,7 +12538,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             O(CHECKSIG),
         ],
         flags: EMPTY_FLAGS,
-        result: Err(ScriptError::SigDER),
+        result: Err(ScriptError::SigDER(None)),
     },
     // P2PK with high S but no LOW_S
     TestVector {
@@ -12793,7 +12793,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             O(CHECKSIG),
         ],
         flags: VerificationFlags::StrictEnc,
-        result: Err(ScriptError::SigHashType),
+        result: Err(ScriptError::SigHashType(None)),
     },
     // P2PK NOT with invalid sig and undefined hashtype but no STRICTENC
     TestVector {
@@ -12831,7 +12831,7 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             O(NOT),
         ],
         flags: VerificationFlags::StrictEnc,
-        result: Err(ScriptError::SigHashType),
+        result: Err(ScriptError::SigHashType(None)),
     },
     // 3-of-3 with nonzero dummy but no NULLDUMMY
     TestVector {
