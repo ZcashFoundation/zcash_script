@@ -1,5 +1,3 @@
 [toolchain]
-# TODO: C++ linking on Linux broke in 1.82, but is fixed again in 1.85. This can be bumped once that
-#       is released.
-channel = "1.81"
+channel = "stable"
 components = ["clippy", "rustfmt"]
