@@ -23,14 +23,13 @@ use std::os::raw::{c_int, c_uint, c_void};
 
 use tracing::warn;
 
-pub use interpreter::{
+use interpreter::{
     CallbackTransactionSignatureChecker, DefaultStepEvaluator, SighashCalculator, VerificationFlags,
 };
 use script_error::ScriptError;
 use signature::HashType;
 pub use zcash_script::{
-    rust_interpreter, stepwise_verify, ComparisonStepEvaluator, Error, StepResults,
-    StepwiseInterpreter, ZcashScript,
+    rust_interpreter, ComparisonStepEvaluator, Error, StepResults, StepwiseInterpreter, ZcashScript,
 };
 
 pub struct CxxInterpreter<'a> {
@@ -206,6 +205,9 @@ fn check_legacy_sigop_count_script<T: ZcashScript, U: ZcashScript>(
     )
 }
 
+// FIXME: This shouldn’t be public, but is currently used by both `ZcashScript for
+//        ComparisonInterpreter` and the fuzz tests, so it can’t easily be non-`pub` or moved to
+//        `testing`.
 /// Runs two implementations of `ZcashScript::verify_callback` with the same arguments and returns
 /// both results. This is more useful for testing than the impl that logs a warning if the results
 /// differ and always returns the `T` result.

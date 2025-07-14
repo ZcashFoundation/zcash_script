@@ -126,7 +126,7 @@ pub struct Stack<T>(Vec<T>);
 /// Wraps a Vec (or whatever underlying implementation we choose in a way that matches the C++ impl
 /// and provides us some decent chaining)
 impl<T: Clone> Stack<T> {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Stack(vec![])
     }
 
@@ -139,58 +139,58 @@ impl<T: Clone> Stack<T> {
         }
     }
 
-    pub fn rget(&self, i: usize) -> Result<&T, ScriptError> {
+    fn rget(&self, i: usize) -> Result<&T, ScriptError> {
         let idx = self.rindex(i)?;
         self.0.get(idx).ok_or(ScriptError::InvalidStackOperation)
     }
 
-    pub fn rswap(&mut self, a: usize, b: usize) -> Result<(), ScriptError> {
+    fn rswap(&mut self, a: usize, b: usize) -> Result<(), ScriptError> {
         let ra = self.rindex(a)?;
         let rb = self.rindex(b)?;
         self.0.swap(ra, rb);
         Ok(())
     }
 
-    pub fn pop(&mut self) -> Result<T, ScriptError> {
+    fn pop(&mut self) -> Result<T, ScriptError> {
         self.0.pop().ok_or(ScriptError::InvalidStackOperation)
     }
 
-    pub fn push(&mut self, value: T) {
+    fn push(&mut self, value: T) {
         self.0.push(value)
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.0.len()
     }
 
-    pub fn iter(&self) -> Iter<'_, T> {
+    fn iter(&self) -> Iter<'_, T> {
         self.0.iter()
     }
 
-    pub fn last_mut(&mut self) -> Result<&mut T, ScriptError> {
+    fn last_mut(&mut self) -> Result<&mut T, ScriptError> {
         self.0.last_mut().ok_or(ScriptError::InvalidStackOperation)
     }
 
-    pub fn last(&self) -> Result<&T, ScriptError> {
+    fn last(&self) -> Result<&T, ScriptError> {
         self.0.last().ok_or(ScriptError::InvalidStackOperation)
     }
 
-    pub fn split_last(&self) -> Result<(&T, Stack<T>), ScriptError> {
+    fn split_last(&self) -> Result<(&T, Stack<T>), ScriptError> {
         self.0
             .split_last()
             .ok_or(ScriptError::InvalidStackOperation)
             .map(|(last, rem)| (last, Stack(rem.to_vec())))
     }
 
-    pub fn rremove(&mut self, start: usize) -> Result<T, ScriptError> {
+    fn rremove(&mut self, start: usize) -> Result<T, ScriptError> {
         self.rindex(start).map(|rstart| self.0.remove(rstart))
     }
 
-    pub fn rinsert(&mut self, i: usize, element: T) -> Result<(), ScriptError> {
+    fn rinsert(&mut self, i: usize, element: T) -> Result<(), ScriptError> {
         let ri = self.rindex(i)?;
         self.0.insert(ri, element);
         Ok(())
@@ -369,7 +369,7 @@ impl State {
 ///
 /// This is useful for testing & debugging, as we can set up the exact state we want in order to
 /// trigger some behavior.
-pub fn eval_step<'a>(
+fn eval_step<'a>(
     pc: &'a [u8],
     script: &Script,
     flags: VerificationFlags,
@@ -1027,8 +1027,8 @@ pub trait StepFn {
 /// Produces the default stepper, which carries no payload and runs the script as before.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct DefaultStepEvaluator<C> {
-    pub flags: VerificationFlags,
-    pub checker: C,
+    pub(crate) flags: VerificationFlags,
+    pub(crate) checker: C,
 }
 
 impl<C: SignatureChecker + Copy> StepFn for DefaultStepEvaluator<C> {
@@ -1044,7 +1044,7 @@ impl<C: SignatureChecker + Copy> StepFn for DefaultStepEvaluator<C> {
     }
 }
 
-pub fn eval_script<F>(
+fn eval_script<F>(
     stack: Stack<Vec<u8>>,
     script: &Script,
     payload: &mut F::Payload,
@@ -1167,7 +1167,7 @@ where
     }
 }
 
-pub fn verify_script<F>(
+pub(crate) fn verify_script<F>(
     script_sig: &Script,
     script_pub_key: &Script,
     flags: VerificationFlags,

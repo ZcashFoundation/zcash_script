@@ -65,7 +65,9 @@ pub trait ZcashScript {
     fn legacy_sigop_count_script(&self, script: &[u8]) -> Result<u32, Error>;
 }
 
-pub fn stepwise_verify<F>(
+// NB: This is extracted from [StepwiseInterpreter::verify_callback] to be used in tests. The public
+//     API gives no access to the payload.
+fn stepwise_verify<F>(
     script_pub_key: &[u8],
     script_sig: &[u8],
     flags: VerificationFlags,
@@ -91,15 +93,15 @@ pub struct StepResults<T, U> {
     /// This contains the step-wise states of the steppers as long as they were identical. Its
     /// `head` contains the initial state and its `tail` has a 1:1 correspondence to the opcodes
     /// (not to the bytes).
-    pub identical_states: Vec<State>,
+    identical_states: Vec<State>,
     /// If the execution matched the entire way, then this contains `None`. If there was a
     /// divergence, then this contains `Some` with a pair of `Result`s – one representing each
     /// stepper’s outcome at the point at which they diverged.
-    pub diverging_result: Option<(Result<State, ScriptError>, Result<State, ScriptError>)>,
+    diverging_result: Option<(Result<State, ScriptError>, Result<State, ScriptError>)>,
     /// The final payload of the first stepper.
-    pub payload_l: T,
+    payload_l: T,
     /// The final payload of the second stepper.
-    pub payload_r: U,
+    payload_r: U,
 }
 
 impl<T, U> StepResults<T, U> {
@@ -190,10 +192,7 @@ pub fn rust_interpreter<C: SignatureChecker + Copy>(
     flags: VerificationFlags,
     checker: C,
 ) -> StepwiseInterpreter<DefaultStepEvaluator<C>> {
-    StepwiseInterpreter {
-        initial_payload: (),
-        stepper: DefaultStepEvaluator { flags, checker },
-    }
+    StepwiseInterpreter::new((), DefaultStepEvaluator { flags, checker })
 }
 
 impl<F: StepFn> ZcashScript for StepwiseInterpreter<F> {
@@ -335,13 +334,11 @@ mod tests {
                 payload_l: (),
                 payload_r: (),
             } => {
-                assert!(
-                    identical_states.len() == 6
-                        && state.stack().len() == 4
-                        && state.altstack().is_empty()
-                        && state.op_count() == 2
-                        && state.vexec().is_empty()
-                );
+                assert_eq!(identical_states.len(), 6);
+                assert_eq!(state.stack().len(), 4);
+                assert!(state.altstack().is_empty());
+                assert_eq!(state.op_count(), 2);
+                assert!(state.vexec().is_empty());
             }
             _ => {
                 panic!("invalid result: {:?}", res);
