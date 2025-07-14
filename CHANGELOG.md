@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+- `Stack` operations have been renamed (#222)
+  - `top` → `rget`
+  - `swap` → `rswap`
+  - `push_back` → `push`
+  - `empty` → `is_empty`
+  - `size` → `len`
+  - `back` → `last_mut`
+  - `erase` → `rremove`
+  - `insert` → `rinsert`
+  - `end` → removed
+
 ## [0.3.2](https://github.com/ZcashFoundation/zcash_script/compare/v0.3.1...v0.3.2) - 2025-06-24
 
 - bump secp256k1 back to 0.29 (#234)
