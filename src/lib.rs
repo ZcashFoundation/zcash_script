@@ -15,7 +15,7 @@ mod script;
 pub mod script_error;
 mod zcash_script;
 
-#[cfg(any(test, feature = "test-dependencies"))]
+#[cfg(test)]
 mod test_vectors;
 
 use std::os::raw::{c_int, c_uint, c_void};
@@ -304,8 +304,6 @@ pub mod testing {
         interpreter::{State, StepFn, VerificationFlags},
         script::{self, Operation, Script},
         script_error::ScriptError,
-        test_vectors::TestVector,
-        Error,
     };
 
     /// Ensures that flags represent a supported state. This avoids crashes in the C++ code, which
@@ -349,28 +347,6 @@ pub mod testing {
             )
         }
     }
-
-    pub(crate) fn run_test_vector(
-        tv: &TestVector,
-        f: &dyn Fn(&[u8], &[u8], VerificationFlags) -> Result<(), Error>,
-    ) -> () {
-        match tv.run(&|sig, pubkey, flags| match f(sig, pubkey, flags) {
-            Ok(()) => Ok(()),
-            Err(Error::Ok(err)) => Err(err),
-            Err(err) => panic!("failed in a very bad way: {:?}", err),
-        }) {
-            Ok(()) => (),
-            Err(actual) => {
-                panic!(
-                    "{:?} didn’t match the result in
-
-    {:?}
-",
-                    actual, tv
-                );
-            }
-        }
-    }
 }
 
 #[cfg(test)]
@@ -380,8 +356,8 @@ mod tests {
 
     use super::{
         check_verify_callback, normalize_error, rust_interpreter,
-        test_vectors::TEST_VECTORS,
-        testing::{repair_flags, run_test_vector, OVERFLOW_SCRIPT_SIZE},
+        test_vectors::{TestVector, TEST_VECTORS},
+        testing::{repair_flags, OVERFLOW_SCRIPT_SIZE},
         CxxInterpreter, Error, ZcashScript,
     };
     use crate::{
@@ -498,6 +474,28 @@ mod tests {
 
         assert_eq!(ret.0, ret.1.map_err(normalize_error));
         assert_eq!(ret.0, Err(Error::Ok(ScriptError::EvalFalse)));
+    }
+
+    fn run_test_vector(
+        tv: &TestVector,
+        f: &dyn Fn(&[u8], &[u8], VerificationFlags) -> Result<(), Error>,
+    ) -> () {
+        match tv.run(&|sig, pubkey, flags| match f(sig, pubkey, flags) {
+            Ok(()) => Ok(()),
+            Err(Error::Ok(err)) => Err(err),
+            Err(err) => panic!("failed in a very bad way: {:?}", err),
+        }) {
+            Ok(()) => (),
+            Err(actual) => {
+                panic!(
+                    "{:?} didn’t match the result in
+
+    {:?}
+",
+                    actual, tv
+                );
+            }
+        }
     }
 
     #[test]
