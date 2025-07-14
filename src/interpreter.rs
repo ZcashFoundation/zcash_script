@@ -7,9 +7,16 @@ use ripemd::Ripemd160;
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
 
-use super::external::pubkey::PubKey;
-use super::script::{Operation::*, PushValue::*, *};
-use super::script_error::*;
+use crate::{
+    external::pubkey::PubKey,
+    script::{
+        parse_num, serialize_num, Opcode,
+        Operation::*,
+        PushValue::{self, *},
+        Script, LOCKTIME_THRESHOLD, MAX_SCRIPT_ELEMENT_SIZE, MAX_SCRIPT_SIZE,
+    },
+    script_error::ScriptError,
+};
 
 /// The ways in which a transparent input may commit to the transparent outputs of its
 /// transaction.

@@ -27,7 +27,10 @@ pub use interpreter::{
     SignedOutputs, VerificationFlags,
 };
 use script_error::ScriptError;
-pub use zcash_script::*;
+pub use zcash_script::{
+    rust_interpreter, stepwise_verify, ComparisonStepEvaluator, Error, StepResults,
+    StepwiseInterpreter, ZcashScript,
+};
 
 pub struct CxxInterpreter<'a> {
     pub sighash: SighashCalculator<'a>,
@@ -295,11 +298,12 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U>
 
 #[cfg(any(test, feature = "test-dependencies"))]
 pub mod testing {
-    use super::*;
     use crate::{
-        interpreter::{State, StepFn},
-        script::{Operation, Script},
+        interpreter::{State, StepFn, VerificationFlags},
+        script::{self, Operation, Script},
+        script_error::ScriptError,
         test_vectors::TestVector,
+        Error,
     };
 
     /// Ensures that flags represent a supported state. This avoids crashes in the C++ code, which
@@ -369,10 +373,19 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
-    use super::{testing::*, *};
-    use crate::test_vectors::TEST_VECTORS;
     use hex::FromHex;
-    use proptest::prelude::*;
+    use proptest::prelude::{prop, prop_assert_eq, proptest, ProptestConfig};
+
+    use super::{
+        check_verify_callback, normalize_error, rust_interpreter,
+        test_vectors::TEST_VECTORS,
+        testing::{repair_flags, run_test_vector, OVERFLOW_SCRIPT_SIZE},
+        CxxInterpreter, Error, ZcashScript,
+    };
+    use crate::{
+        interpreter::{CallbackTransactionSignatureChecker, HashType, VerificationFlags},
+        script_error::ScriptError,
+    };
 
     lazy_static::lazy_static! {
         pub static ref SCRIPT_PUBKEY: Vec<u8> = <Vec<u8>>::from_hex("a914c117756dcbe144a12a7c33a77cfa81aa5aeeb38187").unwrap();
