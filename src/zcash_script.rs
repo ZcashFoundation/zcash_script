@@ -2,9 +2,13 @@ use std::num::TryFromIntError;
 
 use thiserror::Error;
 
-use super::interpreter::*;
-use super::script::*;
-use super::script_error::*;
+use crate::{
+    interpreter::{
+        verify_script, DefaultStepEvaluator, SignatureChecker, State, StepFn, VerificationFlags,
+    },
+    script::Script,
+    script_error::ScriptError,
+};
 
 /// This maps to `zcash_script_error_t`, but most of those cases aren’t used any more. This only
 /// replicates the still-used cases, and then an `Unknown` bucket for anything else that might
@@ -219,10 +223,18 @@ impl<F: StepFn> ZcashScript for StepwiseInterpreter<F> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{signature::HashType, testing::*};
     use hex::FromHex;
-    use proptest::prelude::*;
+    use proptest::prelude::{prop, proptest, ProptestConfig};
+
+    use super::{stepwise_verify, ComparisonStepEvaluator, Error, StepResults};
+    use crate::{
+        interpreter::{
+            CallbackTransactionSignatureChecker, DefaultStepEvaluator, VerificationFlags,
+        },
+        script_error::ScriptError,
+        signature::HashType,
+        testing::{repair_flags, BrokenStepEvaluator, OVERFLOW_SCRIPT_SIZE},
+    };
 
     lazy_static::lazy_static! {
         pub static ref SCRIPT_PUBKEY: Vec<u8> = <Vec<u8>>::from_hex("a914c117756dcbe144a12a7c33a77cfa81aa5aeeb38187").unwrap();

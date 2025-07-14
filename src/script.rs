@@ -2,7 +2,7 @@
 
 use enum_primitive::FromPrimitive;
 
-use super::script_error::*;
+use super::script_error::{ScriptError, ScriptNumError};
 
 pub const MAX_SCRIPT_ELEMENT_SIZE: usize = 520; // bytes
 
