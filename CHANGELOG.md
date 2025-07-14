@@ -8,16 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
-- `Stack` operations have been renamed (#222)
-  - `top` → `rget`
-  - `swap` → `rswap`
-  - `push_back` → `push`
-  - `empty` → `is_empty`
-  - `size` → `len`
-  - `back` → `last_mut`
-  - `erase` → `rremove`
-  - `insert` → `rinsert`
-  - `end` → removed
+- removed re-exports from `interpreter`, these can still be accessed via
+  `interpreter::` and if they make more sense elsewhere, they should be moved
+  - `CallbackTransactionSignatureChecker`,
+  - `DefaultStepEvaluator`,
+  - `HashType`,
+  - `SignedOutputs`, and
+  - `VerificationFlags`;
+- removed access to some internals
+  - `CallbackTransactionSignatureChecker::verify_signature`,
+  - `DefaultStepEvaluator` fields,
+  - `HashType::from_bits`,
+  - `Stack` operations,
+  - `StepResults` fields,
+  - `interpreter::eval_script`,
+  - `interpreter::eval_step`,
+  - `interpreter::verify_script`, and
+  - `stepwise_verify`.
 
 ## [0.3.2](https://github.com/ZcashFoundation/zcash_script/compare/v0.3.1...v0.3.2) - 2025-06-24
 
