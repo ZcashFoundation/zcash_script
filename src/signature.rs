@@ -115,6 +115,10 @@ pub struct HashType {
 impl HashType {
     /// Construct a `HashType` from bit flags.
     ///
+    /// __TODO__: Even though the hash type is represented by a single byte, this takes `bits` as
+    ///           `i32` for compatibility with the C++ API. Once that is removed, this should also
+    ///           become `u8`.
+    ///
     /// ## Consensus rules
     ///
     /// [§4.10](https://zips.z.cash/protocol/protocol.pdf#sighash):
