@@ -12,6 +12,8 @@ use super::script::{Control::*, Normal::*, *};
 use super::script_error::*;
 use crate::signature;
 
+const MAX_OP_COUNT: u8 = 201;
+
 bitflags::bitflags! {
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
     /// Script verification flags
@@ -375,7 +377,7 @@ fn eval_opcode(
         Opcode::Operation(op) => {
             // Note how OP_RESERVED does not count towards the opcode limit.
             *op_count += 1;
-            if *op_count <= 201 {
+            if *op_count <= MAX_OP_COUNT {
                 match op {
                     Operation::Control(control) => eval_control(control, stack, vexec),
                     Operation::Normal(normal) => {
@@ -921,9 +923,9 @@ fn eval_operation(
             if keys_count > 20 {
                 return Err(ScriptError::PubKeyCount);
             };
-            assert!(*op_count <= 201);
+            assert!(*op_count <= MAX_OP_COUNT);
             *op_count += keys_count;
-            if *op_count > 201 {
+            if *op_count > MAX_OP_COUNT {
                 return Err(ScriptError::OpCount);
             };
             i += 1;
