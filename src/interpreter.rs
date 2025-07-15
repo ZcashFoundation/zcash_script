@@ -4,71 +4,13 @@ use std::{
 };
 
 use ripemd::Ripemd160;
-use secp256k1::ecdsa;
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
 
 use super::external::pubkey::PubKey;
 use super::script::{Operation::*, PushValue::*, *};
 use super::script_error::*;
-
-/// The ways in which a transparent input may commit to the transparent outputs of its
-/// transaction.
-///
-/// Note that:
-/// - Transparent inputs always commit to all shielded outputs.
-/// - Shielded inputs always commit to all outputs.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum SignedOutputs {
-    /// The input signature commits to all transparent outputs in the transaction.
-    All,
-    /// The transparent input's signature commits to the transparent output at the same
-    /// index as the transparent input.
-    ///
-    /// If the specified transparent output along with any shielded outputs only consume
-    /// part of this input, anyone is permitted to modify the transaction to claim the
-    /// remainder.
-    Single,
-    /// The transparent input's signature does not commit to any transparent outputs.
-    ///
-    /// If the shielded outputs only consume part (or none) of this input, anyone is
-    /// permitted to modify the transaction to claim the remainder.
-    None,
-}
-
-/// The different SigHash types, as defined in <https://zips.z.cash/zip-0143>
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct HashType {
-    pub signed_outputs: SignedOutputs,
-    /// Allows anyone to add transparent inputs to this transaction.
-    pub anyone_can_pay: bool,
-}
-
-impl HashType {
-    /// Construct a `HashType` from bit flags.
-    ///
-    /// ## Consensus rules
-    ///
-    /// [§4.10](https://zips.z.cash/protocol/protocol.pdf#sighash):
-    /// - Any `HashType` in a v5 transaction must have no undefined bits set.
-    pub fn from_bits(bits: i32, is_strict: bool) -> Result<Self, InvalidHashType> {
-        let unknown_bits = (bits | 0x83) ^ 0x83;
-        if is_strict && unknown_bits != 0 {
-            Err(InvalidHashType::ExtraBitsSet(unknown_bits))
-        } else {
-            let msigned_outputs = match (bits & 2 != 0, bits & 1 != 0) {
-                (false, false) => Err(InvalidHashType::UnknownSignedOutputs),
-                (false, true) => Ok(SignedOutputs::All),
-                (true, false) => Ok(SignedOutputs::None),
-                (true, true) => Ok(SignedOutputs::Single),
-            };
-            msigned_outputs.map(|signed_outputs| HashType {
-                signed_outputs,
-                anyone_can_pay: bits & 0x80 != 0,
-            })
-        }
-    }
-}
+use crate::signature;
 
 bitflags::bitflags! {
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -127,7 +69,7 @@ bitflags::bitflags! {
 pub trait SignatureChecker {
     fn check_sig(
         &self,
-        _script_sig: &Signature,
+        _script_sig: &signature::Decoded,
         _vch_pub_key: &[u8],
         _script_code: &Script,
     ) -> bool {
@@ -256,89 +198,6 @@ fn is_compressed_or_uncompressed_pub_key(vch_pub_key: &[u8]) -> bool {
     }
 }
 
-#[derive(Clone)]
-pub struct Signature {
-    sig: ecdsa::Signature,
-    sighash: HashType,
-}
-
-/**
- * A canonical signature consists of: <30> <total len> <02> <len R> <R> <02> <len S> <S>
- * Where R and S are not negative (their first byte has its highest bit not set), and not
- * excessively padded (do not start with a 0 byte, unless an otherwise negative number follows,
- * in which case a single 0 byte is necessary and even required).
- *
- * See https://bitcointalk.org/index.php?topic=8392.msg127623#msg127623
- *
- * This function is consensus-critical since BIP66.
- *
- * Most of these checks are handled by `ecdsa::Signature::from_der`, except that it doesn’t check
- * for negative R and S elements. So this precesses just enough of the vector to make up that
- * difference.
- */
-fn is_valid_signature_encoding(sig: &[u8]) -> bool {
-    // Format: 0x30 [total-length] 0x02 [R-length] [R] 0x02 [S-length] [S]
-    // * total-length: 1-byte length descriptor of everything that follows
-    // * R-length: 1-byte length descriptor of the R value that follows.
-    // * R: arbitrary-length big-endian encoded R value. It must use the shortest
-    //   possible encoding for a positive integer (which means no null bytes at
-    //   the start, except a single one when the next byte has its highest bit set).
-    // * S-length: 1-byte length descriptor of the S value that follows.
-    // * S: arbitrary-length big-endian encoded S value. The same rules apply.
-
-    if sig.len() > 4 {
-        // Negative numbers are not allowed for R.
-        if sig[4] & 0x80 != 0 {
-            return false;
-        };
-
-        let len_r = usize::from(sig[3]);
-        // Make sure the length of the S element is still inside the signature.
-        if 6 + len_r < sig.len() {
-            // Negative numbers are not allowed for S.
-            sig[6 + len_r] & 0x80 == 0
-        } else {
-            false
-        }
-    } else {
-        false
-    }
-}
-
-/// This decodes an ECDSA signature and Zcash hash type from bytes. It ensures that the encoding was
-/// valid.
-///
-/// __NB__: An empty signature is not strictly DER encoded, but will result in `Ok(None)` as a
-///         compact way to provide an invalid signature for use with CHECK(MULTI)SIG.
-fn decode_signature(
-    vch_sig_in: &[u8],
-    require_low_s: bool,
-    is_strict: bool,
-) -> Result<Option<Signature>, ScriptError> {
-    match vch_sig_in.split_last() {
-        None => Ok(None),
-        Some((hash_type, vch_sig)) => {
-            if is_valid_signature_encoding(vch_sig) {
-                Ok(Some(Signature {
-                    sig: ecdsa::Signature::from_der(vch_sig)
-                        .map_err(|e| ScriptError::SigDER(Some(e)))
-                        .and_then(|sig| {
-                            if require_low_s && !PubKey::check_low_s(&sig) {
-                                Err(ScriptError::SigHighS)
-                            } else {
-                                Ok(sig)
-                            }
-                        })?,
-                    sighash: HashType::from_bits((*hash_type).into(), is_strict)
-                        .map_err(|e| ScriptError::SigHashType(Some(e)))?,
-                }))
-            } else {
-                Err(ScriptError::SigDER(None))
-            }
-        }
-    }
-}
-
 fn check_pub_key_encoding(vch_sig: &[u8], flags: VerificationFlags) -> Result<(), ScriptError> {
     if flags.contains(VerificationFlags::StrictEnc)
         && !is_compressed_or_uncompressed_pub_key(vch_sig)
@@ -380,11 +239,12 @@ fn is_sig_valid(
 ) -> Result<bool, ScriptError> {
     // Note how this makes the exact order of pubkey/signature evaluation distinguishable by
     // CHECKMULTISIG NOT if the STRICTENC flag is set. See the script_(in)valid tests for details.
-    decode_signature(
+    signature::Decoded::from_bytes(
         vch_sig,
         flags.contains(VerificationFlags::LowS),
         flags.contains(VerificationFlags::StrictEnc),
     )
+    .map_err(ScriptError::SignatureEncoding)
     .and_then(|sig| {
         check_pub_key_encoding(vch_pub_key, flags)
             .map(|()| sig.map_or(false, |sig0| checker.check_sig(&sig0, vch_pub_key, script)))
@@ -1213,15 +1073,21 @@ pub const SIGHASH_SIZE: usize = 32;
 ///
 /// The `extern "C"` function that calls this doesn’t give much opportunity for rich failure
 /// reporting, but returning `None` indicates _some_ failure to produce the desired hash.
-pub type SighashCalculator<'a> = &'a dyn Fn(&[u8], HashType) -> Option<[u8; SIGHASH_SIZE]>;
+pub type SighashCalculator<'a> =
+    &'a dyn Fn(&[u8], &signature::HashType) -> Option<[u8; SIGHASH_SIZE]>;
 
 impl SignatureChecker for CallbackTransactionSignatureChecker<'_> {
-    fn check_sig(&self, sig: &Signature, vch_pub_key: &[u8], script_code: &Script) -> bool {
+    fn check_sig(
+        &self,
+        sig: &signature::Decoded,
+        vch_pub_key: &[u8],
+        script_code: &Script,
+    ) -> bool {
         let pubkey = PubKey(vch_pub_key);
 
         pubkey.is_valid()
-            && (self.sighash)(script_code.0, sig.sighash)
-                .map(|sighash| pubkey.verify(&sighash, &sig.sig))
+            && (self.sighash)(script_code.0, sig.sighash())
+                .map(|sighash| pubkey.verify(&sighash, sig.sig()))
                 .unwrap_or(false)
     }
 

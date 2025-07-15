@@ -4,9 +4,9 @@ use libfuzzer_sys::fuzz_target;
 extern crate zcash_script;
 
 use zcash_script::interpreter::CallbackTransactionSignatureChecker;
-use zcash_script::*;
+use zcash_script::{signature::HashType, *};
 
-fn missing_sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
+fn missing_sighash(_script_code: &[u8], _hash_type: &HashType) -> Option<[u8; 32]> {
     None
 }
 
