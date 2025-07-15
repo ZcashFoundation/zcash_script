@@ -159,28 +159,6 @@ pub enum Control {
     OP_VERNOTIF = 0x66,
     OP_ELSE = 0x67,
     OP_ENDIF = 0x68,
-
-    // splice ops
-    OP_CAT = 0x7e,
-    OP_SUBSTR = 0x7f,
-    OP_LEFT = 0x80,
-    OP_RIGHT = 0x81,
-        // bit logic
-    OP_INVERT = 0x83,
-    OP_AND = 0x84,
-    OP_OR = 0x85,
-    OP_XOR = 0x86,
-    // numeric
-    OP_2MUL = 0x8d,
-    OP_2DIV = 0x8e,
-    OP_MUL = 0x95,
-    OP_DIV = 0x96,
-    OP_MOD = 0x97,
-    OP_LSHIFT = 0x98,
-    OP_RSHIFT = 0x99,
-
-    //crypto
-    OP_CODESEPARATOR = 0xab,
 }
 }
 
@@ -437,6 +415,41 @@ pub fn serialize_num(value: i64) -> Vec<u8> {
     result
 }
 
+enum_from_primitive! {
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[repr(u8)]
+pub enum Disabled {
+    // splice ops
+    OP_CAT = 0x7e,
+    OP_SUBSTR = 0x7f,
+    OP_LEFT = 0x80,
+    OP_RIGHT = 0x81,
+    // bit logic
+    OP_INVERT = 0x83,
+    OP_AND = 0x84,
+    OP_OR = 0x85,
+    OP_XOR = 0x86,
+    // numeric
+    OP_2MUL = 0x8d,
+    OP_2DIV = 0x8e,
+    OP_MUL = 0x95,
+    OP_DIV = 0x96,
+    OP_MOD = 0x97,
+    OP_LSHIFT = 0x98,
+    OP_RSHIFT = 0x99,
+
+    //crypto
+    OP_CODESEPARATOR = 0xab,
+}
+}
+
+impl From<Disabled> for u8 {
+    fn from(value: Disabled) -> Self {
+        // This is how you get the discriminant, but using `as` everywhere is too much code smell
+        value as u8
+    }
+}
+
 /** Serialized script, used inside transaction inputs and outputs */
 #[derive(Clone, Debug)]
 pub struct Script<'a>(pub &'a [u8]);
@@ -509,13 +522,15 @@ impl Script<'_> {
                         expected_bytes: 1,
                         available_bytes: 0,
                     }),
-                    Some((leading_byte, script)) => Ok((
-                        SmallValue::from_u8(*leading_byte)
-                            .map_or(Opcode::Operation(Operation::from(*leading_byte)), |sv| {
-                                Opcode::PushValue(PushValue::SmallValue(sv))
-                            }),
-                        script,
-                    )),
+                    Some((leading_byte, script)) => SmallValue::from_u8(*leading_byte)
+                        .map_or(
+                            Disabled::from_u8(*leading_byte).map_or(
+                                Ok(Opcode::Operation(Operation::from(*leading_byte))),
+                                |disabled| Err(ScriptError::DisabledOpcode(Some(disabled))),
+                            ),
+                            |sv| Ok(Opcode::PushValue(PushValue::SmallValue(sv))),
+                        )
+                        .map(|op| (op, script)),
                 },
                 |(v, script)| Ok((Opcode::PushValue(PushValue::LargeValue(v)), script)),
             )

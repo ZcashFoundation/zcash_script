@@ -10,7 +10,11 @@ use hex::{FromHex, FromHexError};
 use crate::{
     interpreter::VerificationFlags,
     op::*,
-    script::{serialize_num, Opcode},
+    script::{
+        serialize_num,
+        Disabled::{self, *},
+        Opcode,
+    },
     script_error::{ScriptError, ScriptNumError},
     signature,
 };
@@ -20,6 +24,7 @@ use crate::{
 pub(crate) enum Entry {
     /// An Opcode
     O(Opcode),
+    D(Disabled),
     /// A byte sequence encoded as a hex string
     H(&'static str),
     /// A PushValue encoded as an ASCII string
@@ -70,6 +75,7 @@ impl Entry {
     pub(crate) fn serialize(&self) -> Result<Vec<u8>, FromHexError> {
         match self {
             Entry::O(opcode) => Ok(vec![opcode.clone().into()]),
+            Entry::D(disabled) => Ok(vec![(*disabled).into()]),
             Entry::H(bytes) => <Vec<u8>>::from_hex(*bytes),
             Entry::A(string) => Ok(Self::val_to_pv(string.as_bytes())),
             Entry::N(num) => Ok(Self::val_to_pv(&serialize_num(*num))),
@@ -132,30 +138,6 @@ pub(crate) mod bad {
     pub const VER: Opcode = Operation(Normal(OP_VER));
     pub const RESERVED1: Opcode = Operation(Normal(OP_RESERVED1));
     pub const RESERVED2: Opcode = Operation(Normal(OP_RESERVED2));
-}
-
-pub(crate) mod disabled {
-    use crate::script::{
-        Control::*,
-        Opcode::{self, *},
-        Operation::*,
-    };
-
-    pub const CAT: Opcode = Operation(Control(OP_CAT));
-    pub const SUBSTR: Opcode = Operation(Control(OP_SUBSTR));
-    pub const LEFT: Opcode = Operation(Control(OP_LEFT));
-    pub const RIGHT: Opcode = Operation(Control(OP_RIGHT));
-    pub const INVERT: Opcode = Operation(Control(OP_INVERT));
-    pub const AND: Opcode = Operation(Control(OP_AND));
-    pub const OR: Opcode = Operation(Control(OP_OR));
-    pub const XOR: Opcode = Operation(Control(OP_XOR));
-    pub const _2MUL: Opcode = Operation(Control(OP_2MUL));
-    pub const _2DIV: Opcode = Operation(Control(OP_2DIV));
-    pub const MUL: Opcode = Operation(Control(OP_MUL));
-    pub const DIV: Opcode = Operation(Control(OP_DIV));
-    pub const MOD: Opcode = Operation(Control(OP_MOD));
-    pub const LSHIFT: Opcode = Operation(Control(OP_LSHIFT));
-    pub const RSHIFT: Opcode = Operation(Control(OP_RSHIFT));
 }
 
 pub(crate) const DEFAULT_FLAGS: VerificationFlags =
@@ -7877,51 +7859,51 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
     // CAT disabled
     TestVector {
         script_sig: &[A("a"), A("b")],
-        script_pubkey: &[O(disabled::CAT)],
+        script_pubkey: &[D(OP_CAT)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::DisabledOpcode),
+        result: Err(ScriptError::DisabledOpcode(Some(OP_CAT))),
     },
     // CAT disabled
     TestVector {
         script_sig: &[A("a"), A("b"), N(0)],
-        script_pubkey: &[O(IF), O(disabled::CAT), O(ELSE), N(1), O(ENDIF)],
+        script_pubkey: &[O(IF), D(OP_CAT), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::DisabledOpcode),
+        result: Err(ScriptError::DisabledOpcode(Some(OP_CAT))),
     },
     // SUBSTR disabled
     TestVector {
         script_sig: &[A("abc"), N(1), N(1)],
-        script_pubkey: &[O(disabled::SUBSTR)],
+        script_pubkey: &[D(OP_SUBSTR)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::DisabledOpcode),
+        result: Err(ScriptError::DisabledOpcode(Some(OP_SUBSTR))),
     },
     // SUBSTR disabled
     TestVector {
         script_sig: &[A("abc"), N(1), N(1), N(0)],
-        script_pubkey: &[O(IF), O(disabled::SUBSTR), O(ELSE), N(1), O(ENDIF)],
+        script_pubkey: &[O(IF), D(OP_SUBSTR), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::DisabledOpcode),
+        result: Err(ScriptError::DisabledOpcode(Some(OP_SUBSTR))),
     },
     // LEFT disabled
     TestVector {
         script_sig: &[A("abc"), N(2), N(0)],
-        script_pubkey: &[O(IF), O(disabled::LEFT), O(ELSE), N(1), O(ENDIF)],
+        script_pubkey: &[O(IF), D(OP_LEFT), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::DisabledOpcode),
+        result: Err(ScriptError::DisabledOpcode(Some(OP_LEFT))),
     },
     // RIGHT disabled
     TestVector {
         script_sig: &[A("abc"), N(2), N(0)],
-        script_pubkey: &[O(IF), O(disabled::RIGHT), O(ELSE), N(1), O(ENDIF)],
+        script_pubkey: &[O(IF), D(OP_RIGHT), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::DisabledOpcode),
+        result: Err(ScriptError::DisabledOpcode(Some(OP_RIGHT))),
     },
     // INVERT disabled
     TestVector {
         script_sig: &[A("abc")],
-        script_pubkey: &[O(IF), O(disabled::INVERT), O(ELSE), N(1), O(ENDIF)],
+        script_pubkey: &[O(IF), D(OP_INVERT), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::DisabledOpcode),
+        result: Err(ScriptError::DisabledOpcode(Some(OP_INVERT))),
     },
     // AND disabled
     TestVector {
@@ -7930,14 +7912,14 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             N(2),
             N(0),
             O(IF),
-            O(disabled::AND),
+            D(OP_AND),
             O(ELSE),
             N(1),
             O(ENDIF),
         ],
         script_pubkey: &[O(NOP)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::DisabledOpcode),
+        result: Err(ScriptError::DisabledOpcode(Some(OP_AND))),
     },
     // OR disabled
     TestVector {
@@ -7946,14 +7928,14 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             N(2),
             N(0),
             O(IF),
-            O(disabled::OR),
+            D(OP_OR),
             O(ELSE),
             N(1),
             O(ENDIF),
         ],
         script_pubkey: &[O(NOP)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::DisabledOpcode),
+        result: Err(ScriptError::DisabledOpcode(Some(OP_OR))),
     },
     // XOR disabled
     TestVector {
@@ -7962,14 +7944,14 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             N(2),
             N(0),
             O(IF),
-            O(disabled::XOR),
+            D(OP_XOR),
             O(ELSE),
             N(1),
             O(ENDIF),
         ],
         script_pubkey: &[O(NOP)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::DisabledOpcode),
+        result: Err(ScriptError::DisabledOpcode(Some(OP_XOR))),
     },
     // 2MUL disabled
     TestVector {
@@ -7977,14 +7959,14 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             N(2),
             N(0),
             O(IF),
-            O(disabled::_2MUL),
+            D(OP_2MUL),
             O(ELSE),
             N(1),
             O(ENDIF),
         ],
         script_pubkey: &[O(NOP)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::DisabledOpcode),
+        result: Err(ScriptError::DisabledOpcode(Some(OP_2MUL))),
     },
     // 2DIV disabled
     TestVector {
@@ -7992,14 +7974,14 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             N(2),
             N(0),
             O(IF),
-            O(disabled::_2DIV),
+            D(OP_2DIV),
             O(ELSE),
             N(1),
             O(ENDIF),
         ],
         script_pubkey: &[O(NOP)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::DisabledOpcode),
+        result: Err(ScriptError::DisabledOpcode(Some(OP_2DIV))),
     },
     // MUL disabled
     TestVector {
@@ -8008,14 +7990,14 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             N(2),
             N(0),
             O(IF),
-            O(disabled::MUL),
+            D(OP_MUL),
             O(ELSE),
             N(1),
             O(ENDIF),
         ],
         script_pubkey: &[O(NOP)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::DisabledOpcode),
+        result: Err(ScriptError::DisabledOpcode(Some(OP_MUL))),
     },
     // DIV disabled
     TestVector {
@@ -8024,14 +8006,14 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             N(2),
             N(0),
             O(IF),
-            O(disabled::DIV),
+            D(OP_DIV),
             O(ELSE),
             N(1),
             O(ENDIF),
         ],
         script_pubkey: &[O(NOP)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::DisabledOpcode),
+        result: Err(ScriptError::DisabledOpcode(Some(OP_DIV))),
     },
     // MOD disabled
     TestVector {
@@ -8040,14 +8022,14 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             N(2),
             N(0),
             O(IF),
-            O(disabled::MOD),
+            D(OP_MOD),
             O(ELSE),
             N(1),
             O(ENDIF),
         ],
         script_pubkey: &[O(NOP)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::DisabledOpcode),
+        result: Err(ScriptError::DisabledOpcode(Some(OP_MOD))),
     },
     // LSHIFT disabled
     TestVector {
@@ -8056,14 +8038,14 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             N(2),
             N(0),
             O(IF),
-            O(disabled::LSHIFT),
+            D(OP_LSHIFT),
             O(ELSE),
             N(1),
             O(ENDIF),
         ],
         script_pubkey: &[O(NOP)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::DisabledOpcode),
+        result: Err(ScriptError::DisabledOpcode(Some(OP_LSHIFT))),
     },
     // RSHIFT disabled
     TestVector {
@@ -8072,14 +8054,14 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
             N(2),
             N(0),
             O(IF),
-            O(disabled::RSHIFT),
+            D(OP_RSHIFT),
             O(ELSE),
             N(1),
             O(ENDIF),
         ],
         script_pubkey: &[O(NOP)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::DisabledOpcode),
+        result: Err(ScriptError::DisabledOpcode(Some(OP_RSHIFT))),
     },
     // EQUAL must error when there are no stack items
     TestVector {
@@ -8143,52 +8125,52 @@ pub(crate) const TEST_VECTORS: &[TestVector] = &[
     },
     // disabled
     TestVector {
-        script_sig: &[N(2), O(DUP), O(disabled::MUL)],
+        script_sig: &[N(2), O(DUP), D(OP_MUL)],
         script_pubkey: &[N(4), O(EQUAL)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::DisabledOpcode),
+        result: Err(ScriptError::DisabledOpcode(Some(OP_MUL))),
     },
     // disabled
     TestVector {
-        script_sig: &[N(2), O(DUP), O(disabled::DIV)],
+        script_sig: &[N(2), O(DUP), D(OP_DIV)],
         script_pubkey: &[N(1), O(EQUAL)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::DisabledOpcode),
+        result: Err(ScriptError::DisabledOpcode(Some(OP_DIV))),
     },
     // disabled
     TestVector {
-        script_sig: &[N(2), O(disabled::_2MUL)],
+        script_sig: &[N(2), D(OP_2MUL)],
         script_pubkey: &[N(4), O(EQUAL)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::DisabledOpcode),
+        result: Err(ScriptError::DisabledOpcode(Some(OP_2MUL))),
     },
     // disabled
     TestVector {
-        script_sig: &[N(2), O(disabled::_2DIV)],
+        script_sig: &[N(2), D(OP_2DIV)],
         script_pubkey: &[N(1), O(EQUAL)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::DisabledOpcode),
+        result: Err(ScriptError::DisabledOpcode(Some(OP_2DIV))),
     },
     // disabled
     TestVector {
-        script_sig: &[N(7), N(3), O(disabled::MOD)],
+        script_sig: &[N(7), N(3), D(OP_MOD)],
         script_pubkey: &[N(1), O(EQUAL)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::DisabledOpcode),
+        result: Err(ScriptError::DisabledOpcode(Some(OP_MOD))),
     },
     // disabled
     TestVector {
-        script_sig: &[N(2), N(2), O(disabled::LSHIFT)],
+        script_sig: &[N(2), N(2), D(OP_LSHIFT)],
         script_pubkey: &[N(8), O(EQUAL)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::DisabledOpcode),
+        result: Err(ScriptError::DisabledOpcode(Some(OP_LSHIFT))),
     },
     // disabled
     TestVector {
-        script_sig: &[N(2), N(1), O(disabled::RSHIFT)],
+        script_sig: &[N(2), N(1), D(OP_RSHIFT)],
         script_pubkey: &[N(1), O(EQUAL)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::DisabledOpcode),
+        result: Err(ScriptError::DisabledOpcode(Some(OP_RSHIFT))),
     },
     TestVector {
         script_sig: &[N(1)],
