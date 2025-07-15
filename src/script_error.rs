@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::signature;
+use crate::{script::Disabled, signature};
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Error)]
 pub enum ScriptNumError {
@@ -61,8 +61,9 @@ pub enum ScriptError {
     #[error("bad opcode encountered")]
     BadOpcode,
 
-    #[error("disabled opcode encountered")]
-    DisabledOpcode,
+    /// __TODO__: `Option` can go away once C++ support is removed.
+    #[error("disabled opcode encountered: {}", .0.map_or("unknown".to_owned(), |op| format!("{:?}", op)))]
+    DisabledOpcode(Option<Disabled>),
 
     #[error("invalid stack operation encountered")]
     InvalidStackOperation,

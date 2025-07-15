@@ -483,7 +483,6 @@ fn eval_control(
         }
 
         OP_VERIF | OP_VERNOTIF => return Err(ScriptError::BadOpcode),
-        _ => return Err(ScriptError::DisabledOpcode),
     }
     Ok(())
 }
