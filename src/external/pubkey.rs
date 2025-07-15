@@ -13,7 +13,7 @@ impl PubKey<'_> {
         !self.0.is_empty()
     }
 
-    /// Verify a DER signature (~72 bytes).
+    /// Verify a signature (~72 bytes).
     /// If this public key is not fully valid, the return value will be false.
     pub fn verify(&self, hash: &[u8; 32], sig: &ecdsa::Signature) -> bool {
         if !self.is_valid() {
@@ -36,6 +36,6 @@ impl PubKey<'_> {
     pub fn check_low_s(sig: &ecdsa::Signature) -> bool {
         let mut check = *sig;
         check.normalize_s();
-        *sig == check
+        sig == &check
     }
 }

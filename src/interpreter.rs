@@ -305,16 +305,30 @@ fn is_valid_signature_encoding(sig: &[u8]) -> bool {
     }
 }
 
-fn decode_signature(vch_sig_in: &[u8], is_strict: bool) -> Result<Option<Signature>, ScriptError> {
+/// This decodes an ECDSA signature and Zcash hash type from bytes. It ensures that the encoding was
+/// valid.
+///
+/// __NB__: An empty signature is not strictly DER encoded, but will result in `Ok(None)` as a
+///         compact way to provide an invalid signature for use with CHECK(MULTI)SIG.
+fn decode_signature(
+    vch_sig_in: &[u8],
+    require_low_s: bool,
+    is_strict: bool,
+) -> Result<Option<Signature>, ScriptError> {
     match vch_sig_in.split_last() {
-        // Empty signature. Not strictly DER encoded, but allowed to provide a compact way to
-        // provide an invalid signature for use with CHECK(MULTI)SIG
         None => Ok(None),
         Some((hash_type, vch_sig)) => {
             if is_valid_signature_encoding(vch_sig) {
                 Ok(Some(Signature {
                     sig: ecdsa::Signature::from_der(vch_sig)
-                        .map_err(|e| ScriptError::SigDER(Some(e)))?,
+                        .map_err(|e| ScriptError::SigDER(Some(e)))
+                        .and_then(|sig| {
+                            if require_low_s && !PubKey::check_low_s(&sig) {
+                                Err(ScriptError::SigHighS)
+                            } else {
+                                Ok(sig)
+                            }
+                        })?,
                     sighash: HashType::from_bits((*hash_type).into(), is_strict)
                         .map_err(|e| ScriptError::SigHashType(Some(e)))?,
                 }))
@@ -323,24 +337,6 @@ fn decode_signature(vch_sig_in: &[u8], is_strict: bool) -> Result<Option<Signatu
             }
         }
     }
-}
-
-fn check_signature_encoding(
-    vch_sig: &[u8],
-    flags: VerificationFlags,
-) -> Result<Option<Signature>, ScriptError> {
-    decode_signature(vch_sig, flags.contains(VerificationFlags::StrictEnc)).and_then(
-        |sig| match sig {
-            None => Ok(None),
-            Some(sig0) => {
-                if flags.contains(VerificationFlags::LowS) && !PubKey::check_low_s(&sig0.sig) {
-                    Err(ScriptError::SigHighS)
-                } else {
-                    Ok(Some(sig0))
-                }
-            }
-        },
-    )
 }
 
 fn check_pub_key_encoding(vch_sig: &[u8], flags: VerificationFlags) -> Result<(), ScriptError> {
@@ -382,7 +378,14 @@ fn is_sig_valid(
     script: &Script<'_>,
     checker: &dyn SignatureChecker,
 ) -> Result<bool, ScriptError> {
-    check_signature_encoding(vch_sig, flags).and_then(|sig| {
+    // Note how this makes the exact order of pubkey/signature evaluation distinguishable by
+    // CHECKMULTISIG NOT if the STRICTENC flag is set. See the script_(in)valid tests for details.
+    decode_signature(
+        vch_sig,
+        flags.contains(VerificationFlags::LowS),
+        flags.contains(VerificationFlags::StrictEnc),
+    )
+    .and_then(|sig| {
         check_pub_key_encoding(vch_pub_key, flags)
             .map(|()| sig.map_or(false, |sig0| checker.check_sig(&sig0, vch_pub_key, script)))
     })
@@ -1070,9 +1073,7 @@ pub fn eval_step<'a>(
                             let vch_sig: &ValType = stack.rget(isig.into())?;
                             let vch_pub_key: &ValType = stack.rget(ikey.into())?;
 
-                            // Note how this makes the exact order of pubkey/signature evaluation
-                            // distinguishable by CHECKMULTISIG NOT if the STRICTENC flag is set.
-                            // See the script_(in)valid tests for details.
+                            // Check signature
                             let ok: bool =
                                 is_sig_valid(vch_sig, vch_pub_key, flags, script, &checker)?;
 

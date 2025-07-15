@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+- `InvalidHashType` moved from `interpreter` to `script_error`
+- the `SigHashType` and `SigDER` `ScriptError` cases now have parameters
+- `interpreter::SignatureChecker::check_sig` takes a `&interpreter::Signature` instead of a `&[u8]`
+
 ## [0.3.2](https://github.com/ZcashFoundation/zcash_script/compare/v0.3.1...v0.3.2) - 2025-06-24
 
 - bump secp256k1 back to 0.29 (#234)
