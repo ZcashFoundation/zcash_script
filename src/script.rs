@@ -141,11 +141,6 @@ pub enum Operation {
     /// - only evaluated on active branch
     /// - can be cast to its discriminant
     Normal(Normal),
-    /// `Unknown` is a bit odd. It is executed in the same cases as `Normal`, but making it part of
-    /// `Normal` complicated the byte mapping implementation. It also takes any byte, but if you
-    /// create one with a byte that represents some other opcode, the interpretation will behave
-    /// differently than if you serialize and re-parse it.
-    Unknown(u8),
 }
 
 enum_from_primitive! {
@@ -269,16 +264,17 @@ impl From<Operation> for u8 {
         match value {
             Operation::Control(op) => op.into(),
             Operation::Normal(op) => op.into(),
-            Operation::Unknown(byte) => byte,
         }
     }
 }
 
-impl From<u8> for Operation {
-    fn from(value: u8) -> Self {
+impl TryFrom<u8> for Operation {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
         Control::from_u8(value).map_or(
-            Normal::from_u8(value).map_or(Operation::Unknown(value), Operation::Normal),
-            Operation::Control,
+            Normal::from_u8(value).map_or(Err(()), |norm| Ok(Operation::Normal(norm))),
+            |ctl| Ok(Operation::Control(ctl)),
         )
     }
 }
@@ -459,9 +455,10 @@ impl Script<'_> {
         let mut pc = self.0;
         let mut result = vec![];
         while !pc.is_empty() {
-            Self::get_op(pc).map(|(op, new_pc)| {
+            Self::get_op(pc).and_then(|(op, new_pc)| {
                 pc = new_pc;
-                result.push(op)
+                op.map_err(|byte| ScriptError::BadOpcode(Some(byte)))
+                    .map(|op| result.push(op))
             })?;
         }
         Ok(result)
@@ -514,7 +511,7 @@ impl Script<'_> {
         }
     }
 
-    pub fn get_op(script: &[u8]) -> Result<(Opcode, &[u8]), ScriptError> {
+    pub fn get_op(script: &[u8]) -> Result<(Result<Opcode, u8>, &[u8]), ScriptError> {
         Self::get_lv(script).and_then(|r| {
             r.map_or(
                 match script.split_first() {
@@ -525,14 +522,16 @@ impl Script<'_> {
                     Some((leading_byte, script)) => SmallValue::from_u8(*leading_byte)
                         .map_or(
                             Disabled::from_u8(*leading_byte).map_or(
-                                Ok(Opcode::Operation(Operation::from(*leading_byte))),
+                                Ok(Operation::try_from(*leading_byte)
+                                    .map_err(|()| *leading_byte)
+                                    .map(Opcode::Operation)),
                                 |disabled| Err(ScriptError::DisabledOpcode(Some(disabled))),
                             ),
-                            |sv| Ok(Opcode::PushValue(PushValue::SmallValue(sv))),
+                            |sv| Ok(Ok(Opcode::PushValue(PushValue::SmallValue(sv)))),
                         )
                         .map(|op| (op, script)),
                 },
-                |(v, script)| Ok((Opcode::PushValue(PushValue::LargeValue(v)), script)),
+                |(v, script)| Ok((Ok(Opcode::PushValue(PushValue::LargeValue(v))), script)),
             )
         })
     }
@@ -562,7 +561,7 @@ impl Script<'_> {
                 Err(_) => break,
             };
             pc = new_pc;
-            if let Opcode::Operation(Operation::Normal(op)) = opcode {
+            if let Ok(Opcode::Operation(Operation::Normal(op))) = opcode {
                 if op == OP_CHECKSIG || op == OP_CHECKSIGVERIFY {
                     n += 1;
                 } else if op == OP_CHECKMULTISIG || op == OP_CHECKMULTISIGVERIFY {
@@ -578,7 +577,7 @@ impl Script<'_> {
                     }
                 }
             }
-            last_opcode = Some(opcode);
+            last_opcode = opcode.ok();
         }
         n
     }
@@ -596,14 +595,8 @@ impl Script<'_> {
 
     /// Called by `IsStandardTx` and P2SH/BIP62 VerifyScript (which makes it consensus-critical).
     pub fn is_push_only(&self) -> bool {
-        let mut pc = self.0;
-        while !pc.is_empty() {
-            if let Ok((Opcode::PushValue(_), new_pc)) = Self::get_op(pc) {
-                pc = new_pc;
-            } else {
-                return false;
-            }
-        }
-        true
+        self.parse().map_or(false, |op| {
+            op.iter().all(|op| matches!(op, Opcode::PushValue(_)))
+        })
     }
 }
