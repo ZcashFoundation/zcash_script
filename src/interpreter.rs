@@ -359,8 +359,20 @@ fn eval_step<'a>(
     //
     // Read instruction
     //
-    Script::get_op(pc).and_then(|(opcode, new_pc)| {
-        eval_opcode(flags, opcode, script, &checker, state).map(|()| new_pc)
+    Script::get_op(pc).and_then(|(opcode, new_pc)| match opcode {
+        Err(byte) => {
+            state.op_count += 1;
+            if state.op_count <= MAX_OP_COUNT {
+                if should_exec(&state.vexec) {
+                    Err(ScriptError::BadOpcode(Some(byte)))
+                } else {
+                    Ok(new_pc)
+                }
+            } else {
+                Err(ScriptError::OpCount.into())
+            }
+        }
+        Ok(opcode) => eval_opcode(flags, opcode, script, &checker, state).map(|()| new_pc),
     })
 }
 
@@ -403,13 +415,6 @@ fn eval_opcode(
                             Ok(())
                         }
                     }
-                    Operation::Unknown(_) => {
-                        if should_exec(vexec) {
-                            Err(ScriptError::BadOpcode)
-                        } else {
-                            Ok(())
-                        }
-                    }
                 }
             } else {
                 Err(ScriptError::OpCount)
@@ -434,10 +439,13 @@ fn eval_push_value(
     if require_minimal && !pv.is_minimal_push() {
         Err(ScriptError::MinimalData)
     } else {
-        pv.value().map_or(Err(ScriptError::BadOpcode), |v| {
-            stack.push(v);
-            Ok(())
-        })
+        pv.value().map_or(
+            Err(ScriptError::BadOpcode(Some(SmallValue::OP_RESERVED.into()))),
+            |v| {
+                stack.push(v);
+                Ok(())
+            },
+        )
     }
 }
 
@@ -484,7 +492,7 @@ fn eval_control(
             vexec.pop()?;
         }
 
-        OP_VERIF | OP_VERNOTIF => return Err(ScriptError::BadOpcode),
+        OP_VERIF | OP_VERNOTIF => return Err(ScriptError::BadOpcode(Some(op.into()))),
     }
     Ok(())
 }
@@ -1019,7 +1027,7 @@ fn eval_operation(
         }
 
         _ => {
-            return Err(ScriptError::BadOpcode);
+            return Err(ScriptError::BadOpcode(Some(op.into())));
         }
     }
     Ok(())

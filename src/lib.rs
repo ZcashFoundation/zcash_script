@@ -62,7 +62,7 @@ impl From<cxx::ScriptError> for Error {
             cxx::ScriptError_t_SCRIPT_ERR_CHECKSIGVERIFY => Error::Ok(ScriptError::CheckSigVerify),
             cxx::ScriptError_t_SCRIPT_ERR_NUMEQUALVERIFY => Error::Ok(ScriptError::NumEqualVerify),
 
-            cxx::ScriptError_t_SCRIPT_ERR_BAD_OPCODE => Error::Ok(ScriptError::BadOpcode),
+            cxx::ScriptError_t_SCRIPT_ERR_BAD_OPCODE => Error::Ok(ScriptError::BadOpcode(None)),
             cxx::ScriptError_t_SCRIPT_ERR_DISABLED_OPCODE => {
                 Error::Ok(ScriptError::DisabledOpcode(None))
             }
@@ -228,6 +228,7 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
 
 fn normalize_script_error(err: ScriptError) -> ScriptError {
     match err {
+        ScriptError::BadOpcode(Some(_)) => ScriptError::BadOpcode(None),
         ScriptError::DisabledOpcode(Some(_)) => ScriptError::DisabledOpcode(None),
         ScriptError::SignatureEncoding(sig_err) => match sig_err {
             signature::Error::SigHashType(Some(_)) => signature::Error::SigHashType(None).into(),
@@ -235,7 +236,7 @@ fn normalize_script_error(err: ScriptError) -> ScriptError {
             signature::Error::SigHighS => ScriptError::UnknownError,
             _ => sig_err.into(),
         },
-        ScriptError::ReadError { .. } => ScriptError::BadOpcode,
+        ScriptError::ReadError { .. } => ScriptError::BadOpcode(None),
         ScriptError::ScriptNumError(_) => ScriptError::UnknownError,
         _ => err,
     }

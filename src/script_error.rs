@@ -58,8 +58,9 @@ pub enum ScriptError {
     NumEqualVerify,
 
     // Logical/Format/Canonical errors
-    #[error("bad opcode encountered")]
-    BadOpcode,
+    /// __TODO__: `Option` can go away once C++ support is removed.
+    #[error("bad opcode encountered: {}", .0.map_or("unknown".to_owned(), |op| op.to_string()))]
+    BadOpcode(Option<u8>),
 
     /// __TODO__: `Option` can go away once C++ support is removed.
     #[error("disabled opcode encountered: {}", .0.map_or("unknown".to_owned(), |op| format!("{:?}", op)))]
