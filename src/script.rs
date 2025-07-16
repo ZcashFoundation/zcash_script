@@ -358,7 +358,7 @@ pub fn serialize_num(value: i64) -> Vec<u8> {
     // - If the most significant byte is < 0x80 and the value is negative, add 0x80 to it, since it
     //   will be subtracted and interpreted as a negative when converting to an integral.
 
-    if result.last().map_or(true, |last| last & 0x80 != 0) {
+    if result.last().is_none_or(|last| last & 0x80 != 0) {
         result.push(if neg { 0x80 } else { 0 });
     } else if neg {
         if let Some(last) = result.last_mut() {
