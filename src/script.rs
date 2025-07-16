@@ -2,7 +2,7 @@
 
 use enum_primitive::FromPrimitive;
 
-use super::script_error::*;
+use super::script_error::{ScriptError, ScriptNumError};
 
 pub const MAX_SCRIPT_ELEMENT_SIZE: usize = 520; // bytes
 
@@ -374,7 +374,7 @@ pub fn serialize_num(value: i64) -> Vec<u8> {
 pub struct Script<'a>(pub &'a [u8]);
 
 impl Script<'_> {
-    pub fn get_op(script: &[u8]) -> Result<(Opcode, &[u8]), ScriptError> {
+    fn get_op(script: &[u8]) -> Result<(Opcode, &[u8]), ScriptError> {
         Self::get_op2(script).map(|(op, _, remainder)| (op, remainder))
     }
 
@@ -421,7 +421,7 @@ impl Script<'_> {
     }
 
     /** Encode/decode small integers: */
-    pub fn decode_op_n(opcode: PushValue) -> u32 {
+    fn decode_op_n(opcode: PushValue) -> u32 {
         if opcode == OP_0 {
             return 0;
         }

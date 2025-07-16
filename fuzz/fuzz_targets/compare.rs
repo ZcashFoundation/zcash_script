@@ -3,8 +3,11 @@
 use libfuzzer_sys::fuzz_target;
 extern crate zcash_script;
 
-use zcash_script::interpreter::CallbackTransactionSignatureChecker;
-use zcash_script::*;
+use zcash_script::{
+    check_verify_callback,
+    interpreter::{CallbackTransactionSignatureChecker, HashType, VerificationFlags},
+    normalize_error, rust_interpreter, testing, CxxInterpreter,
+};
 
 fn missing_sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
     None

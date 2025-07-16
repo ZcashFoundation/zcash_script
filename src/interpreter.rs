@@ -7,9 +7,16 @@ use ripemd::Ripemd160;
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
 
-use super::external::pubkey::PubKey;
-use super::script::{Operation::*, PushValue::*, *};
-use super::script_error::*;
+use crate::{
+    external::pubkey::PubKey,
+    script::{
+        parse_num, serialize_num, Opcode,
+        Operation::*,
+        PushValue::{self, *},
+        Script, LOCKTIME_THRESHOLD, MAX_SCRIPT_ELEMENT_SIZE, MAX_SCRIPT_SIZE,
+    },
+    script_error::ScriptError,
+};
 
 /// The ways in which a transparent input may commit to the transparent outputs of its
 /// transaction.
@@ -55,11 +62,15 @@ pub enum InvalidHashType {
 impl HashType {
     /// Construct a `HashType` from bit flags.
     ///
+    /// __TODO__: Even though the hash type is represented by a single byte, this takes `bits` as
+    ///           `i32` for compatibility with the C++ API. Once that is removed, this should also
+    ///           become `u8`.
+    ///
     /// ## Consensus rules
     ///
     /// [§4.10](https://zips.z.cash/protocol/protocol.pdf#sighash):
     /// - Any `HashType` in a v5 transaction must have no undefined bits set.
-    pub fn from_bits(bits: i32, is_strict: bool) -> Result<Self, InvalidHashType> {
+    pub(crate) fn from_bits(bits: i32, is_strict: bool) -> Result<Self, InvalidHashType> {
         let unknown_bits = (bits | 0x83) ^ 0x83;
         if is_strict && unknown_bits != 0 {
             Err(InvalidHashType::ExtraBitsSet(unknown_bits))
@@ -180,7 +191,7 @@ pub struct Stack<T>(Vec<T>);
 /// Wraps a Vec (or whatever underlying implementation we choose in a way that matches the C++ impl
 /// and provides us some decent chaining)
 impl<T: Clone> Stack<T> {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Stack(vec![])
     }
 
@@ -193,58 +204,58 @@ impl<T: Clone> Stack<T> {
         }
     }
 
-    pub fn rget(&self, i: usize) -> Result<&T, ScriptError> {
+    fn rget(&self, i: usize) -> Result<&T, ScriptError> {
         let idx = self.rindex(i)?;
         self.0.get(idx).ok_or(ScriptError::InvalidStackOperation)
     }
 
-    pub fn rswap(&mut self, a: usize, b: usize) -> Result<(), ScriptError> {
+    fn rswap(&mut self, a: usize, b: usize) -> Result<(), ScriptError> {
         let ra = self.rindex(a)?;
         let rb = self.rindex(b)?;
         self.0.swap(ra, rb);
         Ok(())
     }
 
-    pub fn pop(&mut self) -> Result<T, ScriptError> {
+    fn pop(&mut self) -> Result<T, ScriptError> {
         self.0.pop().ok_or(ScriptError::InvalidStackOperation)
     }
 
-    pub fn push(&mut self, value: T) {
+    fn push(&mut self, value: T) {
         self.0.push(value)
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.0.len()
     }
 
-    pub fn iter(&self) -> Iter<'_, T> {
+    fn iter(&self) -> Iter<'_, T> {
         self.0.iter()
     }
 
-    pub fn last_mut(&mut self) -> Result<&mut T, ScriptError> {
+    fn last_mut(&mut self) -> Result<&mut T, ScriptError> {
         self.0.last_mut().ok_or(ScriptError::InvalidStackOperation)
     }
 
-    pub fn last(&self) -> Result<&T, ScriptError> {
+    fn last(&self) -> Result<&T, ScriptError> {
         self.0.last().ok_or(ScriptError::InvalidStackOperation)
     }
 
-    pub fn split_last(&self) -> Result<(&T, Stack<T>), ScriptError> {
+    fn split_last(&self) -> Result<(&T, Stack<T>), ScriptError> {
         self.0
             .split_last()
             .ok_or(ScriptError::InvalidStackOperation)
             .map(|(last, rem)| (last, Stack(rem.to_vec())))
     }
 
-    pub fn rremove(&mut self, start: usize) -> Result<T, ScriptError> {
+    fn rremove(&mut self, start: usize) -> Result<T, ScriptError> {
         self.rindex(start).map(|rstart| self.0.remove(rstart))
     }
 
-    pub fn rinsert(&mut self, i: usize, element: T) -> Result<(), ScriptError> {
+    fn rinsert(&mut self, i: usize, element: T) -> Result<(), ScriptError> {
         let ri = self.rindex(i)?;
         self.0.insert(ri, element);
         Ok(())
@@ -560,7 +571,7 @@ impl State {
 ///
 /// This is useful for testing & debugging, as we can set up the exact state we want in order to
 /// trigger some behavior.
-pub fn eval_step<'a>(
+fn eval_step<'a>(
     pc: &'a [u8],
     script: &Script,
     flags: VerificationFlags,
@@ -1224,8 +1235,8 @@ pub trait StepFn {
 /// Produces the default stepper, which carries no payload and runs the script as before.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct DefaultStepEvaluator<C> {
-    pub flags: VerificationFlags,
-    pub checker: C,
+    pub(crate) flags: VerificationFlags,
+    pub(crate) checker: C,
 }
 
 impl<C: SignatureChecker + Copy> StepFn for DefaultStepEvaluator<C> {
@@ -1241,7 +1252,7 @@ impl<C: SignatureChecker + Copy> StepFn for DefaultStepEvaluator<C> {
     }
 }
 
-pub fn eval_script<F>(
+fn eval_script<F>(
     stack: Stack<Vec<u8>>,
     script: &Script,
     payload: &mut F::Payload,
@@ -1286,7 +1297,7 @@ pub const SIGHASH_SIZE: usize = 32;
 pub type SighashCalculator<'a> = &'a dyn Fn(&[u8], HashType) -> Option<[u8; SIGHASH_SIZE]>;
 
 impl CallbackTransactionSignatureChecker<'_> {
-    pub fn verify_signature(vch_sig: &[u8], pubkey: &PubKey, sighash: &[u8; SIGHASH_SIZE]) -> bool {
+    fn verify_signature(vch_sig: &[u8], pubkey: &PubKey, sighash: &[u8; SIGHASH_SIZE]) -> bool {
         pubkey.verify(sighash, vch_sig)
     }
 }
@@ -1372,7 +1383,7 @@ where
     }
 }
 
-pub fn verify_script<F>(
+pub(crate) fn verify_script<F>(
     script_sig: &Script,
     script_pub_key: &Script,
     flags: VerificationFlags,
