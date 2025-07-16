@@ -16,7 +16,7 @@ pub mod script_error;
 pub mod signature;
 mod zcash_script;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-dependencies"))]
 mod test_vectors;
 
 use std::os::raw::{c_int, c_uint, c_void};
@@ -223,22 +223,24 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
     )
 }
 
+fn normalize_script_error(err: ScriptError) -> ScriptError {
+    match err {
+        ScriptError::SignatureEncoding(sig_err) => match sig_err {
+            signature::Error::SigHashType(Some(_)) => signature::Error::SigHashType(None).into(),
+            signature::Error::SigDER(Some(_)) => signature::Error::SigDER(None).into(),
+            signature::Error::SigHighS => ScriptError::UnknownError,
+            _ => sig_err.into(),
+        },
+        ScriptError::ReadError { .. } => ScriptError::BadOpcode,
+        ScriptError::ScriptNumError(_) => ScriptError::UnknownError,
+        _ => err,
+    }
+}
+
 /// Convert errors that don’t exist in the C++ code into the cases that do.
 pub fn normalize_error(err: Error) -> Error {
     match err {
-        Error::Ok(serr) => Error::Ok(match serr {
-            ScriptError::SignatureEncoding(sig_err) => match sig_err {
-                signature::Error::SigHashType(Some(_)) => {
-                    signature::Error::SigHashType(None).into()
-                }
-                signature::Error::SigDER(Some(_)) => signature::Error::SigDER(None).into(),
-                signature::Error::SigHighS => ScriptError::UnknownError,
-                _ => sig_err.into(),
-            },
-            ScriptError::ReadError { .. } => ScriptError::BadOpcode,
-            ScriptError::ScriptNumError(_) => ScriptError::UnknownError,
-            _ => serr,
-        }),
+        Error::Ok(serr) => Error::Ok(normalize_script_error(serr)),
         _ => err,
     }
 }
@@ -315,8 +317,11 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U>
 pub mod testing {
     use crate::{
         interpreter::{State, StepFn, VerificationFlags},
+        normalize_script_error,
         script::{self, Operation, Script},
         script_error::ScriptError,
+        test_vectors::TestVector,
+        Error,
     };
 
     /// Ensures that flags represent a supported state. This avoids crashes in the C++ code, which
@@ -360,6 +365,35 @@ pub mod testing {
             )
         }
     }
+
+    pub fn run_test_vector(
+        tv: &TestVector,
+        try_normalized_error: bool,
+        f: &dyn Fn(&[u8], &[u8], VerificationFlags) -> Result<(), Error>,
+    ) -> () {
+        match tv.run(&|sig, pubkey, flags| match f(sig, pubkey, flags) {
+            Ok(()) => Ok(()),
+            Err(Error::Ok(err)) => Err(err),
+            Err(err) => panic!("failed in a very bad way: {:?}", err),
+        }) {
+            Ok(()) => (),
+            Err(actual) => {
+                if try_normalized_error
+                    && tv.result.clone().map_err(normalize_script_error) == actual
+                {
+                    ()
+                } else {
+                    panic!(
+                        "{:?} didn’t match the result in
+
+    {:?}
+",
+                        actual, tv
+                    );
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -369,8 +403,8 @@ mod tests {
 
     use super::{
         check_verify_callback, normalize_error, rust_interpreter,
-        test_vectors::{TestVector, TEST_VECTORS},
-        testing::{repair_flags, OVERFLOW_SCRIPT_SIZE},
+        test_vectors::test_vectors,
+        testing::{repair_flags, run_test_vector, OVERFLOW_SCRIPT_SIZE},
         CxxInterpreter, Error, ZcashScript,
     };
     use crate::{
@@ -490,31 +524,10 @@ mod tests {
         assert_eq!(ret.0, Err(Error::Ok(ScriptError::EvalFalse)));
     }
 
-    fn run_test_vector(
-        tv: &TestVector,
-        f: &dyn Fn(&[u8], &[u8], VerificationFlags) -> Result<(), Error>,
-    ) {
-        match tv.run(&|sig, pubkey, flags| match f(sig, pubkey, flags) {
-            Ok(()) => Ok(()),
-            Err(Error::Ok(err)) => Err(err),
-            Err(err) => panic!("failed in a very bad way: {err:?}"),
-        }) {
-            Ok(()) => (),
-            Err(actual) => {
-                panic!(
-                    "{actual:?} didn’t match the result in
-
-    {tv:?}
-"
-                );
-            }
-        }
-    }
-
     #[test]
     fn test_vectors_for_cxx() {
-        for tv in TEST_VECTORS {
-            run_test_vector(tv, &|sig, pubkey, flags| {
+        for tv in test_vectors() {
+            run_test_vector(&tv, true, &|sig, pubkey, flags| {
                 CxxInterpreter {
                     sighash: &missing_sighash,
                     lock_time: 0,
@@ -527,8 +540,8 @@ mod tests {
 
     #[test]
     fn test_vectors_for_rust() {
-        for tv in TEST_VECTORS {
-            run_test_vector(tv, &|sig, pubkey, flags| {
+        for tv in test_vectors() {
+            run_test_vector(&tv, false, &|sig, pubkey, flags| {
                 rust_interpreter(
                     flags,
                     CallbackTransactionSignatureChecker {
@@ -537,8 +550,7 @@ mod tests {
                         is_final: false,
                     },
                 )
-                .verify_callback(pubkey, sig, flags)
-                .map_err(normalize_error)
+                .verify_callback(&pubkey, &sig, flags)
             })
         }
     }
