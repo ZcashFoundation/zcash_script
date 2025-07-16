@@ -42,7 +42,6 @@ impl From<cxx::ScriptError> for Error {
     #[allow(non_upper_case_globals)]
     fn from(err_code: cxx::ScriptError) -> Self {
         match err_code {
-            cxx::ScriptError_t_SCRIPT_ERR_OK => Error::Ok(ScriptError::Ok),
             cxx::ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR => Error::Ok(ScriptError::UnknownError),
             cxx::ScriptError_t_SCRIPT_ERR_EVAL_FALSE => Error::Ok(ScriptError::EvalFalse),
             cxx::ScriptError_t_SCRIPT_ERR_OP_RETURN => Error::Ok(ScriptError::OpReturn),
