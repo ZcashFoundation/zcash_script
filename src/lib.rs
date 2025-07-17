@@ -11,8 +11,11 @@ pub mod cxx;
 mod external;
 pub mod interpreter;
 pub mod op;
+pub mod pattern;
+pub mod pv;
 mod script;
 pub mod script_error;
+pub mod signature;
 mod zcash_script;
 
 #[cfg(any(test, feature = "test-dependencies"))]
@@ -23,11 +26,15 @@ use std::os::raw::{c_int, c_uint, c_void};
 use tracing::warn;
 
 pub use interpreter::{
-    CallbackTransactionSignatureChecker, DefaultStepEvaluator, HashType, SighashCalculator,
-    SignedOutputs, VerificationFlags,
+    CallbackTransactionSignatureChecker, DefaultStepEvaluator, SighashCalculator, VerificationFlags,
 };
 use script_error::ScriptError;
-pub use zcash_script::*;
+use signature::HashType;
+use zcash_script::*;
+pub use zcash_script::{
+    rust_interpreter, stepwise_verify, ComparisonStepEvaluator, StepResults, StepwiseInterpreter,
+    ZcashScript,
+};
 
 pub struct CxxInterpreter<'a> {
     pub sighash: SighashCalculator<'a>,
@@ -39,8 +46,9 @@ impl From<cxx::ScriptError> for Error {
     #[allow(non_upper_case_globals)]
     fn from(err_code: cxx::ScriptError) -> Self {
         match err_code {
-            cxx::ScriptError_t_SCRIPT_ERR_OK => Error::Ok(ScriptError::Ok),
-            cxx::ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR => Error::Ok(ScriptError::UnknownError),
+            cxx::ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR => {
+                Error::Ok(zcash_script::AMBIGUOUS_UNKNOWN_NUM_HIGHS_ERROR)
+            }
             cxx::ScriptError_t_SCRIPT_ERR_EVAL_FALSE => Error::Ok(ScriptError::EvalFalse),
             cxx::ScriptError_t_SCRIPT_ERR_OP_RETURN => Error::Ok(ScriptError::OpReturn),
 
@@ -59,8 +67,10 @@ impl From<cxx::ScriptError> for Error {
             cxx::ScriptError_t_SCRIPT_ERR_CHECKSIGVERIFY => Error::Ok(ScriptError::CheckSigVerify),
             cxx::ScriptError_t_SCRIPT_ERR_NUMEQUALVERIFY => Error::Ok(ScriptError::NumEqualVerify),
 
-            cxx::ScriptError_t_SCRIPT_ERR_BAD_OPCODE => Error::Ok(ScriptError::BadOpcode),
-            cxx::ScriptError_t_SCRIPT_ERR_DISABLED_OPCODE => Error::Ok(ScriptError::DisabledOpcode),
+            cxx::ScriptError_t_SCRIPT_ERR_BAD_OPCODE => Error::Ok(ScriptError::BadOpcode(None)),
+            cxx::ScriptError_t_SCRIPT_ERR_DISABLED_OPCODE => {
+                Error::Ok(ScriptError::DisabledOpcode(None))
+            }
             cxx::ScriptError_t_SCRIPT_ERR_INVALID_STACK_OPERATION => {
                 Error::Ok(ScriptError::InvalidStackOperation)
             }
@@ -78,11 +88,17 @@ impl From<cxx::ScriptError> for Error {
                 Error::Ok(ScriptError::UnsatisfiedLockTime)
             }
 
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_HASHTYPE => Error::Ok(ScriptError::SigHashType),
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_DER => Error::Ok(ScriptError::SigDER),
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_HASHTYPE => {
+                Error::Ok(signature::Error::SigHashType(None).into())
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_DER => {
+                Error::Ok(signature::Error::SigDER(None).into())
+            }
             cxx::ScriptError_t_SCRIPT_ERR_MINIMALDATA => Error::Ok(ScriptError::MinimalData),
             cxx::ScriptError_t_SCRIPT_ERR_SIG_PUSHONLY => Error::Ok(ScriptError::SigPushOnly),
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_HIGH_S => Error::Ok(ScriptError::SigHighS),
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_HIGH_S => {
+                Error::Ok(signature::Error::SigHighS.into())
+            }
             cxx::ScriptError_t_SCRIPT_ERR_SIG_NULLDUMMY => Error::Ok(ScriptError::SigNullDummy),
             cxx::ScriptError_t_SCRIPT_ERR_PUBKEYTYPE => Error::Ok(ScriptError::PubKeyType),
             cxx::ScriptError_t_SCRIPT_ERR_CLEANSTACK => Error::Ok(ScriptError::CleanStack),
@@ -121,7 +137,7 @@ extern "C" fn sighash_callback(
     // And we don’t have access to the flags here to determine if it should be checked.
     if let Some(sighash) = HashType::from_bits(hash_type, false)
         .ok()
-        .and_then(|ht| callback(script_code_vec, ht))
+        .and_then(|ht| callback(script_code_vec, &ht))
     {
         assert_eq!(sighash_out_len, sighash.len().try_into().unwrap());
         // SAFETY: `sighash_out` is a valid buffer created in
@@ -215,12 +231,7 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
 /// Convert errors that don’t exist in the C++ code into the cases that do.
 pub fn normalize_error(err: Error) -> Error {
     match err {
-        Error::Ok(serr) => Error::Ok(match serr {
-            ScriptError::ReadError { .. } => ScriptError::BadOpcode,
-            ScriptError::ScriptNumError(_) => ScriptError::UnknownError,
-            ScriptError::SigHighS => ScriptError::UnknownError,
-            _ => serr,
-        }),
+        Error::Ok(serr) => Error::Ok(zcash_script::normalize_error(serr)),
         _ => err,
     }
 }
@@ -280,7 +291,7 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U>
     ) -> Result<(), Error> {
         let (cxx, rust) =
             check_verify_callback(&self.first, &self.second, script_pub_key, script_sig, flags);
-        if rust.map_err(normalize_error) != cxx {
+        if rust.map_err(normalize_error) != cxx.map_err(normalize_error) {
             // probably want to distinguish between
             // - one succeeding when the other fails (bad), and
             // - differing error codes (maybe not bad).
@@ -298,9 +309,11 @@ pub mod testing {
     use super::*;
     use crate::{
         interpreter::{State, StepFn},
-        script::{Operation, Script},
+        pattern::*,
+        script::{Opcode, Operation, Script},
         test_vectors::TestVector,
     };
+    use hex::FromHex;
 
     /// Ensures that flags represent a supported state. This avoids crashes in the C++ code, which
     /// break various tests.
@@ -344,8 +357,41 @@ pub mod testing {
         }
     }
 
+    lazy_static::lazy_static! {
+        pub static ref REDEEM_SCRIPT: Vec<Opcode> = check_multisig(
+            2,
+            &[
+                &<[u8; 0x21]>::from_hex("03b2cc71d23eb30020a4893982a1e2d352da0d20ee657fa02901c432758909ed8f").expect("valid key"),
+                &<[u8; 0x21]>::from_hex("029d1e9a9354c0d2aee9ffd0f0cea6c39bbf98c4066cf143115ba2279d0ba7dabe").expect("valid key"),
+                &<[u8; 0x21]>::from_hex("03e32096b63fd57f3308149d238dcbb24d8d28aad95c0e4e74e3e5e6a11b61bcc4").expect("valid key")
+            ],
+            false);
+        pub static ref SCRIPT_PUBKEY: Vec<u8> = Script::serialize(&pay_to_script_hash(&REDEEM_SCRIPT));
+        pub static ref SCRIPT_SIG: Vec<u8> = Script::serialize(&[
+            push_num(0),
+            pv::push_value(&<[u8; 0x48]>::from_hex("3045022100d2ab3e6258fe244fa442cfb38f6cef9ac9a18c54e70b2f508e83fa87e20d040502200eead947521de943831d07a350e45af8e36c2166984a8636f0a8811ff03ed09401").expect("valid sig")).expect("fits into a PushValue"),
+            pv::push_value(&<[u8; 0x47]>::from_hex("3044022013e15d865010c257eef133064ef69a780b4bc7ebe6eda367504e806614f940c3022062fdbc8c2d049f91db2042d6c9771de6f1ef0b3b1fea76c1ab5542e44ed29ed801").expect("valid sig")).expect("fits into a PushValue"),
+            push_script(&REDEEM_SCRIPT).expect("fits into a PushValue"),
+        ].map(Opcode::PushValue));
+    }
+
+    pub fn sighash(_script_code: &[u8], _hash_type: &HashType) -> Option<[u8; 32]> {
+        <[u8; 32]>::from_hex("e8c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
+            .ok()
+    }
+
+    pub fn invalid_sighash(_script_code: &[u8], _hash_type: &HashType) -> Option<[u8; 32]> {
+        <[u8; 32]>::from_hex("08c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
+            .ok()
+    }
+
+    pub fn missing_sighash(_script_code: &[u8], _hash_type: &HashType) -> Option<[u8; 32]> {
+        None
+    }
+
     pub(crate) fn run_test_vector(
         tv: &TestVector,
+        try_normalized_error: bool,
         f: &dyn Fn(&[u8], &[u8], VerificationFlags) -> Result<(), Error>,
     ) -> () {
         match tv.run(&|sig, pubkey, flags| match f(sig, pubkey, flags) {
@@ -355,13 +401,20 @@ pub mod testing {
         }) {
             Ok(()) => (),
             Err(actual) => {
-                panic!(
-                    "{:?} didn’t match the result in
+                if try_normalized_error
+                    && tv.result.map_err(zcash_script::normalize_error)
+                        == actual.map_err(zcash_script::normalize_error)
+                {
+                    ()
+                } else {
+                    panic!(
+                        "{:?} didn’t match the result in
 
     {:?}
 ",
-                    actual, tv
-                );
+                        actual, tv
+                    );
+                }
             }
         }
     }
@@ -371,27 +424,7 @@ pub mod testing {
 mod tests {
     use super::{testing::*, *};
     use crate::test_vectors::TEST_VECTORS;
-    use hex::FromHex;
     use proptest::prelude::*;
-
-    lazy_static::lazy_static! {
-        pub static ref SCRIPT_PUBKEY: Vec<u8> = <Vec<u8>>::from_hex("a914c117756dcbe144a12a7c33a77cfa81aa5aeeb38187").unwrap();
-        pub static ref SCRIPT_SIG: Vec<u8> = <Vec<u8>>::from_hex("00483045022100d2ab3e6258fe244fa442cfb38f6cef9ac9a18c54e70b2f508e83fa87e20d040502200eead947521de943831d07a350e45af8e36c2166984a8636f0a8811ff03ed09401473044022013e15d865010c257eef133064ef69a780b4bc7ebe6eda367504e806614f940c3022062fdbc8c2d049f91db2042d6c9771de6f1ef0b3b1fea76c1ab5542e44ed29ed8014c69522103b2cc71d23eb30020a4893982a1e2d352da0d20ee657fa02901c432758909ed8f21029d1e9a9354c0d2aee9ffd0f0cea6c39bbf98c4066cf143115ba2279d0ba7dabe2103e32096b63fd57f3308149d238dcbb24d8d28aad95c0e4e74e3e5e6a11b61bcc453ae").expect("Block bytes are in valid hex representation");
-    }
-
-    fn sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
-        <[u8; 32]>::from_hex("e8c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
-            .ok()
-    }
-
-    fn invalid_sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
-        <[u8; 32]>::from_hex("08c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
-            .ok()
-    }
-
-    fn missing_sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
-        None
-    }
 
     #[test]
     fn it_works() {
@@ -420,7 +453,10 @@ mod tests {
             flags,
         );
 
-        assert_eq!(ret.0, ret.1.map_err(normalize_error));
+        assert_eq!(
+            ret.0.map_err(normalize_error),
+            ret.1.map_err(normalize_error)
+        );
         assert!(ret.0.is_ok());
     }
 
@@ -450,7 +486,10 @@ mod tests {
             flags,
         );
 
-        assert_eq!(ret.0, ret.1.map_err(normalize_error));
+        assert_eq!(
+            ret.0.map_err(normalize_error),
+            ret.1.map_err(normalize_error)
+        );
         assert_eq!(ret.0, Err(Error::Ok(ScriptError::EvalFalse)));
     }
 
@@ -481,14 +520,17 @@ mod tests {
             flags,
         );
 
-        assert_eq!(ret.0, ret.1.map_err(normalize_error));
+        assert_eq!(
+            ret.0.map_err(normalize_error),
+            ret.1.map_err(normalize_error)
+        );
         assert_eq!(ret.0, Err(Error::Ok(ScriptError::EvalFalse)));
     }
 
     #[test]
     fn test_vectors_for_cxx() {
         for tv in TEST_VECTORS {
-            run_test_vector(tv, &|sig, pubkey, flags| {
+            run_test_vector(tv, true, &|sig, pubkey, flags| {
                 CxxInterpreter {
                     sighash: &missing_sighash,
                     lock_time: 0,
@@ -502,7 +544,7 @@ mod tests {
     #[test]
     fn test_vectors_for_rust() {
         for tv in TEST_VECTORS {
-            run_test_vector(tv, &|sig, pubkey, flags| {
+            run_test_vector(tv, false, &|sig, pubkey, flags| {
                 rust_interpreter(
                     flags,
                     CallbackTransactionSignatureChecker {
@@ -512,7 +554,6 @@ mod tests {
                     },
                 )
                 .verify_callback(&pubkey, &sig, flags)
-                .map_err(normalize_error)
             })
         }
     }
@@ -549,7 +590,7 @@ mod tests {
                 &sig[..],
                 flags,
             );
-            prop_assert_eq!(ret.0, ret.1.map_err(normalize_error),
+            prop_assert_eq!(ret.0.map_err(normalize_error), ret.1.map_err(normalize_error),
                             "original Rust result: {:?}", ret.1);
         }
 
@@ -584,7 +625,7 @@ mod tests {
                 &sig[..],
                 flags,
             );
-            prop_assert_eq!(ret.0, ret.1.map_err(normalize_error),
+            prop_assert_eq!(ret.0.map_err(normalize_error), ret.1.map_err(normalize_error),
                             "original Rust result: {:?}", ret.1);
         }
 

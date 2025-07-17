@@ -2,9 +2,7 @@ use std::num::TryFromIntError;
 
 use thiserror::Error;
 
-use super::interpreter::*;
-use super::script::*;
-use super::script_error::*;
+use crate::{interpreter::*, script::*, script_error::*, signature};
 
 /// This maps to `zcash_script_error_t`, but most of those cases aren’t used any more. This only
 /// replicates the still-used cases, and then an `Unknown` bucket for anything else that might
@@ -109,6 +107,41 @@ impl<T, U> StepResults<T, U> {
     }
 }
 
+/// This case is only generated in comparisons. It merges the `interpreter::Error::OpCount` case
+/// with the `opcode::Error::DisabledOpcode` case. This is because there is an edge case when there
+/// is a disabled opcode as the `MAX_OP_COUNT + 1` operation (not opcode) in a script. In this case,
+/// the C++ implementation checks the op_count first, while the Rust implementation fails on
+/// disabled opcodes as soon as they’re read (since the script is guaranteed to fail if they occur,
+/// even in an inactive branch). To allow comparison tests to pass (especially property & fuzz
+/// tests), we need these two failure cases to be seen as identical.
+pub const AMBIGUOUS_COUNT_DISABLED_ERROR: ScriptError =
+    ScriptError::ExternalError("ambiguous OpCount or DisabledOpcode error");
+
+/// This case is only generated in comparisons. It merges `ScriptError::ScriptNumError` and
+/// `ScriptError::SigHighS`, which can only come from the Rust implementation, with
+/// `ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR`, which can only come from the C++ implementation, but
+/// in at least all of the cases that either of the Rust error cases would happen.
+pub const AMBIGUOUS_UNKNOWN_NUM_HIGHS_ERROR: ScriptError =
+    ScriptError::ExternalError("ambiguous Unknown, or ScriptNum, or HighS error");
+
+/// Convert errors that don’t exist in the C++ code into the cases that do.
+pub fn normalize_error(err: ScriptError) -> ScriptError {
+    match err {
+        ScriptError::OpCount => AMBIGUOUS_COUNT_DISABLED_ERROR,
+        ScriptError::BadOpcode(Some(_)) => ScriptError::BadOpcode(None),
+        ScriptError::DisabledOpcode(_) => AMBIGUOUS_COUNT_DISABLED_ERROR,
+        ScriptError::SignatureEncoding(sig_err) => match sig_err {
+            signature::Error::SigHashType(Some(_)) => signature::Error::SigHashType(None).into(),
+            signature::Error::SigDER(Some(_)) => signature::Error::SigDER(None).into(),
+            signature::Error::SigHighS => AMBIGUOUS_UNKNOWN_NUM_HIGHS_ERROR,
+            _ => sig_err.into(),
+        },
+        ScriptError::ReadError { .. } => ScriptError::BadOpcode(None),
+        ScriptError::ScriptNumError(_) => AMBIGUOUS_UNKNOWN_NUM_HIGHS_ERROR,
+        _ => err,
+    }
+}
+
 /// This compares two `ZcashScript` implementations in a deep way – checking the entire `State` step
 /// by step. Note that this has some tradeoffs: one is performance. Another is that it doesn’t run
 /// the entire codepath of either implementation. The setup/wrapup code is specific to this
@@ -150,12 +183,12 @@ impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
                         left.map(|_| state.clone()),
                         right.map(|_| right_state.clone()),
                     ));
-                    Err(ScriptError::UnknownError)
+                    Err(ScriptError::ExternalError("mismatched step results"))
                 }
             }
             // at least one is `Err`
             (_, _) => {
-                if left != right {
+                if left.map_err(normalize_error) != right.map_err(normalize_error) {
                     payload.diverging_result = Some((
                         left.map(|_| state.clone()),
                         right.map(|_| right_state.clone()),
@@ -223,33 +256,7 @@ impl<F: StepFn> ZcashScript for StepwiseInterpreter<F> {
 mod tests {
     use super::*;
     use crate::testing::*;
-    use hex::FromHex;
     use proptest::prelude::*;
-
-    lazy_static::lazy_static! {
-        pub static ref SCRIPT_PUBKEY: Vec<u8> = <Vec<u8>>::from_hex("a914c117756dcbe144a12a7c33a77cfa81aa5aeeb38187").unwrap();
-        pub static ref SCRIPT_SIG: Vec<u8> = <Vec<u8>>::from_hex("00483045022100d2ab3e6258fe244fa442cfb38f6cef9ac9a18c54e70b2f508e83fa87e20d040502200eead947521de943831d07a350e45af8e36c2166984a8636f0a8811ff03ed09401473044022013e15d865010c257eef133064ef69a780b4bc7ebe6eda367504e806614f940c3022062fdbc8c2d049f91db2042d6c9771de6f1ef0b3b1fea76c1ab5542e44ed29ed8014c69522103b2cc71d23eb30020a4893982a1e2d352da0d20ee657fa02901c432758909ed8f21029d1e9a9354c0d2aee9ffd0f0cea6c39bbf98c4066cf143115ba2279d0ba7dabe2103e32096b63fd57f3308149d238dcbb24d8d28aad95c0e4e74e3e5e6a11b61bcc453ae").expect("Block bytes are in valid hex representation");
-    }
-
-    fn sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
-        hex::decode("e8c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
-            .unwrap()
-            .as_slice()
-            .first_chunk::<32>()
-            .copied()
-    }
-
-    fn invalid_sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
-        hex::decode("08c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
-            .unwrap()
-            .as_slice()
-            .first_chunk::<32>()
-            .copied()
-    }
-
-    fn missing_sighash(_script_code: &[u8], _hash_type: HashType) -> Option<[u8; 32]> {
-        None
-    }
 
     #[test]
     fn it_works() {

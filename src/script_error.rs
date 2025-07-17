@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use crate::{script::Disabled, signature};
+
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Error)]
 pub enum ScriptNumError {
     #[error("non-minimal encoding of script number")]
@@ -10,13 +12,13 @@ pub enum ScriptNumError {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Error)]
-#[repr(i32)]
 pub enum ScriptError {
-    #[error("Ok")]
-    Ok = 0, // Unused (except in converting the C++ error to Rust)
-
-    #[error("unknown error")]
-    UnknownError,
+    /// A error external to the script validation code. This can come from the stepper.
+    ///
+    /// __TODO__: Replace the `str` with a type parameter, which will be `Void` in validation code,
+    /// but can be different in the steppers.
+    #[error("external error: {}", .0)]
+    ExternalError(&'static str),
 
     #[error("script evaluation failed")]
     EvalFalse,
@@ -61,10 +63,11 @@ pub enum ScriptError {
 
     // Logical/Format/Canonical errors
     #[error("bad opcode encountered")]
-    BadOpcode,
+    BadOpcode(Option<u8>),
 
-    #[error("disabled opcode encountered")]
-    DisabledOpcode,
+    /// __TODO__: `Option` can go away once C++ support is removed.
+    #[error("disabled opcode encountered: {}", .0.map_or("unknown".to_owned(), |op| format!("{:?}", op)))]
+    DisabledOpcode(Option<Disabled>),
 
     #[error("invalid stack operation encountered")]
     InvalidStackOperation,
@@ -82,21 +85,14 @@ pub enum ScriptError {
     #[error("unsatisfied locktime condition")]
     UnsatisfiedLockTime,
 
-    // BIP62
-    #[error("signature hash type error")]
-    SigHashType,
-
-    #[error("signature DER encoding error")]
-    SigDER,
+    #[error("signature encoding error: {}", .0)]
+    SignatureEncoding(signature::Error),
 
     #[error("minimal data requirement not met")]
     MinimalData,
 
     #[error("signature push only requirement not met")]
     SigPushOnly,
-
-    #[error("signature s value is too high")]
-    SigHighS,
 
     #[error("signature null dummy error")]
     SigNullDummy,
@@ -111,6 +107,7 @@ pub enum ScriptError {
     #[error("discouraged upgradable NOPs encountered")]
     DiscourageUpgradableNOPs,
 
+    // extensions (these don’t exist in C++, and thus map to `UnknownError`)
     #[error(
         "read error: expected {expected_bytes} bytes, but only {available_bytes} bytes available"
     )]
@@ -127,5 +124,11 @@ pub enum ScriptError {
 impl From<ScriptNumError> for ScriptError {
     fn from(value: ScriptNumError) -> Self {
         ScriptError::ScriptNumError(value)
+    }
+}
+
+impl From<signature::Error> for ScriptError {
+    fn from(value: signature::Error) -> Self {
+        ScriptError::SignatureEncoding(value)
     }
 }
