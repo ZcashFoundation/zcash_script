@@ -280,7 +280,7 @@ extern "C" fn sighash_callback(
     // And we don’t have access to the flags here to determine if it should be checked.
     if let Some(sighash) = HashType::from_bits(hash_type, false)
         .ok()
-        .and_then(|ht| callback(script_code_vec, &ht))
+        .and_then(|ht| callback(&script::Code(script_code_vec), &ht))
     {
         assert_eq!(sighash_out_len, sighash.len().try_into().unwrap());
         // SAFETY: `sighash_out` is a valid buffer created in
@@ -293,8 +293,7 @@ extern "C" fn sighash_callback(
 impl ZcashScript for CxxInterpreter<'_> {
     fn verify_callback(
         &self,
-        script_pub_key: &[u8],
-        signature_script: &[u8],
+        script: &script::Raw,
         flags: VerificationFlags,
     ) -> Result<bool, AnnError> {
         let mut err = 0;
@@ -306,18 +305,18 @@ impl ZcashScript for CxxInterpreter<'_> {
                 Some(sighash_callback),
                 self.lock_time.into(),
                 if self.is_final { 1 } else { 0 },
-                script_pub_key.as_ptr(),
-                script_pub_key.len().try_into().map_err(|_| {
+                script.pub_key.0.as_ptr(),
+                script.pub_key.0.len().try_into().map_err(|_| {
                     (
                         Some(script::ComponentType::PubKey),
-                        Error::from(script::Error::ScriptSize(Some(script_pub_key.len()))),
+                        Error::from(script::Error::ScriptSize(Some(script.pub_key.0.len()))),
                     )
                 })?,
-                signature_script.as_ptr(),
-                signature_script.len().try_into().map_err(|_| {
+                script.sig.0.as_ptr(),
+                script.sig.0.len().try_into().map_err(|_| {
                     (
                         Some(script::ComponentType::Sig),
-                        Error::from(script::Error::ScriptSize(Some(signature_script.len()))),
+                        Error::from(script::Error::ScriptSize(Some(script.sig.0.len()))),
                     )
                 })?,
                 flags.bits(),
@@ -334,13 +333,14 @@ impl ZcashScript for CxxInterpreter<'_> {
 
     /// Returns the number of transparent signature operations in the
     /// transparent inputs and outputs of this transaction.
-    fn legacy_sigop_count_script(&self, script: &[u8]) -> Result<u32, Error> {
+    fn legacy_sigop_count_script(&self, script: &script::Code) -> Result<u32, Error> {
         script
+            .0
             .len()
             .try_into()
-            .map_err(|_| Error::from(script::Error::ScriptSize(Some(script.len()))))
+            .map_err(|_| Error::from(script::Error::ScriptSize(Some(script.0.len()))))
             .map(|script_len| unsafe {
-                cxx::zcash_script_legacy_sigop_count_script(script.as_ptr(), script_len)
+                cxx::zcash_script_legacy_sigop_count_script(script.0.as_ptr(), script_len)
             })
     }
 }
@@ -351,7 +351,7 @@ impl ZcashScript for CxxInterpreter<'_> {
 fn check_legacy_sigop_count_script<T: ZcashScript, U: ZcashScript>(
     first: &T,
     second: &U,
-    script: &[u8],
+    script: &script::Code,
 ) -> (Result<u32, Error>, Result<u32, Error>) {
     (
         first.legacy_sigop_count_script(script),
@@ -368,13 +368,12 @@ fn check_legacy_sigop_count_script<T: ZcashScript, U: ZcashScript>(
 pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
     first: &T,
     second: &U,
-    script_pub_key: &[u8],
-    script_sig: &[u8],
+    script: &script::Raw,
     flags: VerificationFlags,
 ) -> (Result<bool, AnnError>, Result<bool, AnnError>) {
     (
-        first.verify_callback(script_pub_key, script_sig, flags),
-        second.verify_callback(script_pub_key, script_sig, flags),
+        first.verify_callback(script, flags),
+        second.verify_callback(script, flags),
     )
 }
 
@@ -422,7 +421,7 @@ pub fn normalize_err(err: AnnError) -> Error {
 /// This implementation is functionally equivalent to the `T` impl, but it also runs a second (`U`)
 /// impl and logs a warning if they disagree.
 impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U> {
-    fn legacy_sigop_count_script(&self, script: &[u8]) -> Result<u32, Error> {
+    fn legacy_sigop_count_script(&self, script: &script::Code) -> Result<u32, Error> {
         let (cxx, rust) = check_legacy_sigop_count_script(&self.first, &self.second, script);
         if rust != cxx {
             warn!(
@@ -435,12 +434,10 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U>
 
     fn verify_callback(
         &self,
-        script_pub_key: &[u8],
-        script_sig: &[u8],
+        script: &script::Raw,
         flags: VerificationFlags,
     ) -> Result<bool, AnnError> {
-        let (cxx, rust) =
-            check_verify_callback(&self.first, &self.second, script_pub_key, script_sig, flags);
+        let (cxx, rust) = check_verify_callback(&self.first, &self.second, script, flags);
         if rust.clone().map_err(normalize_err) != cxx.clone().map_err(normalize_err) {
             // probably want to distinguish between
             // - one succeeding when the other fails (bad), and
@@ -530,23 +527,37 @@ pub mod testing {
             pv::push_value(&<[u8; 0x47]>::from_hex("3044022013e15d865010c257eef133064ef69a780b4bc7ebe6eda367504e806614f940c3022062fdbc8c2d049f91db2042d6c9771de6f1ef0b3b1fea76c1ab5542e44ed29ed801").expect("valid sig")).expect("fits into a PushValue"),
             push_script(&REDEEM_SCRIPT).expect("fits into a PushValue"),
         ].map(Opcode::PushValue));
+        /// The combined script used for the static test case.
+        pub static ref SCRIPT: script::Raw<'static> =
+            script::Raw::from_raw_parts(&SCRIPT_SIG, &SCRIPT_PUBKEY);
     }
 
     /// The correct sighash for the static test case.
-    pub fn sighash(_script_code: &[u8], _hash_type: &HashType) -> Option<[u8; 32]> {
+    pub fn sighash(_script_code: &script::Code, _hash_type: &HashType) -> Option<[u8; 32]> {
         <[u8; 32]>::from_hex("e8c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
             .ok()
     }
 
     /// An incorrect sighash for the static test case – for checking failure cases.
-    pub fn invalid_sighash(_script_code: &[u8], _hash_type: &HashType) -> Option<[u8; 32]> {
+    pub fn invalid_sighash(_script_code: &script::Code, _hash_type: &HashType) -> Option<[u8; 32]> {
         <[u8; 32]>::from_hex("08c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
             .ok()
     }
 
     /// A callback that returns no sighash at all – another failure case.
-    pub fn missing_sighash(_script_code: &[u8], _hash_type: &HashType) -> Option<[u8; 32]> {
+    pub fn missing_sighash(_script_code: &script::Code, _hash_type: &HashType) -> Option<[u8; 32]> {
         None
+    }
+
+    /// Returns a script annotated with errors that could occur during evaluation.
+    pub fn annotate_script(
+        script: &script::Raw,
+        flags: &VerificationFlags,
+    ) -> (
+        Vec<Result<Opcode, Vec<script::Error>>>,
+        Vec<Result<Opcode, Vec<script::Error>>>,
+    ) {
+        script.map(&|c| c.parse_strict(&flags).collect::<Vec<_>>())
     }
 
     /// Run a single test case against some function.
@@ -558,12 +569,12 @@ pub mod testing {
     pub fn run_test_vector(
         tv: &TestVector,
         try_normalized_error: bool,
-        interpreter_fn: &dyn Fn(&[u8], &[u8], VerificationFlags) -> Result<bool, AnnError>,
-        sigop_count_fn: &dyn Fn(&[u8]) -> Result<u32, Error>,
+        interpreter_fn: &dyn Fn(&script::Raw, VerificationFlags) -> Result<bool, AnnError>,
+        sigop_count_fn: &dyn Fn(&script::Code) -> Result<u32, Error>,
     ) {
         match tv.run(
-            &|sig, pubkey, flags| {
-                interpreter_fn(sig, pubkey, flags).map_err(|err| match err {
+            &|script, flags| {
+                interpreter_fn(script, flags).map_err(|err| match err {
                     (t, Error::Script(serr)) => (t, serr),
                     _ => panic!("failed in a very bad way: {:?}", err),
                 })
@@ -602,19 +613,20 @@ mod tests {
         check_verify_callback, normalize_err, rust_interpreter,
         test_vectors::test_vectors,
         testing::{
-            invalid_sighash, missing_sighash, repair_flags, run_test_vector, sighash,
-            OVERFLOW_SCRIPT_SIZE, SCRIPT_PUBKEY, SCRIPT_SIG,
+            annotate_script, invalid_sighash, missing_sighash, repair_flags, run_test_vector,
+            sighash, OVERFLOW_SCRIPT_SIZE, SCRIPT,
         },
-        CxxInterpreter, ZcashScript,
+        CxxInterpreter, Error, ZcashScript,
     };
-    use crate::interpreter::{CallbackTransactionSignatureChecker, VerificationFlags};
+    use crate::{
+        interpreter::{CallbackTransactionSignatureChecker, VerificationFlags},
+        script,
+    };
 
     #[test]
     fn it_works() {
         let lock_time: u32 = 2410374;
         let is_final: bool = true;
-        let script_pub_key = &SCRIPT_PUBKEY;
-        let script_sig = &SCRIPT_SIG;
         let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
 
         let ret = check_verify_callback(
@@ -631,8 +643,7 @@ mod tests {
                     is_final,
                 },
             ),
-            script_pub_key,
-            script_sig,
+            &SCRIPT,
             flags,
         );
 
@@ -647,8 +658,6 @@ mod tests {
     fn it_fails_on_invalid_sighash() {
         let lock_time: u32 = 2410374;
         let is_final: bool = true;
-        let script_pub_key = &SCRIPT_PUBKEY;
-        let script_sig = &SCRIPT_SIG;
         let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
         let ret = check_verify_callback(
             &CxxInterpreter {
@@ -664,8 +673,7 @@ mod tests {
                     is_final,
                 },
             ),
-            script_pub_key,
-            script_sig,
+            &SCRIPT,
             flags,
         );
 
@@ -680,8 +688,6 @@ mod tests {
     fn it_fails_on_missing_sighash() {
         let lock_time: u32 = 2410374;
         let is_final: bool = true;
-        let script_pub_key = &SCRIPT_PUBKEY;
-        let script_sig = &SCRIPT_SIG;
         let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
 
         let ret = check_verify_callback(
@@ -698,8 +704,7 @@ mod tests {
                     is_final,
                 },
             ),
-            script_pub_key,
-            script_sig,
+            &SCRIPT,
             flags,
         );
 
@@ -722,7 +727,7 @@ mod tests {
             run_test_vector(
                 &tv,
                 true,
-                &|sig, pubkey, flags| interp.verify_callback(pubkey, sig, flags),
+                &|script, flags| interp.verify_callback(&script, flags),
                 &|pubkey| interp.legacy_sigop_count_script(pubkey),
             )
         }
@@ -734,7 +739,7 @@ mod tests {
             run_test_vector(
                 &tv,
                 false,
-                &|sig, pubkey, flags| {
+                &|script, flags| {
                     rust_interpreter(
                         flags,
                         CallbackTransactionSignatureChecker {
@@ -743,7 +748,7 @@ mod tests {
                             is_final: false,
                         },
                     )
-                    .verify_callback(&pubkey, &sig, flags)
+                    .verify_callback(&script, flags)
                 },
                 &|pubkey| {
                     rust_interpreter(
@@ -754,8 +759,31 @@ mod tests {
                             is_final: false,
                         },
                     )
-                    .legacy_sigop_count_script(pubkey)
+                    .legacy_sigop_count_script(&pubkey)
                 },
+            )
+        }
+    }
+
+    #[test]
+    fn test_vectors_for_pure_rust() {
+        for tv in test_vectors() {
+            run_test_vector(
+                &tv,
+                false,
+                &|script, flags| {
+                    script
+                        .eval(
+                            flags,
+                            &CallbackTransactionSignatureChecker {
+                                sighash: &missing_sighash,
+                                lock_time: 0,
+                                is_final: false,
+                            },
+                        )
+                        .map_err(|(t, e)| (Some(t), Error::from(e)))
+                },
+                &|pubkey| Ok(pubkey.get_sig_op_count(false)),
             )
         }
     }
@@ -774,26 +802,31 @@ mod tests {
             flag_bits in prop::bits::u32::masked(VerificationFlags::all().bits()),
         ) {
             let flags = repair_flags(VerificationFlags::from_bits_truncate(flag_bits));
+            let script = script::Raw::from_raw_parts(&sig, &pub_key);
             let ret = check_verify_callback(
-            &CxxInterpreter {
-                sighash: &sighash,
-                lock_time,
-                is_final,
-            },
-            &rust_interpreter(
-                flags,
-                CallbackTransactionSignatureChecker {
+                &CxxInterpreter {
                     sighash: &sighash,
-                    lock_time: lock_time.into(),
+                    lock_time,
                     is_final,
                 },
-            ),
-                &pub_key[..],
-                &sig[..],
+                &rust_interpreter(
+                    flags,
+                    CallbackTransactionSignatureChecker {
+                        sighash: &sighash,
+                        lock_time: lock_time.into(),
+                        is_final,
+                    },
+                ),
+                &script,
                 flags,
             );
-            prop_assert_eq!(ret.0.map_err(normalize_err), ret.1.clone().map_err(normalize_err),
-                            "original Rust result: {:?}", ret.1);
+            prop_assert_eq!(
+                ret.0.clone().map_err(normalize_err),
+                ret.1.clone().map_err(normalize_err),
+                "\n• original Rust result: {:?}\n• parsed script: {:?}",
+                ret.1,
+                annotate_script(&script, &flags)
+            );
         }
 
         /// Similar to `test_arbitrary_scripts`, but ensures the `sig` only contains pushes.
@@ -808,27 +841,29 @@ mod tests {
                 (VerificationFlags::all() - VerificationFlags::SigPushOnly).bits()),
         ) {
             let flags = repair_flags(VerificationFlags::from_bits_truncate(flag_bits))
-                    | VerificationFlags::SigPushOnly;
+                | VerificationFlags::SigPushOnly;
+            let script = script::Raw::from_raw_parts(&sig, &pub_key);
             let ret = check_verify_callback(
-            &CxxInterpreter {
-                sighash: &sighash,
-                lock_time,
-                is_final,
-            },
-            &rust_interpreter(
-                flags,
-                CallbackTransactionSignatureChecker {
+                &CxxInterpreter {
                     sighash: &sighash,
-                    lock_time: lock_time.into(),
+                    lock_time,
                     is_final,
                 },
-            ),
-                &pub_key[..],
-                &sig[..],
+                &rust_interpreter(
+                    flags,
+                    CallbackTransactionSignatureChecker {
+                        sighash: &sighash,
+                        lock_time: lock_time.into(),
+                        is_final,
+                    },
+                ),
+                &script,
                 flags,
             );
-            prop_assert_eq!(ret.0.map_err(normalize_err), ret.1.clone().map_err(normalize_err),
-                            "original Rust result: {:?}", ret.1);
+            prop_assert_eq!(
+                ret.0.map_err(normalize_err),
+                ret.1.clone().map_err(normalize_err),
+                "original Rust result: {:?}", ret.1);
         }
     }
 }

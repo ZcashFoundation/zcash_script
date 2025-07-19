@@ -83,6 +83,9 @@ impl ResultCmp {
 }
 
 /// A single test case.
+///
+/// __NB__: This uses separate `script_sig` and `script_pubkey` fields instead of a representation
+///         like `script::Raw` because it allows us to have more informative error reporting than .
 #[derive(Debug)]
 pub struct TestVector {
     script_sig: &'static [Entry],
@@ -124,12 +127,11 @@ impl TestVector {
     pub fn run(
         &self,
         interpreter_fn: &dyn Fn(
-            &[u8],
-            &[u8],
+            &script::Raw,
             VerificationFlags,
         )
             -> Result<bool, (Option<script::ComponentType>, script::Error)>,
-        sigop_count_fn: &dyn Fn(&[u8]) -> u32,
+        sigop_count_fn: &dyn Fn(&script::Code) -> u32,
     ) -> Result<
         (),
         (
@@ -150,8 +152,8 @@ impl TestVector {
                 .map(|vs| vs.concat()),
         ) {
             (Ok(sig), Ok(pubkey)) => {
-                let res = interpreter_fn(&sig, &pubkey, self.flags);
-                let count = sigop_count_fn(&pubkey);
+                let res = interpreter_fn(&script::Raw::from_raw_parts(&sig, &pubkey), self.flags);
+                let count = sigop_count_fn(&script::Code(&pubkey));
                 if compare_results(res.clone(), self.result.clone()) && count == self.sigop_count {
                     Ok(())
                 } else {
