@@ -71,6 +71,9 @@ impl ResultCmp {
 }
 
 /// A single test case.
+///
+/// __NB__: This uses separate `script_sig` and `script_pubkey` fields instead of a representation
+///         like `script::Raw` because it allows us to have more informative error reporting than .
 #[derive(Debug)]
 pub struct TestVector {
     script_sig: &'static [Entry],
