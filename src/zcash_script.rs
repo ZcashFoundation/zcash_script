@@ -64,36 +64,13 @@ pub trait ZcashScript {
     ///  Note that script verification failure is indicated by `Err(Error::Script)`.
     fn verify_callback(
         &self,
-        script_pub_key: &[u8],
-        script_sig: &[u8],
+        script: &script::Raw,
         flags: VerificationFlags,
     ) -> Result<bool, AnnError>;
 
     /// Returns the number of transparent signature operations in the input or
     /// output script pointed to by script.
-    fn legacy_sigop_count_script(&self, script: &[u8]) -> Result<u32, Error>;
-}
-
-// NB: This is extracted from [StepwiseInterpreter::verify_callback] to be used in tests. The public
-//     API gives no access to the payload.
-fn stepwise_verify<F>(
-    script_pub_key: &[u8],
-    script_sig: &[u8],
-    flags: VerificationFlags,
-    payload: &mut F::Payload,
-    stepper: &F,
-) -> Result<bool, (script::ComponentType, Error)>
-where
-    F: StepFn,
-{
-    verify_script(
-        &script::Code(script_sig),
-        &script::Code(script_pub_key),
-        flags,
-        payload,
-        stepper,
-    )
-    .map_err(|(t, e)| (t, Error::Script(e)))
+    fn legacy_sigop_count_script(&self, script: &script::Code) -> Result<u32, Error>;
 }
 
 /// A payload for comparing the results of two steppers.
@@ -219,26 +196,18 @@ pub fn rust_interpreter<C: SignatureChecker + Copy>(
 impl<F: StepFn> ZcashScript for StepwiseInterpreter<F> {
     /// Returns the number of transparent signature operations in the
     /// transparent inputs and outputs of this transaction.
-    fn legacy_sigop_count_script(&self, script: &[u8]) -> Result<u32, Error> {
-        let cscript = script::Code(script);
-        Ok(cscript.get_sig_op_count(false))
+    fn legacy_sigop_count_script(&self, script: &script::Code) -> Result<u32, Error> {
+        Ok(script.get_sig_op_count(false))
     }
 
     fn verify_callback(
         &self,
-        script_pub_key: &[u8],
-        script_sig: &[u8],
+        script: &script::Raw,
         flags: VerificationFlags,
     ) -> Result<bool, AnnError> {
         let mut payload = self.initial_payload.clone();
-        stepwise_verify(
-            script_pub_key,
-            script_sig,
-            flags,
-            &mut payload,
-            &self.stepper,
-        )
-        .map_err(|(t, e)| (Some(t), e))
+        verify_script(script, flags, &mut payload, &self.stepper)
+            .map_err(|(t, e)| (Some(t), Error::Script(e)))
     }
 }
 
@@ -246,15 +215,16 @@ impl<F: StepFn> ZcashScript for StepwiseInterpreter<F> {
 mod tests {
     use proptest::prelude::{prop, proptest, ProptestConfig};
 
-    use super::{stepwise_verify, ComparisonStepEvaluator, Error, StepResults};
+    use super::{ComparisonStepEvaluator, StepResults};
     use crate::{
         interpreter::{
-            CallbackTransactionSignatureChecker, DefaultStepEvaluator, VerificationFlags,
+            verify_script, CallbackTransactionSignatureChecker, DefaultStepEvaluator,
+            VerificationFlags,
         },
         opcode, script,
         testing::{
             invalid_sighash, missing_sighash, repair_flags, sighash, BrokenStepEvaluator,
-            OVERFLOW_SCRIPT_SIZE, SCRIPT_PUBKEY, SCRIPT_SIG,
+            OVERFLOW_SCRIPT_SIZE, SCRIPT,
         },
     };
 
@@ -262,8 +232,6 @@ mod tests {
     fn it_works() {
         let n_lock_time: u32 = 2410374;
         let is_final: bool = true;
-        let script_pub_key = &SCRIPT_PUBKEY;
-        let script_sig = &SCRIPT_SIG;
         let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
 
         let checker = CallbackTransactionSignatureChecker {
@@ -277,7 +245,7 @@ mod tests {
             eval_step_r: &rust_stepper,
         };
         let mut res = StepResults::initial((), ());
-        let ret = stepwise_verify(script_pub_key, script_sig, flags, &mut res, &stepper);
+        let ret = verify_script(&SCRIPT, flags, &mut res, &stepper);
 
         if res.diverging_result.is_some() {
             panic!("invalid result: {res:?}");
@@ -289,8 +257,6 @@ mod tests {
     fn broken_stepper_causes_divergence() {
         let n_lock_time: u32 = 2410374;
         let is_final: bool = true;
-        let script_pub_key = &SCRIPT_PUBKEY;
-        let script_sig = &SCRIPT_SIG;
         let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
 
         let checker = CallbackTransactionSignatureChecker {
@@ -305,17 +271,17 @@ mod tests {
             eval_step_r: &broken_stepper,
         };
         let mut res = StepResults::initial((), ());
-        let ret = stepwise_verify(script_pub_key, script_sig, flags, &mut res, &stepper);
+        let ret = verify_script(&SCRIPT, flags, &mut res, &stepper);
 
         // The final return value is from whichever stepper failed.
         assert_eq!(
             ret,
             Err((
                 script::ComponentType::PubKey,
-                Error::from(script::Error::from(opcode::Error::Read {
+                script::Error::from(opcode::Error::Read {
                     expected_bytes: 1,
                     available_bytes: 0,
-                }))
+                })
             ))
         );
 
@@ -351,8 +317,6 @@ mod tests {
     fn it_fails_on_invalid_sighash() {
         let n_lock_time: u32 = 2410374;
         let is_final: bool = true;
-        let script_pub_key = &SCRIPT_PUBKEY;
-        let script_sig = &SCRIPT_SIG;
         let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
 
         let checker = CallbackTransactionSignatureChecker {
@@ -366,7 +330,7 @@ mod tests {
             eval_step_r: &rust_stepper,
         };
         let mut res = StepResults::initial((), ());
-        let ret = stepwise_verify(script_pub_key, script_sig, flags, &mut res, &stepper);
+        let ret = verify_script(&SCRIPT, flags, &mut res, &stepper);
 
         if res.diverging_result.is_some() {
             panic!("mismatched result: {res:?}");
@@ -378,8 +342,6 @@ mod tests {
     fn it_fails_on_missing_sighash() {
         let n_lock_time: u32 = 2410374;
         let is_final: bool = true;
-        let script_pub_key = &SCRIPT_PUBKEY;
-        let script_sig = &SCRIPT_SIG;
         let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
 
         let checker = CallbackTransactionSignatureChecker {
@@ -393,7 +355,7 @@ mod tests {
             eval_step_r: &rust_stepper,
         };
         let mut res = StepResults::initial((), ());
-        let ret = stepwise_verify(script_pub_key, script_sig, flags, &mut res, &stepper);
+        let ret = verify_script(&SCRIPT, flags, &mut res, &stepper);
 
         if res.diverging_result.is_some() {
             panic!("mismatched result: {res:?}");
@@ -428,7 +390,12 @@ mod tests {
             eval_step_r: &rust_stepper,
         };
             let mut res = StepResults::initial((), ());
-            let _ = stepwise_verify(&pub_key[..], &sig[..], flags, &mut res, &stepper);
+            let _ = verify_script(
+                &script::Raw::from_raw_parts(&sig, &pub_key),
+                flags,
+                &mut res,
+                &stepper
+            );
 
             if res.diverging_result.is_some() {
                 panic!("mismatched result: {res:?}");
@@ -458,7 +425,12 @@ mod tests {
             eval_step_r: &rust_stepper,
         };
             let mut res = StepResults::initial((), ());
-            let _ = stepwise_verify(&pub_key[..], &sig[..], flags, &mut res, &stepper);
+            let _ = verify_script(
+                &script::Raw::from_raw_parts(&sig, &pub_key),
+                flags,
+                &mut res,
+                &stepper
+            );
 
             if res.diverging_result.is_some() {
                 panic!("mismatched result: {res:?}");
