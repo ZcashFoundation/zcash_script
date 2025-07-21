@@ -108,7 +108,9 @@ pub enum SignedOutputs {
 /// The different SigHash types, as defined in <https://zips.z.cash/zip-0143>
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct HashType {
-    signed_outputs: SignedOutputs,
+    /// This is in `Option`, because if `VerificationFlags::StrictEnc` isn’t set, a value that
+    /// doesn’t correspond to any signed outputs setting is possible.
+    signed_outputs: Option<SignedOutputs>,
     anyone_can_pay: bool,
 }
 
@@ -124,20 +126,24 @@ impl HashType {
         if is_strict && unknown_bits != 0 {
             Err(InvalidHashType::ExtraBitsSet(unknown_bits))
         } else {
-            let msigned_outputs = match (bits & 2 != 0, bits & 1 != 0) {
-                (false, false) => Err(InvalidHashType::UnknownSignedOutputs),
-                (false, true) => Ok(SignedOutputs::All),
-                (true, false) => Ok(SignedOutputs::None),
-                (true, true) => Ok(SignedOutputs::Single),
+            let signed_outputs = match (bits & 2 != 0, bits & 1 != 0) {
+                (false, false) => None,
+                (false, true) => Some(SignedOutputs::All),
+                (true, false) => Some(SignedOutputs::None),
+                (true, true) => Some(SignedOutputs::Single),
             };
-            msigned_outputs.map(|signed_outputs| HashType {
-                signed_outputs,
-                anyone_can_pay: bits & 0x80 != 0,
-            })
+            if is_strict && signed_outputs.is_none() {
+                Err(InvalidHashType::UnknownSignedOutputs)
+            } else {
+                Ok(HashType {
+                    signed_outputs,
+                    anyone_can_pay: bits & 0x80 != 0,
+                })
+            }
         }
     }
 
-    pub fn signed_outputs(&self) -> SignedOutputs {
+    pub fn signed_outputs(&self) -> Option<SignedOutputs> {
         self.signed_outputs
     }
 
@@ -153,7 +159,7 @@ impl HashType {
 #[derive(Clone)]
 pub struct Decoded {
     sig: ecdsa::Signature,
-    sighash: HashType,
+    hash_type: HashType,
 }
 
 impl Decoded {
@@ -195,7 +201,7 @@ impl Decoded {
     ///         so we need to ensure that these exact checks happen.
     fn is_valid_encoding(sig: &[u8]) -> Result<(), InvalidDerEncoding> {
         // Format: 0x30 [total-length] 0x02 [R-length] [R] 0x02 [S-length] [S]
-        // * total-length: 1-byte length descriptor of everything that follows
+        // * total-length: 1-byte length descriptor of everything that follows.
         // * R-length: 1-byte length descriptor of the R value that follows.
         // * R: arbitrary-length big-endian encoded R value. It must use the shortest
         //   possible encoding for a positive integer (which means no null bytes at
@@ -290,7 +296,7 @@ impl Decoded {
                     HashType::from_bits((*hash_type).into(), is_strict)
                         .map_err(|e| Error::SigHashType(Some(e)))
                 })
-                .and_then(|sighash| {
+                .and_then(|hash_type| {
                     match ecdsa::Signature::from_der(vch_sig) {
                         Err(_) => Ok(None),
                         Ok(sig) => {
@@ -301,7 +307,7 @@ impl Decoded {
                             }
                         }
                     }
-                    .map(|msig| msig.map(|sig| Decoded { sig, sighash }))
+                    .map(|msig| msig.map(|sig| Decoded { sig, hash_type }))
                 }),
         }
     }
@@ -310,7 +316,7 @@ impl Decoded {
         &self.sig
     }
 
-    pub fn sighash(&self) -> &HashType {
-        &self.sighash
+    pub fn sighash_type(&self) -> &HashType {
+        &self.hash_type
     }
 }

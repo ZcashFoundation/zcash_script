@@ -1086,7 +1086,7 @@ impl SignatureChecker for CallbackTransactionSignatureChecker<'_> {
         let pubkey = PubKey(vch_pub_key);
 
         pubkey.is_valid()
-            && (self.sighash)(script_code.0, sig.sighash())
+            && (self.sighash)(script_code.0, sig.sighash_type())
                 .map(|sighash| pubkey.verify(&sighash, sig.sig()))
                 .unwrap_or(false)
     }

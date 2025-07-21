@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `interpreter::SighashCalculator` now takes `&HashType` instead of `HashType`
 - `interpreter::Signature` is now `signature::Decoded`
 - `interpreter::SignatureChecker::check_sig` takes a `&signature::Decoded` instead of a `&[u8]`
-- `signature::HashType` now has private fields, but there are now functions with the same names for reading
+- `signature::HashType` now has private fields, but there are corresponding getter methods
 
 ### Added
 
