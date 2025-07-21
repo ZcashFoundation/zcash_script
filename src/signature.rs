@@ -115,6 +115,19 @@ pub struct Decoded {
 }
 
 impl Decoded {
+    /// Checks the properties of individual integers in a DER signature.
+    fn is_valid_integer(int_bytes: &[u8]) -> bool {
+        match int_bytes {
+            // Zero-length integers are not allowed.
+            [] => false,
+            // Null bytes at the start are not allowed, unless it would otherwise be interpreted as
+            // a negative number.
+            [0x00, next, ..] => next & 0x80 != 0,
+            // Negative numbers are not allowed.
+            [first, ..] => first & 0x80 == 0,
+        }
+    }
+
     /// A canonical signature consists of: <30> <total len> <02> <len R> <R> <02> <len S> <S>
     ///
     /// Where R and S are not negative (their first byte has its highest bit not set), and not
@@ -137,84 +150,35 @@ impl Decoded {
         // * S-length: 1-byte length descriptor of the S value that follows.
         // * S: arbitrary-length big-endian encoded S value. The same rules apply.
 
-        // Minimum and maximum size constraints.
-        if sig.len() < 8 {
-            return false;
-        };
-        if sig.len() > 72 {
-            return false;
-        };
-
-        // A signature is of type 0x30 (compound).
-        if sig[0] != 0x30 {
-            return false;
-        };
-
-        // Make sure the length covers the entire signature.
-        if usize::from(sig[1]) != sig.len() - 2 {
-            return false;
-        };
-
-        // Extract the length of the R element.
-        let len_r = usize::from(sig[3]);
-
-        // Make sure the length of the S element is still inside the signature.
-        if 4 + len_r + 1 >= sig.len() {
-            return false;
-        };
-
-        // Extract the length of the S element.
-        let len_s = usize::from(sig[4 + len_r + 1]);
-
-        // Verify that the length of the signature matches the sum of the length
-        // of the elements.
-        if 4 + len_r + 2 + len_s != sig.len() {
-            return false;
-        };
-
-        // Check whether the R element is an integer.
-        if sig[2] != 0x02 {
-            return false;
-        };
-
-        // Zero-length integers are not allowed for R.
-        if len_r == 0 {
-            return false;
-        };
-
-        // Negative numbers are not allowed for R.
-        if sig[4] & 0x80 != 0 {
-            return false;
-        };
-
-        // Null bytes at the start of R are not allowed, unless R would
-        // otherwise be interpreted as a negative number.
-        if len_r > 1 && sig[4] == 0x00 && sig[5] & 0x80 == 0 {
-            return false;
-        };
-
-        // Check whether the S element is an integer.
-        if sig[3 + len_r + 1] != 0x02 {
-            return false;
-        };
-
-        // Zero-length integers are not allowed for S.
-        if len_s == 0 {
-            return false;
-        };
-
-        // Negative numbers are not allowed for S.
-        if sig[4 + len_r + 2] & 0x80 != 0 {
-            return false;
-        };
-
-        // Null bytes at the start of S are not allowed, unless S would otherwise be
-        // interpreted as a negative number.
-        if len_s > 1 && sig[4 + len_r + 2] == 0x00 && sig[4 + len_r + 3] & 0x80 == 0 {
-            return false;
-        };
-
-        true
+        // implied checks:
+        // - Minimum size constraint.
+        // - Verify that the length of the signature matches the sum of the length of the elements.
+        match sig {
+            // A signature is of type 0x30 (compound).
+            [0x30, total_len, content @ ..] => {
+                // Maximum size constraint.
+                *total_len <= 70
+                // Make sure the length covers the entire signature.
+                    && usize::from(*total_len) == content.len()
+                    && match content {
+                        // Check whether the R element is an integer.
+                        // Extract the length of the R element.
+                        [0x02, r_len, r_s @ ..] => match r_s.split_at((*r_len).into()) {
+                            // Check whether the S element is an integer.
+                            // Extract the length of the S element.
+                            // Make sure the length of the S element is still inside the signature.
+                            (r, [0x02, s_len, s @ ..]) => {
+                                Self::is_valid_integer(r)
+                                    && usize::from(*s_len) == s.len()
+                                    && Self::is_valid_integer(s)
+                            }
+                            ([..], [..]) => false,
+                        },
+                        [..] => false,
+                    }
+            }
+            [..] => false,
+        }
     }
 
     /// This decodes an ECDSA signature and Zcash hash type from bytes. It ensures that the encoding
