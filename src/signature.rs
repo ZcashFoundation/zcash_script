@@ -115,20 +115,18 @@ pub struct Decoded {
 }
 
 impl Decoded {
-    /**
-     * A canonical signature consists of: <30> <total len> <02> <len R> <R> <02> <len S> <S>
-     * Where R and S are not negative (their first byte has its highest bit not set), and not
-     * excessively padded (do not start with a 0 byte, unless an otherwise negative number follows,
-     * in which case a single 0 byte is necessary and even required).
-     *
-     * See https://bitcointalk.org/index.php?topic=8392.msg127623#msg127623
-     *
-     * This function is consensus-critical since BIP66.
-     *
-     * Most of these checks are handled by `ecdsa::Signature::from_der`, except that it doesn’t
-     * check for negative R and S elements. So this precesses just enough of the vector to make up
-     * that difference.
-     */
+    /// A canonical signature consists of: <30> <total len> <02> <len R> <R> <02> <len S> <S>
+    ///
+    /// Where R and S are not negative (their first byte has its highest bit not set), and not
+    /// excessively padded (do not start with a 0 byte, unless an otherwise negative number follows,
+    /// in which case a single 0 byte is necessary and even required).
+    ///
+    /// See https://bitcointalk.org/index.php?topic=8392.msg127623#msg127623
+    ///
+    /// This function is consensus-critical since BIP66.
+    ///
+    /// __NB__: This doesn’t rely on [ecdsa::Signature::from_der] because it is consensus critical,
+    ///         so we need to ensure that these exact checks happen.
     fn is_valid_encoding(sig: &[u8]) -> bool {
         // Format: 0x30 [total-length] 0x02 [R-length] [R] 0x02 [S-length] [S]
         // * total-length: 1-byte length descriptor of everything that follows
@@ -139,23 +137,84 @@ impl Decoded {
         // * S-length: 1-byte length descriptor of the S value that follows.
         // * S: arbitrary-length big-endian encoded S value. The same rules apply.
 
-        if sig.len() > 4 {
-            // Negative numbers are not allowed for R.
-            if sig[4] & 0x80 != 0 {
-                return false;
-            };
+        // Minimum and maximum size constraints.
+        if sig.len() < 8 {
+            return false;
+        };
+        if sig.len() > 72 {
+            return false;
+        };
 
-            let len_r = usize::from(sig[3]);
-            // Make sure the length of the S element is still inside the signature.
-            if 6 + len_r < sig.len() {
-                // Negative numbers are not allowed for S.
-                sig[6 + len_r] & 0x80 == 0
-            } else {
-                false
-            }
-        } else {
-            false
-        }
+        // A signature is of type 0x30 (compound).
+        if sig[0] != 0x30 {
+            return false;
+        };
+
+        // Make sure the length covers the entire signature.
+        if usize::from(sig[1]) != sig.len() - 2 {
+            return false;
+        };
+
+        // Extract the length of the R element.
+        let len_r = usize::from(sig[3]);
+
+        // Make sure the length of the S element is still inside the signature.
+        if 4 + len_r + 1 >= sig.len() {
+            return false;
+        };
+
+        // Extract the length of the S element.
+        let len_s = usize::from(sig[4 + len_r + 1]);
+
+        // Verify that the length of the signature matches the sum of the length
+        // of the elements.
+        if 4 + len_r + 2 + len_s != sig.len() {
+            return false;
+        };
+
+        // Check whether the R element is an integer.
+        if sig[2] != 0x02 {
+            return false;
+        };
+
+        // Zero-length integers are not allowed for R.
+        if len_r == 0 {
+            return false;
+        };
+
+        // Negative numbers are not allowed for R.
+        if sig[4] & 0x80 != 0 {
+            return false;
+        };
+
+        // Null bytes at the start of R are not allowed, unless R would
+        // otherwise be interpreted as a negative number.
+        if len_r > 1 && sig[4] == 0x00 && sig[5] & 0x80 == 0 {
+            return false;
+        };
+
+        // Check whether the S element is an integer.
+        if sig[3 + len_r + 1] != 0x02 {
+            return false;
+        };
+
+        // Zero-length integers are not allowed for S.
+        if len_s == 0 {
+            return false;
+        };
+
+        // Negative numbers are not allowed for S.
+        if sig[4 + len_r + 2] & 0x80 != 0 {
+            return false;
+        };
+
+        // Null bytes at the start of S are not allowed, unless S would otherwise be
+        // interpreted as a negative number.
+        if len_s > 1 && sig[4 + len_r + 2] == 0x00 && sig[4 + len_r + 3] & 0x80 == 0 {
+            return false;
+        };
+
+        true
     }
 
     /// This decodes an ECDSA signature and Zcash hash type from bytes. It ensures that the encoding
@@ -172,19 +231,21 @@ impl Decoded {
             None => Ok(None),
             Some((hash_type, vch_sig)) => {
                 if Self::is_valid_encoding(vch_sig) {
-                    Ok(Some(Decoded {
-                        sig: ecdsa::Signature::from_der(vch_sig)
-                            .map_err(|e| Error::SigDER(Some(e)))
-                            .and_then(|sig| {
-                                if require_low_s && !PubKey::check_low_s(&sig) {
-                                    Err(Error::SigHighS)
-                                } else {
-                                    Ok(sig)
+                    HashType::from_bits((*hash_type).into(), is_strict)
+                        .map_err(|e| Error::SigHashType(Some(e)))
+                        .and_then(|sighash| {
+                            match ecdsa::Signature::from_der(vch_sig) {
+                                Err(_) => Ok(None),
+                                Ok(sig) => {
+                                    if require_low_s && !PubKey::check_low_s(&sig) {
+                                        Err(Error::SigHighS)
+                                    } else {
+                                        Ok(Some(sig))
+                                    }
                                 }
-                            })?,
-                        sighash: HashType::from_bits((*hash_type).into(), is_strict)
-                            .map_err(|e| Error::SigHashType(Some(e)))?,
-                    }))
+                            }
+                            .map(|msig| msig.map(|sig| Decoded { sig, sighash }))
+                        })
                 } else {
                     Err(Error::SigDER(None))
                 }
