@@ -9,7 +9,7 @@ use super::script_error::*;
 /// This maps to `zcash_script_error_t`, but most of those cases aren’t used any more. This only
 /// replicates the still-used cases, and then an `Unknown` bucket for anything else that might
 /// happen.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Error)]
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum Error {
     /// Any failure that results in the script being invalid.
     #[error("{0}")]
@@ -139,29 +139,27 @@ impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
             .call(pc, script, &mut right_state, &mut payload.payload_r);
 
         match (left, right) {
-            (Ok(_), Ok(_)) => {
+            (l @ Ok(_), r @ Ok(_)) => {
                 if *state == right_state {
                     payload.identical_states.push(state.clone());
-                    left
+                    l
                 } else {
                     // In this case, the script hasn’t failed, but we stop running
                     // anything
-                    payload.diverging_result = Some((
-                        left.map(|_| state.clone()),
-                        right.map(|_| right_state.clone()),
-                    ));
+                    payload.diverging_result =
+                        Some((l.map(|_| state.clone()), r.map(|_| right_state.clone())));
                     Err(ScriptError::UnknownError)
                 }
             }
             // at least one is `Err`
-            (_, _) => {
-                if left != right {
+            (l, r) => {
+                if l != r {
                     payload.diverging_result = Some((
-                        left.map(|_| state.clone()),
-                        right.map(|_| right_state.clone()),
+                        l.clone().map(|_| state.clone()),
+                        r.clone().map(|_| right_state.clone()),
                     ));
                 }
-                left.and(right)
+                l.and(r)
             }
         }
     }

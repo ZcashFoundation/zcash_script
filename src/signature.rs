@@ -21,19 +21,61 @@ pub enum InvalidHashType {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Error)]
+pub enum InvalidDerInteger {
+    #[error("missing the 0x02 integer encoding byte")]
+    NotAnInteger,
+    #[error("the integer was expected to be {expected} bytes, but it was {actual} bytes")]
+    IncorrectLength { actual: usize, expected: u8 },
+    #[error("integers can’t be zero-length")]
+    ZeroLength,
+    #[error("leading 0x00 bytes are disallowed, unless it would otherwise be interpreted as a negative number.")]
+    LeadingNullByte,
+    #[error("integers can’t be negative")]
+    Negative,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Error)]
+pub enum InvalidDerEncoding {
+    #[error("didn’t start with 0x30, or was missing the length")]
+    WrongType,
+    #[error("the signature can’t be longer than 70 bytes")]
+    TooLong,
+    #[error("the signature was expected to be {expected} bytes, but it was {actual} bytes")]
+    IncorrectLength { actual: usize, expected: u8 },
+    #[error(
+        "the {name} component {}failed: {error}",
+        .value.clone().map_or("".to_owned(), |vec| format!("({:?}) ", vec))
+    )]
+    InvalidComponent {
+        name: &'static str,
+        value: Option<Vec<u8>>,
+        error: InvalidDerInteger,
+    },
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Error)]
 pub enum Error {
     // BIP62
+
+    // TODO: Remove the `Option` once C++ support is removed.
     #[error(
         "{}",
         .0.map_or(
             "unknown signature hash type error".to_owned(),
-            |iht| format!("signature hash type error: {}", iht)
+            |iht| format!("signature hash type error: {iht}")
         )
     )]
     SigHashType(Option<InvalidHashType>),
 
-    #[error("signature DER encoding error")]
-    SigDER(Option<secp256k1::Error>),
+    // TODO: Remove the `Option` once C++ support is removed.
+    #[error(
+        "{}",
+        .0.clone().map_or(
+            "unknown signature DER encoding error".to_owned(),
+            |ide| format!("signature DER encoding error: {ide}")
+        )
+    )]
+    SigDER(Option<InvalidDerEncoding>),
 
     #[error("signature s value is too high")]
     SigHighS,
@@ -116,15 +158,26 @@ pub struct Decoded {
 
 impl Decoded {
     /// Checks the properties of individual integers in a DER signature.
-    fn is_valid_integer(int_bytes: &[u8]) -> bool {
+    fn is_valid_integer(int_bytes: &[u8]) -> Result<(), InvalidDerInteger> {
         match int_bytes {
-            // Zero-length integers are not allowed.
-            [] => false,
+            [] => Err(InvalidDerInteger::ZeroLength),
             // Null bytes at the start are not allowed, unless it would otherwise be interpreted as
             // a negative number.
-            [0x00, next, ..] => next & 0x80 != 0,
+            [0x00, next, ..] => {
+                if next & 0x80 != 0 {
+                    Ok(())
+                } else {
+                    Err(InvalidDerInteger::LeadingNullByte)
+                }
+            }
             // Negative numbers are not allowed.
-            [first, ..] => first & 0x80 == 0,
+            [first, ..] => {
+                if first & 0x80 == 0 {
+                    Ok(())
+                } else {
+                    Err(InvalidDerInteger::Negative)
+                }
+            }
         }
     }
 
@@ -140,7 +193,7 @@ impl Decoded {
     ///
     /// __NB__: This doesn’t rely on [ecdsa::Signature::from_der] because it is consensus critical,
     ///         so we need to ensure that these exact checks happen.
-    fn is_valid_encoding(sig: &[u8]) -> bool {
+    fn is_valid_encoding(sig: &[u8]) -> Result<(), InvalidDerEncoding> {
         // Format: 0x30 [total-length] 0x02 [R-length] [R] 0x02 [S-length] [S]
         // * total-length: 1-byte length descriptor of everything that follows
         // * R-length: 1-byte length descriptor of the R value that follows.
@@ -157,27 +210,65 @@ impl Decoded {
             // A signature is of type 0x30 (compound).
             [0x30, total_len, content @ ..] => {
                 // Maximum size constraint.
-                *total_len <= 70
-                // Make sure the length covers the entire signature.
-                    && usize::from(*total_len) == content.len()
-                    && match content {
-                        // Check whether the R element is an integer.
-                        // Extract the length of the R element.
-                        [0x02, r_len, r_s @ ..] => match r_s.split_at((*r_len).into()) {
-                            // Check whether the S element is an integer.
-                            // Extract the length of the S element.
-                            // Make sure the length of the S element is still inside the signature.
-                            (r, [0x02, s_len, s @ ..]) => {
-                                Self::is_valid_integer(r)
-                                    && usize::from(*s_len) == s.len()
-                                    && Self::is_valid_integer(s)
-                            }
-                            ([..], [..]) => false,
-                        },
-                        [..] => false,
+                if *total_len <= 70 {
+                    // Make sure the length covers the entire signature.
+                    if usize::from(*total_len) == content.len() {
+                        match content {
+                            // Check whether the R element is an integer.
+                            // Extract the length of the R element.
+                            [0x02, r_len, r_s @ ..] => match r_s.split_at((*r_len).into()) {
+                                // Check whether the S element is an integer.
+                                // Extract the length of the S element.
+                                // Make sure the length of the S element is still inside the signature.
+                                (r, [0x02, s_len, s @ ..]) => Self::is_valid_integer(r)
+                                    .map_err(|error| InvalidDerEncoding::InvalidComponent {
+                                        name: "r",
+                                        value: Some(r.to_vec()),
+                                        error,
+                                    })
+                                    .and_then(|()| {
+                                        if usize::from(*s_len) == s.len() {
+                                            Self::is_valid_integer(s).map_err(|error| {
+                                                InvalidDerEncoding::InvalidComponent {
+                                                    name: "s",
+                                                    value: Some(s.to_vec()),
+                                                    error,
+                                                }
+                                            })
+                                        } else {
+                                            Err(InvalidDerEncoding::InvalidComponent {
+                                                name: "s",
+                                                value: Some(s.to_vec()),
+                                                error: InvalidDerInteger::IncorrectLength {
+                                                    actual: s.len(),
+                                                    expected: *s_len,
+                                                },
+                                            })
+                                        }
+                                    }),
+                                ([..], [..]) => Err(InvalidDerEncoding::InvalidComponent {
+                                    name: "s",
+                                    value: None,
+                                    error: InvalidDerInteger::NotAnInteger,
+                                }),
+                            },
+                            [..] => Err(InvalidDerEncoding::InvalidComponent {
+                                name: "r",
+                                value: None,
+                                error: InvalidDerInteger::NotAnInteger,
+                            }),
+                        }
+                    } else {
+                        Err(InvalidDerEncoding::IncorrectLength {
+                            actual: content.len(),
+                            expected: *total_len,
+                        })
                     }
+                } else {
+                    Err(InvalidDerEncoding::TooLong)
+                }
             }
-            [..] => false,
+            [..] => Err(InvalidDerEncoding::WrongType),
         }
     }
 
@@ -193,27 +284,25 @@ impl Decoded {
     ) -> Result<Option<Self>, Error> {
         match vch_sig_in.split_last() {
             None => Ok(None),
-            Some((hash_type, vch_sig)) => {
-                if Self::is_valid_encoding(vch_sig) {
+            Some((hash_type, vch_sig)) => Self::is_valid_encoding(vch_sig)
+                .map_err(|e| Error::SigDER(Some(e)))
+                .and_then(|()| {
                     HashType::from_bits((*hash_type).into(), is_strict)
                         .map_err(|e| Error::SigHashType(Some(e)))
-                        .and_then(|sighash| {
-                            match ecdsa::Signature::from_der(vch_sig) {
-                                Err(_) => Ok(None),
-                                Ok(sig) => {
-                                    if require_low_s && !PubKey::check_low_s(&sig) {
-                                        Err(Error::SigHighS)
-                                    } else {
-                                        Ok(Some(sig))
-                                    }
-                                }
+                })
+                .and_then(|sighash| {
+                    match ecdsa::Signature::from_der(vch_sig) {
+                        Err(_) => Ok(None),
+                        Ok(sig) => {
+                            if require_low_s && !PubKey::check_low_s(&sig) {
+                                Err(Error::SigHighS)
+                            } else {
+                                Ok(Some(sig))
                             }
-                            .map(|msig| msig.map(|sig| Decoded { sig, sighash }))
-                        })
-                } else {
-                    Err(Error::SigDER(None))
-                }
-            }
+                        }
+                    }
+                    .map(|msig| msig.map(|sig| Decoded { sig, sighash }))
+                }),
         }
     }
 

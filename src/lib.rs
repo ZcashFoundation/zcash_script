@@ -294,7 +294,7 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U>
     ) -> Result<(), Error> {
         let (cxx, rust) =
             check_verify_callback(&self.first, &self.second, script_pub_key, script_sig, flags);
-        if rust.map_err(normalize_error) != cxx {
+        if rust.clone().map_err(normalize_error) != cxx {
             // probably want to distinguish between
             // - one succeeding when the other fails (bad), and
             // - differing error codes (maybe not bad).
@@ -563,7 +563,7 @@ mod tests {
                 &sig[..],
                 flags,
             );
-            prop_assert_eq!(ret.0, ret.1.map_err(normalize_error),
+            prop_assert_eq!(ret.0, ret.1.clone().map_err(normalize_error),
                             "original Rust result: {:?}", ret.1);
         }
 
@@ -598,7 +598,7 @@ mod tests {
                 &sig[..],
                 flags,
             );
-            prop_assert_eq!(ret.0, ret.1.map_err(normalize_error),
+            prop_assert_eq!(ret.0, ret.1.clone().map_err(normalize_error),
                             "original Rust result: {:?}", ret.1);
         }
 

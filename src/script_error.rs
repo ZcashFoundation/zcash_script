@@ -11,7 +11,7 @@ pub enum ScriptNumError {
     Overflow { max_num_size: usize, actual: usize },
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Error)]
+#[derive(Clone, PartialEq, Eq, Debug, Error)]
 pub enum ScriptError {
     #[error("Ok")]
     Ok, // Unused (except in converting the C++ error to Rust)
