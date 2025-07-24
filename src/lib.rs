@@ -19,6 +19,7 @@ pub mod pattern;
 pub mod pv;
 pub mod script;
 pub mod signature;
+pub mod solver;
 mod zcash_script;
 
 #[cfg(any(test, feature = "test-dependencies"))]
