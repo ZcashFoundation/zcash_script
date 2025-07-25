@@ -212,12 +212,12 @@ impl PubKey {
     }
 
     /** Encode/decode small integers: */
-    fn decode_op_n(opcode: SmallValue) -> u32 {
+    pub(crate) fn decode_op_n(opcode: SmallValue) -> u8 {
         if opcode == OP_0 {
             return 0;
         }
         assert!(OP_1 <= opcode && opcode <= OP_16);
-        (u8::from(opcode) - (u8::from(OP_1) - 1)).into()
+        u8::from(opcode) - (u8::from(OP_1) - 1)
     }
 
     /// Pre-version-0.6, Bitcoin always counted CHECKMULTISIGs
@@ -237,7 +237,7 @@ impl PubKey {
                             match last_opcode {
                                 Some(&Opcode::PushValue(PushValue::SmallValue(pv))) => {
                                     if accurate && OP_1 <= pv && pv <= OP_16 {
-                                        n + Self::decode_op_n(pv)
+                                        n + u32::from(Self::decode_op_n(pv))
                                     } else {
                                         n + 20
                                     }
@@ -264,6 +264,15 @@ impl PubKey {
             }
             _ => false,
         }
+    }
+
+    /// Returns true iff this script only contains `PushData`s.
+    ///
+    /// This is equivalent to checking that all opcodes are `<= OP_16`.
+    pub fn is_push_only(opcodes: &[Opcode]) -> bool {
+        opcodes
+            .iter()
+            .all(|opcode| matches!(opcode, Opcode::PushValue(_)))
     }
 
     /// Do some basic static analysis to ensure the script makes sense. E.g., it ensures

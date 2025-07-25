@@ -15,6 +15,7 @@ pub mod pattern;
 pub mod pv;
 pub mod script;
 mod scriptnum;
+pub mod standard;
 mod util;
 mod zcash_script;
 
