@@ -62,6 +62,13 @@ pub fn sigs_from_bytes(bytes: &[u8]) -> Result<AndMaybe<Sig<Opcode>, Sig<PushVal
     })
 }
 
+impl<T> Sig<T> {
+    /// Returns the sequence of opcodes in this script sig.
+    pub fn opcodes(&self) -> &[T] {
+        &self.0
+    }
+}
+
 /// A few `pub` types with similar (if not identical) implementations are backed by [`Vec`]s, so we
 /// put the common implementations in this module. This is better than, say, `impl<T: Evaluable>
 /// Evaluable for Vec<T>`, because it keeps these functions private.
