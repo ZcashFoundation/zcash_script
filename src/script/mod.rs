@@ -235,6 +235,13 @@ impl<T: Into<opcode::PossiblyBad> + opcode::Evaluable + Clone> Evaluable for Com
     }
 }
 
+impl Sig {
+    /// Returns the pushed values in this script sig.
+    pub fn values(&self) -> &[PushValue] {
+        &self.0
+    }
+}
+
 /// An iterator that provides `Opcode`s from a byte stream.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Parser<'a>(&'a [u8]);
