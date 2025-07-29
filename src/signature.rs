@@ -108,8 +108,6 @@ pub enum SignedOutputs {
 /// The different SigHash types, as defined in <https://zips.z.cash/zip-0143>
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct HashType {
-    /// This is in `Option`, because if `VerificationFlags::StrictEnc` isn’t set, a value that
-    /// doesn’t correspond to any signed outputs setting is possible.
     signed_outputs: SignedOutputs,
     anyone_can_pay: bool,
 }

@@ -247,10 +247,13 @@ fn is_sig_valid(
         signature::Validity::InvalidAbort(e) => Err(e.into()),
         signature::Validity::InvalidContinue => {
             // We still need to check the pubkey here, because it can cause an abort.
-            check_pub_key_encoding(vch_pub_key, flags).map(|()| false)
+            check_pub_key_encoding(vch_pub_key, flags)?;
+            Ok(false)
         }
-        signature::Validity::Valid(sig) => check_pub_key_encoding(vch_pub_key, flags)
-            .map(|()| checker.check_sig(&sig, vch_pub_key, script)),
+        signature::Validity::Valid(sig) => {
+            check_pub_key_encoding(vch_pub_key, flags)?;
+            Ok(checker.check_sig(&sig, vch_pub_key, script))
+        }
     }
 }
 
