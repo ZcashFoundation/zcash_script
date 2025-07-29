@@ -12,8 +12,8 @@ use crate::external::pubkey::PubKey;
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Error)]
 pub enum InvalidHashType {
     /// Either or both of the two least-significant bits must be set.
-    #[error("unknowned signed outputs")]
-    UnknownSignedOutputs,
+    #[error("invalid signed outputs")]
+    InvalidSignedOutputs,
     /// With v5 transactions, bits other than those specified for `HashType` must be 0. The `i32`
     /// includes only the bits that are undefined by `HashType`.
     #[error("extra bits set")]
@@ -110,7 +110,7 @@ pub enum SignedOutputs {
 pub struct HashType {
     /// This is in `Option`, because if `VerificationFlags::StrictEnc` isn’t set, a value that
     /// doesn’t correspond to any signed outputs setting is possible.
-    signed_outputs: Option<SignedOutputs>,
+    signed_outputs: SignedOutputs,
     anyone_can_pay: bool,
 }
 
@@ -121,29 +121,28 @@ impl HashType {
     ///
     /// [§4.10](https://zips.z.cash/protocol/protocol.pdf#sighash):
     /// - Any `HashType` in a v5 transaction must have no undefined bits set.
+    ///
+    /// For v4 transactions and below, any value for the lower five bits other than 2 & 3 are
+    /// treated as SignedOutputs::All.
     pub fn from_bits(bits: i32, is_strict: bool) -> Result<Self, InvalidHashType> {
         let unknown_bits = (bits | 0x83) ^ 0x83;
         if is_strict && unknown_bits != 0 {
             Err(InvalidHashType::ExtraBitsSet(unknown_bits))
+        } else if is_strict && bits & 0x03 == 0 {
+            Err(InvalidHashType::InvalidSignedOutputs)
         } else {
-            let signed_outputs = match (bits & 2 != 0, bits & 1 != 0) {
-                (false, false) => None,
-                (false, true) => Some(SignedOutputs::All),
-                (true, false) => Some(SignedOutputs::None),
-                (true, true) => Some(SignedOutputs::Single),
-            };
-            if is_strict && signed_outputs.is_none() {
-                Err(InvalidHashType::UnknownSignedOutputs)
-            } else {
-                Ok(HashType {
-                    signed_outputs,
-                    anyone_can_pay: bits & 0x80 != 0,
-                })
-            }
+            Ok(HashType {
+                signed_outputs: match bits & 0x1f {
+                    2 => SignedOutputs::None,
+                    3 => SignedOutputs::Single,
+                    _ => SignedOutputs::All,
+                },
+                anyone_can_pay: bits & 0x80 != 0,
+            })
         }
     }
 
-    pub fn signed_outputs(&self) -> Option<SignedOutputs> {
+    pub fn signed_outputs(&self) -> SignedOutputs {
         self.signed_outputs
     }
 
