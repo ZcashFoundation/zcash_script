@@ -152,6 +152,17 @@ impl HashType {
     }
 }
 
+/// Different signature encoding failures may result in either aborting execution or continuing
+/// execution with an invalid signature.
+pub enum Validity {
+    /// Fail execution with the given error.
+    InvalidAbort(Error),
+    /// Continue execution, without a valid signature.
+    InvalidContinue,
+    /// Continue execution with a valid signature.
+    Valid(Decoded),
+}
+
 /// This contains a validated ECDSA signature and the Zcash hash type. It’s an opaque value, so we
 /// can ensure all values are valid (e.g., signature is “low-S” if required, and the hash type was
 /// created without any extra bits, if required).
@@ -282,32 +293,32 @@ impl Decoded {
     ///
     /// __NB__: An empty signature is not strictly DER encoded, but will result in `Ok(None)` as a
     ///         compact way to provide an invalid signature for use with CHECK(MULTI)SIG.
-    pub fn from_bytes(
-        vch_sig_in: &[u8],
-        require_low_s: bool,
-        is_strict: bool,
-    ) -> Result<Option<Self>, Error> {
+    pub fn from_bytes(vch_sig_in: &[u8], require_low_s: bool, is_strict: bool) -> Validity {
         match vch_sig_in.split_last() {
-            None => Ok(None),
-            Some((hash_type, vch_sig)) => Self::is_valid_encoding(vch_sig)
-                .map_err(|e| Error::SigDER(Some(e)))
-                .and_then(|()| {
-                    HashType::from_bits((*hash_type).into(), is_strict)
-                        .map_err(|e| Error::SigHashType(Some(e)))
-                })
-                .and_then(|hash_type| {
-                    match ecdsa::Signature::from_der(vch_sig) {
-                        Err(_) => Ok(None),
+            None => Validity::InvalidContinue,
+            Some((hash_type, vch_sig)) => {
+                let validated = Self::is_valid_encoding(vch_sig)
+                    .map_err(|e| Error::SigDER(Some(e)))
+                    .and_then(|()| {
+                        HashType::from_bits((*hash_type).into(), is_strict)
+                            .map_err(|e| Error::SigHashType(Some(e)))
+                    });
+                match validated {
+                    Err(e) => Validity::InvalidAbort(e),
+                    Ok(hash_type) => match ecdsa::Signature::from_der(vch_sig) {
+                        // Failures of `ecdsa::Signature::from_der that aren’t covered by
+                        // `is_valid_encoding` shouldn’t abort execution.`
+                        Err(_) => Validity::InvalidContinue,
                         Ok(sig) => {
                             if require_low_s && !PubKey::check_low_s(&sig) {
-                                Err(Error::SigHighS)
+                                Validity::InvalidAbort(Error::SigHighS)
                             } else {
-                                Ok(Some(sig))
+                                Validity::Valid(Decoded { sig, hash_type })
                             }
                         }
-                    }
-                    .map(|msig| msig.map(|sig| Decoded { sig, hash_type }))
-                }),
+                    },
+                }
+            }
         }
     }
 

@@ -239,16 +239,19 @@ fn is_sig_valid(
 ) -> Result<bool, ScriptError> {
     // Note how this makes the exact order of pubkey/signature evaluation distinguishable by
     // CHECKMULTISIG NOT if the STRICTENC flag is set. See the script_(in)valid tests for details.
-    signature::Decoded::from_bytes(
+    match signature::Decoded::from_bytes(
         vch_sig,
         flags.contains(VerificationFlags::LowS),
         flags.contains(VerificationFlags::StrictEnc),
-    )
-    .map_err(ScriptError::SignatureEncoding)
-    .and_then(|sig| {
-        check_pub_key_encoding(vch_pub_key, flags)
-            .map(|()| sig.map_or(false, |sig0| checker.check_sig(&sig0, vch_pub_key, script)))
-    })
+    ) {
+        signature::Validity::InvalidAbort(e) => Err(e.into()),
+        signature::Validity::InvalidContinue => {
+            // We still need to check the pubkey here, because it can cause an abort.
+            check_pub_key_encoding(vch_pub_key, flags).map(|()| false)
+        }
+        signature::Validity::Valid(sig) => check_pub_key_encoding(vch_pub_key, flags)
+            .map(|()| checker.check_sig(&sig, vch_pub_key, script)),
+    }
 }
 
 fn unop<T: Clone>(
