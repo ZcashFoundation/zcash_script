@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+### Removed
+
+- `HashType` and `SignedOutputs` are no longer re-exported at the top level, access them via `signature::`
+- `script_error::ScriptError` no longer has a defined primitive representation, as the variants have changed and the use of the representation had already been removed
+- `interpreter::CallbackTransactionSignatureChecker::verify_signature` was an internal function that was accidentally exposed
+
+### Changed
+
+- `HashType`, `InvalidHashType`, and `SignedOutputs` have moved from `interpreter` to `signature`
+- the `SigHashType`, `SigDER`, and `SigHighS` `ScriptError` variants have been moved to the new `signature::Error`, and are grouped under the new `ScriptError::SignatureEncoding`
+- `interpreter::SighashCalculator` now takes `&HashType` instead of `HashType`
+- `interpreter::Signature` is now `signature::Decoded`
+- `interpreter::SignatureChecker::check_sig` takes a `&signature::Decoded` instead of a `&[u8]`
+- `signature::HashType` now has private fields, but there are corresponding getter methods
+
+### Added
+
+- `signature::Decoded` operations `from_bytes`, `sig`, and `sighash`
+
 ## [0.3.2](https://github.com/ZcashFoundation/zcash_script/compare/v0.3.1...v0.3.2) - 2025-06-24
 
 - bump secp256k1 back to 0.29 (#234)
