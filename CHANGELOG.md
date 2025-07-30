@@ -13,6 +13,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `HashType` and `SignedOutputs` are no longer re-exported at the top level, access them via `signature::`
 - `script_error::ScriptError` no longer has a defined primitive representation, as the variants have changed and the use of the representation had already been removed
 - `interpreter::CallbackTransactionSignatureChecker::verify_signature` was an internal function that was accidentally exposed
+- removed re-exports from `interpreter`, these can still be accessed via
+  `interpreter::` and if they make more sense elsewhere, they should be moved
+  - `CallbackTransactionSignatureChecker`,
+  - `DefaultStepEvaluator`,
+  - `HashType`,
+  - `SignedOutputs`, and
+  - `VerificationFlags`;
+- removed access to some internals
+  - `CallbackTransactionSignatureChecker::verify_signature`,
+  - `DefaultStepEvaluator` fields,
+  - `HashType::from_bits`,
+  - `Stack` operations,
+  - `StepResults` fields,
+  - `interpreter::eval_script`,
+  - `interpreter::eval_step`,
+  - `interpreter::verify_script`, and
+  - `stepwise_verify`.
 
 ### Changed
 

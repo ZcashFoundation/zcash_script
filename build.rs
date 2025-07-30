@@ -15,7 +15,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::GenerateBindings => write!(f, "unable to generate bindings: try running 'git submodule init' and 'git submodule update'"),
-            Error::WriteBindings(source) => write!(f, "unable to write bindings: {}", source),
+            Error::WriteBindings(source) => write!(f, "unable to write bindings: {source}"),
             Error::Env(source) => source.fmt(f),
         }
     }

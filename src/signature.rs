@@ -44,7 +44,7 @@ pub enum InvalidDerEncoding {
     IncorrectLength { actual: usize, expected: u8 },
     #[error(
         "the {name} component {}failed: {error}",
-        .value.clone().map_or("".to_owned(), |vec| format!("({:?}) ", vec))
+        .value.clone().map_or("".to_owned(), |vec| format!("({vec:?}) "))
     )]
     InvalidComponent {
         name: &'static str,
@@ -114,6 +114,10 @@ pub struct HashType {
 
 impl HashType {
     /// Construct a `HashType` from bit flags.
+    ///
+    /// __TODO__: Even though the hash type is represented by a single byte, this takes `bits` as
+    ///           `i32` for compatibility with the C++ API. Once that is removed, this should also
+    ///           become `u8`.
     ///
     /// ## Consensus rules
     ///

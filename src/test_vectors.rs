@@ -16,7 +16,7 @@ use hex::{FromHex, FromHexError};
 
 /// A shorthand syntax for writing possibly-incorrect scripts.
 #[derive(Debug)]
-pub(crate) enum Entry {
+enum Entry {
     /// An Opcode
     O(Opcode),
     /// A byte sequence encoded as a hex string
@@ -66,7 +66,7 @@ impl Entry {
         }
     }
 
-    pub(crate) fn serialize(&self) -> Result<Vec<u8>, FromHexError> {
+    fn serialize(&self) -> Result<Vec<u8>, FromHexError> {
         match self {
             Entry::O(opcode) => Ok(vec![(*opcode).into()]),
             Entry::H(bytes) => <Vec<u8>>::from_hex(*bytes),
@@ -77,16 +77,16 @@ impl Entry {
 }
 
 #[derive(Debug)]
-pub(crate) struct TestVector {
-    pub(crate) script_sig: &'static [Entry],
-    pub(crate) script_pubkey: &'static [Entry],
-    pub(crate) flags: VerificationFlags,
-    pub(crate) result: Result<(), ScriptError>,
+pub struct TestVector {
+    script_sig: &'static [Entry],
+    script_pubkey: &'static [Entry],
+    flags: VerificationFlags,
+    result: Result<(), ScriptError>,
 }
 
 impl TestVector {
     /// A successful run is uninteresting, but a failure returns the actual `Result` in `Err`.
-    pub(crate) fn run(
+    pub fn run(
         &self,
         f: &dyn Fn(&[u8], &[u8], VerificationFlags) -> Result<(), ScriptError>,
     ) -> Result<(), Result<(), ScriptError>> {
@@ -110,12 +110,12 @@ impl TestVector {
                     Err(res)
                 }
             }
-            (s, p) => panic!("{:?} has a bad hex value: {:?}", self, s.and_then(|_| p)),
+            (s, p) => panic!("{:?} has a bad hex value: {:?}", self, s.and(p)),
         }
     }
 }
 
-pub(crate) mod bad {
+mod bad {
     use crate::script::{
         Opcode::{self, *},
         Operation::*,
@@ -130,7 +130,7 @@ pub(crate) mod bad {
     pub const RESERVED2: Opcode = Operation(OP_RESERVED2);
 }
 
-pub(crate) mod disabled {
+mod disabled {
     use crate::script::{
         Opcode::{self, *},
         Operation::*,
@@ -153,9 +153,9 @@ pub(crate) mod disabled {
     pub const RSHIFT: Opcode = Operation(OP_RSHIFT);
 }
 
-pub(crate) const DEFAULT_FLAGS: VerificationFlags =
+const DEFAULT_FLAGS: VerificationFlags =
     VerificationFlags::P2SH.union(VerificationFlags::StrictEnc);
-pub(crate) const EMPTY_FLAGS: VerificationFlags = VerificationFlags::empty();
+const EMPTY_FLAGS: VerificationFlags = VerificationFlags::empty();
 
 use Entry::*;
 
@@ -163,7 +163,7 @@ use Entry::*;
 // and one output of 0 satoshi and given scriptPubKey, followed by a spending transaction which
 // spends this output as only input (and correct prevout hash), using the given scriptSig. All
 // nLockTimes are 0, all nSequences are max.
-pub(crate) const TEST_VECTORS: &[TestVector] = &[
+pub const TEST_VECTORS: &[TestVector] = &[
     // Test the test: we should have an empty stack after scriptSig evaluation
     TestVector {
         script_sig: &[],

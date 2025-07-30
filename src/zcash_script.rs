@@ -2,9 +2,13 @@ use std::num::TryFromIntError;
 
 use thiserror::Error;
 
-use super::interpreter::*;
-use super::script::*;
-use super::script_error::*;
+use crate::{
+    interpreter::{
+        verify_script, DefaultStepEvaluator, SignatureChecker, State, StepFn, VerificationFlags,
+    },
+    script::Script,
+    script_error::ScriptError,
+};
 
 /// This maps to `zcash_script_error_t`, but most of those cases aren’t used any more. This only
 /// replicates the still-used cases, and then an `Unknown` bucket for anything else that might
@@ -61,7 +65,9 @@ pub trait ZcashScript {
     fn legacy_sigop_count_script(&self, script: &[u8]) -> Result<u32, Error>;
 }
 
-pub fn stepwise_verify<F>(
+// NB: This is extracted from [StepwiseInterpreter::verify_callback] to be used in tests. The public
+//     API gives no access to the payload.
+fn stepwise_verify<F>(
     script_pub_key: &[u8],
     script_sig: &[u8],
     flags: VerificationFlags,
@@ -87,15 +93,15 @@ pub struct StepResults<T, U> {
     /// This contains the step-wise states of the steppers as long as they were identical. Its
     /// `head` contains the initial state and its `tail` has a 1:1 correspondence to the opcodes
     /// (not to the bytes).
-    pub identical_states: Vec<State>,
+    identical_states: Vec<State>,
     /// If the execution matched the entire way, then this contains `None`. If there was a
     /// divergence, then this contains `Some` with a pair of `Result`s – one representing each
     /// stepper’s outcome at the point at which they diverged.
-    pub diverging_result: Option<(Result<State, ScriptError>, Result<State, ScriptError>)>,
+    diverging_result: Option<(Result<State, ScriptError>, Result<State, ScriptError>)>,
     /// The final payload of the first stepper.
-    pub payload_l: T,
+    payload_l: T,
     /// The final payload of the second stepper.
-    pub payload_r: U,
+    payload_r: U,
 }
 
 impl<T, U> StepResults<T, U> {
@@ -186,10 +192,7 @@ pub fn rust_interpreter<C: SignatureChecker + Copy>(
     flags: VerificationFlags,
     checker: C,
 ) -> StepwiseInterpreter<DefaultStepEvaluator<C>> {
-    StepwiseInterpreter {
-        initial_payload: (),
-        stepper: DefaultStepEvaluator { flags, checker },
-    }
+    StepwiseInterpreter::new((), DefaultStepEvaluator { flags, checker })
 }
 
 impl<F: StepFn> ZcashScript for StepwiseInterpreter<F> {
@@ -219,10 +222,18 @@ impl<F: StepFn> ZcashScript for StepwiseInterpreter<F> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{signature::HashType, testing::*};
     use hex::FromHex;
-    use proptest::prelude::*;
+    use proptest::prelude::{prop, proptest, ProptestConfig};
+
+    use super::{stepwise_verify, ComparisonStepEvaluator, Error, StepResults};
+    use crate::{
+        interpreter::{
+            CallbackTransactionSignatureChecker, DefaultStepEvaluator, VerificationFlags,
+        },
+        script_error::ScriptError,
+        signature::HashType,
+        testing::{repair_flags, BrokenStepEvaluator, OVERFLOW_SCRIPT_SIZE},
+    };
 
     lazy_static::lazy_static! {
         pub static ref SCRIPT_PUBKEY: Vec<u8> = <Vec<u8>>::from_hex("a914c117756dcbe144a12a7c33a77cfa81aa5aeeb38187").unwrap();
@@ -270,8 +281,8 @@ mod tests {
         let mut res = StepResults::initial((), ());
         let ret = stepwise_verify(script_pub_key, script_sig, flags, &mut res, &stepper);
 
-        if res.diverging_result != None {
-            panic!("invalid result: {:?}", res);
+        if res.diverging_result.is_some() {
+            panic!("invalid result: {res:?}");
         }
         assert_eq!(ret, Ok(()));
     }
@@ -323,16 +334,14 @@ mod tests {
                 payload_l: (),
                 payload_r: (),
             } => {
-                assert!(
-                    identical_states.len() == 6
-                        && state.stack().len() == 4
-                        && state.altstack().is_empty()
-                        && state.op_count() == 2
-                        && state.vexec().is_empty()
-                );
+                assert_eq!(identical_states.len(), 6);
+                assert_eq!(state.stack().len(), 4);
+                assert!(state.altstack().is_empty());
+                assert_eq!(state.op_count(), 2);
+                assert!(state.vexec().is_empty());
             }
             _ => {
-                panic!("invalid result: {:?}", res);
+                panic!("invalid result: {res:?}");
             }
         }
     }
@@ -358,8 +367,8 @@ mod tests {
         let mut res = StepResults::initial((), ());
         let ret = stepwise_verify(script_pub_key, script_sig, flags, &mut res, &stepper);
 
-        if res.diverging_result != None {
-            panic!("mismatched result: {:?}", res);
+        if res.diverging_result.is_some() {
+            panic!("mismatched result: {res:?}");
         }
         assert_eq!(ret, Err(Error::Ok(ScriptError::EvalFalse)));
     }
@@ -385,8 +394,8 @@ mod tests {
         let mut res = StepResults::initial((), ());
         let ret = stepwise_verify(script_pub_key, script_sig, flags, &mut res, &stepper);
 
-        if res.diverging_result != None {
-            panic!("mismatched result: {:?}", res);
+        if res.diverging_result.is_some() {
+            panic!("mismatched result: {res:?}");
         }
         assert_eq!(ret, Err(Error::Ok(ScriptError::EvalFalse)));
     }
@@ -420,8 +429,8 @@ mod tests {
             let mut res = StepResults::initial((), ());
             let _ = stepwise_verify(&pub_key[..], &sig[..], flags, &mut res, &stepper);
 
-            if res.diverging_result != None {
-                panic!("mismatched result: {:?}", res);
+            if res.diverging_result.is_some() {
+                panic!("mismatched result: {res:?}");
             }
         }
 
@@ -450,8 +459,8 @@ mod tests {
             let mut res = StepResults::initial((), ());
             let _ = stepwise_verify(&pub_key[..], &sig[..], flags, &mut res, &stepper);
 
-            if res.diverging_result != None {
-                panic!("mismatched result: {:?}", res);
+            if res.diverging_result.is_some() {
+                panic!("mismatched result: {res:?}");
             }
         }
     }

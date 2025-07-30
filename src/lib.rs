@@ -16,19 +16,21 @@ pub mod script_error;
 pub mod signature;
 mod zcash_script;
 
-#[cfg(any(test, feature = "test-dependencies"))]
+#[cfg(test)]
 mod test_vectors;
 
 use std::os::raw::{c_int, c_uint, c_void};
 
 use tracing::warn;
 
-pub use interpreter::{
+use interpreter::{
     CallbackTransactionSignatureChecker, DefaultStepEvaluator, SighashCalculator, VerificationFlags,
 };
 use script_error::ScriptError;
 use signature::HashType;
-pub use zcash_script::*;
+pub use zcash_script::{
+    rust_interpreter, ComparisonStepEvaluator, Error, StepResults, StepwiseInterpreter, ZcashScript,
+};
 
 pub struct CxxInterpreter<'a> {
     pub sighash: SighashCalculator<'a>,
@@ -203,6 +205,9 @@ fn check_legacy_sigop_count_script<T: ZcashScript, U: ZcashScript>(
     )
 }
 
+// FIXME: This shouldn’t be public, but is currently used by both `ZcashScript for
+//        ComparisonInterpreter` and the fuzz tests, so it can’t easily be non-`pub` or moved to
+//        `testing`.
 /// Runs two implementations of `ZcashScript::verify_callback` with the same arguments and returns
 /// both results. This is more useful for testing than the impl that logs a warning if the results
 /// differ and always returns the `T` result.
@@ -309,11 +314,10 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U>
 
 #[cfg(any(test, feature = "test-dependencies"))]
 pub mod testing {
-    use super::*;
     use crate::{
-        interpreter::{State, StepFn},
-        script::{Operation, Script},
-        test_vectors::TestVector,
+        interpreter::{State, StepFn, VerificationFlags},
+        script::{self, Operation, Script},
+        script_error::ScriptError,
     };
 
     /// Ensures that flags represent a supported state. This avoids crashes in the C++ code, which
@@ -357,36 +361,24 @@ pub mod testing {
             )
         }
     }
-
-    pub(crate) fn run_test_vector(
-        tv: &TestVector,
-        f: &dyn Fn(&[u8], &[u8], VerificationFlags) -> Result<(), Error>,
-    ) -> () {
-        match tv.run(&|sig, pubkey, flags| match f(sig, pubkey, flags) {
-            Ok(()) => Ok(()),
-            Err(Error::Ok(err)) => Err(err),
-            Err(err) => panic!("failed in a very bad way: {:?}", err),
-        }) {
-            Ok(()) => (),
-            Err(actual) => {
-                panic!(
-                    "{:?} didn’t match the result in
-
-    {:?}
-",
-                    actual, tv
-                );
-            }
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{testing::*, *};
-    use crate::test_vectors::TEST_VECTORS;
     use hex::FromHex;
-    use proptest::prelude::*;
+    use proptest::prelude::{prop, prop_assert_eq, proptest, ProptestConfig};
+
+    use super::{
+        check_verify_callback, normalize_error, rust_interpreter,
+        test_vectors::{TestVector, TEST_VECTORS},
+        testing::{repair_flags, OVERFLOW_SCRIPT_SIZE},
+        CxxInterpreter, Error, ZcashScript,
+    };
+    use crate::{
+        interpreter::{CallbackTransactionSignatureChecker, VerificationFlags},
+        script_error::ScriptError,
+        signature::HashType,
+    };
 
     lazy_static::lazy_static! {
         pub static ref SCRIPT_PUBKEY: Vec<u8> = <Vec<u8>>::from_hex("a914c117756dcbe144a12a7c33a77cfa81aa5aeeb38187").unwrap();
@@ -499,6 +491,27 @@ mod tests {
         assert_eq!(ret.0, Err(Error::Ok(ScriptError::EvalFalse)));
     }
 
+    fn run_test_vector(
+        tv: &TestVector,
+        f: &dyn Fn(&[u8], &[u8], VerificationFlags) -> Result<(), Error>,
+    ) {
+        match tv.run(&|sig, pubkey, flags| match f(sig, pubkey, flags) {
+            Ok(()) => Ok(()),
+            Err(Error::Ok(err)) => Err(err),
+            Err(err) => panic!("failed in a very bad way: {err:?}"),
+        }) {
+            Ok(()) => (),
+            Err(actual) => {
+                panic!(
+                    "{actual:?} didn’t match the result in
+
+    {tv:?}
+"
+                );
+            }
+        }
+    }
+
     #[test]
     fn test_vectors_for_cxx() {
         for tv in TEST_VECTORS {
@@ -525,7 +538,7 @@ mod tests {
                         is_final: false,
                     },
                 )
-                .verify_callback(&pubkey, &sig, flags)
+                .verify_callback(pubkey, sig, flags)
                 .map_err(normalize_error)
             })
         }
