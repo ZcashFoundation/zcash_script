@@ -281,8 +281,8 @@ mod tests {
         let mut res = StepResults::initial((), ());
         let ret = stepwise_verify(script_pub_key, script_sig, flags, &mut res, &stepper);
 
-        if res.diverging_result != None {
-            panic!("invalid result: {:?}", res);
+        if res.diverging_result.is_some() {
+            panic!("invalid result: {res:?}");
         }
         assert_eq!(ret, Ok(()));
     }
@@ -341,7 +341,7 @@ mod tests {
                 assert!(state.vexec().is_empty());
             }
             _ => {
-                panic!("invalid result: {:?}", res);
+                panic!("invalid result: {res:?}");
             }
         }
     }
@@ -367,8 +367,8 @@ mod tests {
         let mut res = StepResults::initial((), ());
         let ret = stepwise_verify(script_pub_key, script_sig, flags, &mut res, &stepper);
 
-        if res.diverging_result != None {
-            panic!("mismatched result: {:?}", res);
+        if res.diverging_result.is_some() {
+            panic!("mismatched result: {res:?}");
         }
         assert_eq!(ret, Err(Error::Ok(ScriptError::EvalFalse)));
     }
@@ -394,8 +394,8 @@ mod tests {
         let mut res = StepResults::initial((), ());
         let ret = stepwise_verify(script_pub_key, script_sig, flags, &mut res, &stepper);
 
-        if res.diverging_result != None {
-            panic!("mismatched result: {:?}", res);
+        if res.diverging_result.is_some() {
+            panic!("mismatched result: {res:?}");
         }
         assert_eq!(ret, Err(Error::Ok(ScriptError::EvalFalse)));
     }
@@ -429,8 +429,8 @@ mod tests {
             let mut res = StepResults::initial((), ());
             let _ = stepwise_verify(&pub_key[..], &sig[..], flags, &mut res, &stepper);
 
-            if res.diverging_result != None {
-                panic!("mismatched result: {:?}", res);
+            if res.diverging_result.is_some() {
+                panic!("mismatched result: {res:?}");
             }
         }
 
@@ -459,8 +459,8 @@ mod tests {
             let mut res = StepResults::initial((), ());
             let _ = stepwise_verify(&pub_key[..], &sig[..], flags, &mut res, &stepper);
 
-            if res.diverging_result != None {
-                panic!("mismatched result: {:?}", res);
+            if res.diverging_result.is_some() {
+                panic!("mismatched result: {res:?}");
             }
         }
     }

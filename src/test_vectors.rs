@@ -110,7 +110,7 @@ impl TestVector {
                     Err(res)
                 }
             }
-            (s, p) => panic!("{:?} has a bad hex value: {:?}", self, s.and_then(|_| p)),
+            (s, p) => panic!("{:?} has a bad hex value: {:?}", self, s.and(p)),
         }
     }
 }

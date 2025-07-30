@@ -494,20 +494,19 @@ mod tests {
     fn run_test_vector(
         tv: &TestVector,
         f: &dyn Fn(&[u8], &[u8], VerificationFlags) -> Result<(), Error>,
-    ) -> () {
+    ) {
         match tv.run(&|sig, pubkey, flags| match f(sig, pubkey, flags) {
             Ok(()) => Ok(()),
             Err(Error::Ok(err)) => Err(err),
-            Err(err) => panic!("failed in a very bad way: {:?}", err),
+            Err(err) => panic!("failed in a very bad way: {err:?}"),
         }) {
             Ok(()) => (),
             Err(actual) => {
                 panic!(
-                    "{:?} didn’t match the result in
+                    "{actual:?} didn’t match the result in
 
-    {:?}
-",
-                    actual, tv
+    {tv:?}
+"
                 );
             }
         }
@@ -539,7 +538,7 @@ mod tests {
                         is_final: false,
                     },
                 )
-                .verify_callback(&pubkey, &sig, flags)
+                .verify_callback(pubkey, sig, flags)
                 .map_err(normalize_error)
             })
         }

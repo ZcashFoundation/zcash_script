@@ -44,7 +44,7 @@ pub enum InvalidDerEncoding {
     IncorrectLength { actual: usize, expected: u8 },
     #[error(
         "the {name} component {}failed: {error}",
-        .value.clone().map_or("".to_owned(), |vec| format!("({:?}) ", vec))
+        .value.clone().map_or("".to_owned(), |vec| format!("({vec:?}) "))
     )]
     InvalidComponent {
         name: &'static str,
