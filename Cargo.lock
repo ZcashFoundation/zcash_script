@@ -74,6 +74,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bounded-vec"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09dc0086e469182132244e9b8d313a0742e1132da43a08c24b9dd3c18e0faf3a"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
 name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -767,6 +776,7 @@ version = "0.3.2"
 dependencies = [
  "bindgen",
  "bitflags",
+ "bounded-vec",
  "cc",
  "enum_primitive",
  "hex",

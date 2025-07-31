@@ -1,5 +1,6 @@
 #![allow(non_camel_case_types)]
 
+use bounded_vec::{BoundedVec, EmptyBoundedVec};
 use enum_primitive::FromPrimitive;
 
 use super::script_error::{ScriptError, ScriptNumError};
@@ -14,7 +15,7 @@ pub const MAX_SCRIPT_SIZE: usize = 10_000;
 pub const LOCKTIME_THRESHOLD: i64 = 500_000_000; // Tue Nov  5 00:53:20 1985 UTC
 
 /** Script opcodes */
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Opcode {
     PushValue(PushValue),
     /// - always evaluated
@@ -25,15 +26,19 @@ pub enum Opcode {
     Operation(Operation),
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+/// Data values that aren’t represented within their opcode byte.
+///
+/// TODO: These should have lower bounds that can prevent non-minimal encodings, but that requires
+///       at least `const_generic_exprs`.
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum LargeValue {
-    // push value
-    PushdataBytelength(Vec<u8>),
-    OP_PUSHDATA1(Vec<u8>),
-    OP_PUSHDATA2(Vec<u8>),
-    OP_PUSHDATA4(Vec<u8>),
+    /// NB: The lower bound here is 1 because `PushdataBytelength([;0])` has the same encoding as
+    ///     [`OP_0`].
+    PushdataBytelength(BoundedVec<u8, 1, 0x4b>),
+    OP_PUSHDATA1(EmptyBoundedVec<u8, 0xff>),
+    OP_PUSHDATA2(EmptyBoundedVec<u8, 0xffff>),
+    OP_PUSHDATA4(EmptyBoundedVec<u8, 0xffffffff>),
 }
-
 use LargeValue::*;
 
 impl LargeValue {
@@ -41,23 +46,45 @@ impl LargeValue {
     const PUSHDATA2_BYTE: u8 = 0x4d;
     const PUSHDATA4_BYTE: u8 = 0x4e;
 
-    pub fn value(&self) -> Vec<u8> {
-        match self {
-            PushdataBytelength(v) | OP_PUSHDATA1(v) | OP_PUSHDATA2(v) | OP_PUSHDATA4(v) => {
-                v.clone()
+    /// Returns a [`LargeValue`] as minimally-encoded as possible. That is, non-empty values that
+    /// should be minimally-encoded as [`SmallValue`]s will be [`PushdataBytelength`].
+    fn from_slice(v: &[u8]) -> Option<LargeValue> {
+        match v {
+            [] => None,
+            _ => {
+                let vec = v.to_vec();
+                vec.clone().try_into().map_or(
+                    vec.clone().try_into().map_or(
+                        vec.clone().try_into().map_or(
+                            vec.try_into().map_or(None, |bv| Some(OP_PUSHDATA4(bv))),
+                            |bv| Some(OP_PUSHDATA2(bv)),
+                        ),
+                        |bv| Some(OP_PUSHDATA1(bv)),
+                    ),
+                    |bv| Some(PushdataBytelength(bv)),
+                )
             }
+        }
+    }
+
+    pub fn value(&self) -> &[u8] {
+        match self {
+            PushdataBytelength(v) => v.as_slice(),
+            OP_PUSHDATA1(v) => v.as_slice(),
+            OP_PUSHDATA2(v) => v.as_slice(),
+            OP_PUSHDATA4(v) => v.as_slice(),
         }
     }
 
     pub fn is_minimal_push(&self) -> bool {
         match self {
-            PushdataBytelength(data) => match data.len() {
-                1 => data[0] != 0x81 && (data[0] < 1 || 16 < data[0]),
+            PushdataBytelength(data) => match data.as_slice() {
+                [b] => *b != 0x81 && (*b < 1 || 16 < *b),
                 _ => true,
             },
-            OP_PUSHDATA1(data) => usize::from(Self::PUSHDATA1_BYTE) <= data.len(),
-            OP_PUSHDATA2(data) => 0x100 <= data.len(),
-            OP_PUSHDATA4(data) => 0x10000 <= data.len(),
+            OP_PUSHDATA1(data) => usize::from(Self::PUSHDATA1_BYTE) <= data.as_slice().len(),
+            OP_PUSHDATA2(data) => 0x100 <= data.as_slice().len(),
+            OP_PUSHDATA4(data) => 0x10000 <= data.as_slice().len(),
         }
     }
 }
@@ -65,7 +92,11 @@ impl LargeValue {
 impl From<LargeValue> for u8 {
     fn from(lv: LargeValue) -> Self {
         match lv {
-            PushdataBytelength(value) => value.len().try_into().unwrap(),
+            PushdataBytelength(value) => value
+                .as_slice()
+                .len()
+                .try_into()
+                .expect("the upper bound of PushdataBytelength fits in u8"),
             OP_PUSHDATA1(_) => LargeValue::PUSHDATA1_BYTE,
             OP_PUSHDATA2(_) => LargeValue::PUSHDATA2_BYTE,
             OP_PUSHDATA4(_) => LargeValue::PUSHDATA4_BYTE,
@@ -120,7 +151,7 @@ impl From<SmallValue> for u8 {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum PushValue {
     SmallValue(SmallValue),
     LargeValue(LargeValue),
@@ -149,29 +180,15 @@ impl PushValue {
                 14 => PushValue::SmallValue(OP_14),
                 15 => PushValue::SmallValue(OP_15),
                 16 => PushValue::SmallValue(OP_16),
-                _ => PushValue::LargeValue(PushdataBytelength(v.to_vec())),
+                _ => PushValue::LargeValue(PushdataBytelength([*byte; 1].into())),
             }),
-            _ => {
-                let len = v.len();
-                let vec = v.to_vec();
-                if len < LargeValue::PUSHDATA1_BYTE.into() {
-                    Some(PushValue::LargeValue(PushdataBytelength(vec)))
-                } else if len <= u8::MAX.into() {
-                    Some(PushValue::LargeValue(OP_PUSHDATA1(vec)))
-                } else if len <= u16::MAX.into() {
-                    Some(PushValue::LargeValue(OP_PUSHDATA2(vec)))
-                } else if u32::MAX.try_into().map_or(true, |max| len <= max) {
-                    Some(PushValue::LargeValue(OP_PUSHDATA4(vec)))
-                } else {
-                    None
-                }
-            }
+            _ => LargeValue::from_slice(v).map(PushValue::LargeValue),
         }
     }
 
     pub fn value(&self) -> Option<Vec<u8>> {
         match self {
-            PushValue::LargeValue(pv) => Some(pv.value()),
+            PushValue::LargeValue(pv) => Some(pv.value().to_vec()),
             PushValue::SmallValue(pv) => pv.value(),
         }
     }
@@ -534,15 +551,37 @@ impl Script<'_> {
             }),
             Some((leading_byte, script)) => match leading_byte {
                 0x01..LargeValue::PUSHDATA1_BYTE => {
-                    Self::split_value(script, (*leading_byte).into())
-                        .map(|(v, script)| Some((PushdataBytelength(v.to_vec()), script)))
+                    Self::split_value(script, (*leading_byte).into()).map(|(v, script)| {
+                        v.to_vec()
+                            .try_into()
+                            .map(|bv| (PushdataBytelength(bv), script))
+                            .ok()
+                    })
                 }
-                &LargeValue::PUSHDATA1_BYTE => Self::split_tagged_value(script, 1)
-                    .map(|(v, script)| Some((OP_PUSHDATA1(v.to_vec()), script))),
-                &LargeValue::PUSHDATA2_BYTE => Self::split_tagged_value(script, 2)
-                    .map(|(v, script)| Some((OP_PUSHDATA2(v.to_vec()), script))),
-                &LargeValue::PUSHDATA4_BYTE => Self::split_tagged_value(script, 4)
-                    .map(|(v, script)| Some((OP_PUSHDATA4(v.to_vec()), script))),
+                &LargeValue::PUSHDATA1_BYTE => {
+                    Self::split_tagged_value(script, 1).map(|(v, script)| {
+                        v.to_vec()
+                            .try_into()
+                            .map(|bv| (OP_PUSHDATA1(bv), script))
+                            .ok()
+                    })
+                }
+                &LargeValue::PUSHDATA2_BYTE => {
+                    Self::split_tagged_value(script, 2).map(|(v, script)| {
+                        v.to_vec()
+                            .try_into()
+                            .map(|bv| (OP_PUSHDATA2(bv), script))
+                            .ok()
+                    })
+                }
+                &LargeValue::PUSHDATA4_BYTE => {
+                    Self::split_tagged_value(script, 4).map(|(v, script)| {
+                        v.to_vec()
+                            .try_into()
+                            .map(|bv| (OP_PUSHDATA4(bv), script))
+                            .ok()
+                    })
+                }
                 _ => Ok(None),
             },
         }
