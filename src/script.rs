@@ -37,6 +37,10 @@ pub enum LargeValue {
 use LargeValue::*;
 
 impl LargeValue {
+    const PUSHDATA1_BYTE: u8 = 0x4c;
+    const PUSHDATA2_BYTE: u8 = 0x4d;
+    const PUSHDATA4_BYTE: u8 = 0x4e;
+
     pub fn value(&self) -> Vec<u8> {
         match self {
             PushdataBytelength(v) | OP_PUSHDATA1(v) | OP_PUSHDATA2(v) | OP_PUSHDATA4(v) => {
@@ -51,7 +55,7 @@ impl LargeValue {
                 1 => data[0] != 0x81 && (data[0] < 1 || 16 < data[0]),
                 _ => true,
             },
-            OP_PUSHDATA1(data) => 0x4c <= data.len(),
+            OP_PUSHDATA1(data) => usize::from(Self::PUSHDATA1_BYTE) <= data.len(),
             OP_PUSHDATA2(data) => 0x100 <= data.len(),
             OP_PUSHDATA4(data) => 0x10000 <= data.len(),
         }
@@ -62,9 +66,9 @@ impl From<LargeValue> for u8 {
     fn from(lv: LargeValue) -> Self {
         match lv {
             PushdataBytelength(value) => value.len().try_into().unwrap(),
-            OP_PUSHDATA1(_) => 0x4c,
-            OP_PUSHDATA2(_) => 0x4d,
-            OP_PUSHDATA4(_) => 0x4e,
+            OP_PUSHDATA1(_) => LargeValue::PUSHDATA1_BYTE,
+            OP_PUSHDATA2(_) => LargeValue::PUSHDATA2_BYTE,
+            OP_PUSHDATA4(_) => LargeValue::PUSHDATA4_BYTE,
         }
     }
 }
@@ -422,6 +426,16 @@ impl From<Disabled> for u8 {
     }
 }
 
+/// When we parse a single [`Opcode`], the result is a bit complicated. It returns the remaining
+/// unparsed script code along with either a known [`Opcode`] or an unknown byte (which _may_ cause
+/// a script failure down the line).
+pub struct ParsedOpcode<'a> {
+    /// The [`Result`] allows us to preserve unknown opcodes, which only trigger a failure if
+    /// they’re on an active branch during interpretation.
+    pub opcode: Result<Opcode, u8>,
+    pub remaining_code: &'a [u8],
+}
+
 /** Serialized script, used inside transaction inputs and outputs */
 #[derive(Clone, Debug)]
 pub struct Script<'a>(pub &'a [u8]);
@@ -431,11 +445,17 @@ impl Script<'_> {
         let mut pc = self.0;
         let mut result = vec![];
         while !pc.is_empty() {
-            Self::get_op(pc).and_then(|(op, new_pc)| {
-                pc = new_pc;
-                op.map_err(|byte| ScriptError::BadOpcode(Some(byte)))
-                    .map(|op| result.push(op))
-            })?;
+            Self::get_op(pc).and_then(
+                |ParsedOpcode {
+                     opcode,
+                     remaining_code,
+                 }| {
+                    pc = remaining_code;
+                    opcode
+                        .map_err(|byte| ScriptError::BadOpcode(Some(byte)))
+                        .map(|op| result.push(op))
+                },
+            )?;
         }
         Ok(result)
     }
@@ -462,57 +482,64 @@ impl Script<'_> {
         })
     }
 
-    pub fn get_lv(script: &[u8]) -> Result<Option<(LargeValue, &[u8])>, ScriptError> {
+    /// Parse a single [`LargeValue`] from a script. Returns `Ok(None)` if the first byte doesn’t
+    /// correspond to a [`LargeValue`].
+    fn get_lv(script: &[u8]) -> Result<Option<(LargeValue, &[u8])>, ScriptError> {
         match script.split_first() {
             None => Err(ScriptError::ReadError {
                 expected_bytes: 1,
                 available_bytes: 0,
             }),
             Some((leading_byte, script)) => match leading_byte {
-                0x4c => Self::split_tagged_value(script, 1)
-                    .map(|(v, script)| Some((OP_PUSHDATA1(v.to_vec()), script))),
-                0x4d => Self::split_tagged_value(script, 2)
-                    .map(|(v, script)| Some((OP_PUSHDATA2(v.to_vec()), script))),
-                0x4e => Self::split_tagged_value(script, 4)
-                    .map(|(v, script)| Some((OP_PUSHDATA4(v.to_vec()), script))),
-                _ => {
-                    if 0x01 <= *leading_byte && *leading_byte < 0x4c {
-                        Self::split_value(script, (*leading_byte).into())
-                            .map(|(v, script)| Some((PushdataBytelength(v.to_vec()), script)))
-                    } else {
-                        Ok(None)
-                    }
+                0x01..LargeValue::PUSHDATA1_BYTE => {
+                    Self::split_value(script, (*leading_byte).into())
+                        .map(|(v, script)| Some((PushdataBytelength(v.to_vec()), script)))
                 }
+                &LargeValue::PUSHDATA1_BYTE => Self::split_tagged_value(script, 1)
+                    .map(|(v, script)| Some((OP_PUSHDATA1(v.to_vec()), script))),
+                &LargeValue::PUSHDATA2_BYTE => Self::split_tagged_value(script, 2)
+                    .map(|(v, script)| Some((OP_PUSHDATA2(v.to_vec()), script))),
+                &LargeValue::PUSHDATA4_BYTE => Self::split_tagged_value(script, 4)
+                    .map(|(v, script)| Some((OP_PUSHDATA4(v.to_vec()), script))),
+                _ => Ok(None),
             },
         }
     }
 
-    pub fn get_op(script: &[u8]) -> Result<(Result<Opcode, u8>, &[u8]), ScriptError> {
-        Self::get_lv(script).and_then(|r| {
-            r.map_or(
-                match script.split_first() {
-                    None => Err(ScriptError::ReadError {
-                        expected_bytes: 1,
-                        available_bytes: 0,
-                    }),
-                    Some((leading_byte, script)) => Disabled::from_u8(*leading_byte).map_or(
-                        Ok((
-                            SmallValue::from_u8(*leading_byte).map_or(
-                                Control::from_u8(*leading_byte).map_or(
-                                    Operation::from_u8(*leading_byte)
-                                        .map_or(Err(*leading_byte), |op| Ok(Opcode::Operation(op))),
-                                    |ctl| Ok(Opcode::Control(ctl)),
-                                ),
-                                |sv| Ok(Opcode::PushValue(PushValue::SmallValue(sv))),
+    /// This parses a single opcode from a byte stream.
+    ///
+    /// NB: The nested `Result` allows us to preserve unknown opcodes, which only trigger a failure
+    ///     if they’re on an active branch during interpretation.
+    pub fn get_op(script: &[u8]) -> Result<ParsedOpcode, ScriptError> {
+        let mlv = Self::get_lv(script)?;
+        mlv.map_or(
+            match script.split_first() {
+                None => Err(ScriptError::ReadError {
+                    expected_bytes: 1,
+                    available_bytes: 0,
+                }),
+                Some((leading_byte, remaining_code)) => Disabled::from_u8(*leading_byte).map_or(
+                    Ok(ParsedOpcode {
+                        opcode: SmallValue::from_u8(*leading_byte).map_or(
+                            Control::from_u8(*leading_byte).map_or(
+                                Operation::from_u8(*leading_byte)
+                                    .map_or(Err(*leading_byte), |op| Ok(Opcode::Operation(op))),
+                                |ctl| Ok(Opcode::Control(ctl)),
                             ),
-                            script,
-                        )),
-                        |disabled| Err(ScriptError::DisabledOpcode(Some(disabled))),
-                    ),
-                },
-                |(v, script)| Ok((Ok(Opcode::PushValue(PushValue::LargeValue(v))), script)),
-            )
-        })
+                            |sv| Ok(Opcode::PushValue(PushValue::SmallValue(sv))),
+                        ),
+                        remaining_code,
+                    }),
+                    |disabled| Err(ScriptError::DisabledOpcode(Some(disabled))),
+                ),
+            },
+            |(v, remaining_code)| {
+                Ok(ParsedOpcode {
+                    opcode: Ok(Opcode::PushValue(PushValue::LargeValue(v))),
+                    remaining_code,
+                })
+            },
+        )
     }
 
     /** Encode/decode small integers: */
@@ -534,12 +561,15 @@ impl Script<'_> {
         let mut pc = self.0;
         let mut last_opcode = None;
         while !pc.is_empty() {
-            let (opcode, new_pc) = match Self::get_op(pc) {
+            let ParsedOpcode {
+                opcode,
+                remaining_code,
+            } = match Self::get_op(pc) {
                 Ok(o) => o,
                 // Stop counting when we get to an invalid opcode.
                 Err(_) => break,
             };
-            pc = new_pc;
+            pc = remaining_code;
             if let Ok(Opcode::Operation(op)) = opcode {
                 if op == OP_CHECKSIG || op == OP_CHECKSIGVERIFY {
                     n += 1;

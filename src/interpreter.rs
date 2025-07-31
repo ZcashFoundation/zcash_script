@@ -14,7 +14,7 @@ use crate::{
         Control::{self, *},
         Opcode,
         Operation::{self, *},
-        PushValue, Script, SmallValue, LOCKTIME_THRESHOLD, MAX_SCRIPT_ELEMENT_SIZE,
+        ParsedOpcode, PushValue, Script, SmallValue, LOCKTIME_THRESHOLD, MAX_SCRIPT_ELEMENT_SIZE,
         MAX_SCRIPT_SIZE,
     },
     script_error::ScriptError,
@@ -369,17 +369,24 @@ fn eval_step<'a>(
     //
     // Read instruction
     //
-    Script::get_op(pc).and_then(|(opcode, new_pc)| match opcode {
-        Err(byte) => {
-            state.increment_op_count()?;
-            if should_exec(&state.vexec) {
-                Err(ScriptError::BadOpcode(Some(byte)))
-            } else {
-                Ok(new_pc)
+    Script::get_op(pc).and_then(
+        |ParsedOpcode {
+             opcode,
+             remaining_code,
+         }| match opcode {
+            Err(byte) => {
+                state.increment_op_count()?;
+                if should_exec(&state.vexec) {
+                    Err(ScriptError::BadOpcode(Some(byte)))
+                } else {
+                    Ok(remaining_code)
+                }
             }
-        }
-        Ok(opcode) => eval_opcode(flags, opcode, script, &checker, state).map(|()| new_pc),
-    })
+            Ok(opcode) => {
+                eval_opcode(flags, opcode, script, &checker, state).map(|()| remaining_code)
+            }
+        },
+    )
 }
 
 fn eval_opcode(
