@@ -1,5 +1,7 @@
 //! Managing sequences of opcodes.
 
+use alloc::vec::Vec;
+
 use thiserror::Error;
 
 use crate::{

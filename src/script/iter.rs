@@ -1,6 +1,7 @@
 //! Much of the code is common between the script components, so this provides operations on
 //! iterators that can be shared.
 
+use alloc::vec::Vec;
 use core::iter;
 
 use crate::{

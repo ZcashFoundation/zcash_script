@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use thiserror::Error;
 
 #[derive(Clone, PartialEq, Eq, Debug, Error)]

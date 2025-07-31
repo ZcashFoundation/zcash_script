@@ -11,8 +11,9 @@
 
 // Use the generated C++ bindings
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
-#[cfg(test)]
+#[cfg(all(feature = "std", test))]
 mod tests {
+    use alloc::vec::Vec;
     use std::ffi::{c_int, c_uint, c_void};
 
     use hex::FromHex;

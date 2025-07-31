@@ -1,5 +1,7 @@
 //! Solvers for detecting known script kinds.
 
+use alloc::vec::Vec;
+
 use bounded_vec::BoundedVec;
 
 use crate::{
