@@ -1,5 +1,7 @@
 #![allow(non_camel_case_types)]
 
+use alloc::vec::Vec;
+
 use bounded_vec::{BoundedVec, EmptyBoundedVec};
 
 use crate::{num, opcode};

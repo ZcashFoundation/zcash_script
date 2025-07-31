@@ -40,6 +40,8 @@
 //! `True` and `False` in place of the `Bool`. The non-dependent version can be inferred by unioning
 //! the dependent ones, but it’s provided explicitly since union isn’t always trivial.
 
+use alloc::vec::Vec;
+
 use ripemd::Ripemd160;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
