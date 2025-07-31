@@ -67,6 +67,7 @@ impl LargeValue {
         }
     }
 
+    /// Get the [`Stack`] element represented by this [`LargeValue`].
     pub fn value(&self) -> &[u8] {
         match self {
             PushdataBytelength(v) => v.as_slice(),
@@ -76,6 +77,7 @@ impl LargeValue {
         }
     }
 
+    /// Returns false if there is a smaller possible encoding of the provided value.
     pub fn is_minimal_push(&self) -> bool {
         match self {
             PushdataBytelength(data) => match data.as_slice() {
@@ -105,6 +107,7 @@ impl From<LargeValue> for u8 {
 }
 
 enum_from_primitive! {
+/// Data values represented entirely by their opcode byte.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[repr(u8)]
 pub enum SmallValue {
@@ -134,6 +137,7 @@ pub enum SmallValue {
 use SmallValue::*;
 
 impl SmallValue {
+    /// Get the [`Stack`] element represented by this [`SmallValue`].
     pub fn value(&self) -> Option<Vec<u8>> {
         match self {
             OP_0 => Some(vec![]),
@@ -151,6 +155,7 @@ impl From<SmallValue> for u8 {
     }
 }
 
+/// Opcodes that represent constants to be pushed onto the stack.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum PushValue {
     SmallValue(SmallValue),
@@ -186,6 +191,7 @@ impl PushValue {
         }
     }
 
+    /// Get the [`Stack`] element represented by this [`PushValue`].
     pub fn value(&self) -> Option<Vec<u8>> {
         match self {
             PushValue::LargeValue(pv) => Some(pv.value().to_vec()),
@@ -193,6 +199,7 @@ impl PushValue {
         }
     }
 
+    /// Returns false if there is a smaller possible encoding of the provided value.
     pub fn is_minimal_push(&self) -> bool {
         match self {
             PushValue::LargeValue(lv) => lv.is_minimal_push(),

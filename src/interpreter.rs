@@ -314,7 +314,8 @@ impl State {
         Self::from_parts(stack, Stack::new(), 0, Stack::new())
     }
 
-    pub fn increment_op_count(&mut self) -> Result<(), ScriptError> {
+    /// Bumps the current `op_count` by one and errors if it exceeds `MAX_OP_COUNT`.
+    fn increment_op_count(&mut self) -> Result<(), ScriptError> {
         self.op_count += 1;
         if self.op_count <= MAX_OP_COUNT {
             Ok(())
@@ -949,9 +950,6 @@ fn eval_operation(
             //     20 signatures, plus a couple other fields. u8 also gives us total
             //     conversions to the other types we deal with here (`isize` and `i64`).
             let mut i: u8 = 0;
-            if stack.len() < i.into() {
-                return Err(ScriptError::InvalidStackOperation);
-            };
 
             let mut keys_count =
                 u8::try_from(parse_num(stack.rget(i.into())?, require_minimal, None)?)
@@ -970,6 +968,7 @@ fn eval_operation(
             if stack.len() <= i.into() {
                 return Err(ScriptError::InvalidStackOperation);
             }
+            assert!(i <= 21);
 
             let mut sigs_count =
                 u8::try_from(parse_num(stack.rget(i.into())?, require_minimal, None)?)
@@ -977,7 +976,6 @@ fn eval_operation(
             if sigs_count > keys_count {
                 return Err(ScriptError::SigCount);
             };
-            assert!(i <= 21);
             i += 1;
             let mut isig = i;
             i += sigs_count;
@@ -990,9 +988,7 @@ fn eval_operation(
                 let vch_sig: &ValType = stack.rget(isig.into())?;
                 let vch_pub_key: &ValType = stack.rget(ikey.into())?;
 
-                // Note how this makes the exact order of pubkey/signature evaluation
-                // distinguishable by CHECKMULTISIG NOT if the STRICTENC flag is set.
-                // See the script_(in)valid tests for details.
+                // Check signature
                 let ok: bool = is_sig_valid(vch_sig, vch_pub_key, flags, script, checker)?;
 
                 if ok {
