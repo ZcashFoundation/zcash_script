@@ -12,6 +12,7 @@ use crate::{
     op::*,
     script::{
         serialize_num,
+        Bad::{self, *},
         Disabled::{self, *},
         Opcode,
     },
@@ -24,6 +25,7 @@ use crate::{
 enum Entry {
     /// An Opcode
     O(Opcode),
+    B(Bad),
     D(Disabled),
     /// A byte sequence encoded as a hex string
     H(&'static str),
@@ -75,6 +77,7 @@ impl Entry {
     fn serialize(&self) -> Result<Vec<u8>, FromHexError> {
         match self {
             Entry::O(opcode) => Ok(vec![opcode.clone().into()]),
+            Entry::B(bad) => Ok(vec![(*bad).into()]),
             Entry::D(disabled) => Ok(vec![(*disabled).into()]),
             Entry::H(bytes) => <Vec<u8>>::from_hex(*bytes),
             Entry::A(string) => Ok(Self::val_to_pv(string.as_bytes())),
@@ -120,23 +123,6 @@ impl TestVector {
             (s, p) => panic!("{:?} has a bad hex value: {:?}", self, s.and(p)),
         }
     }
-}
-
-mod bad {
-    use crate::script::{
-        Control::*,
-        Opcode::{self, *},
-        Operation::*,
-        PushValue::SmallValue,
-        SmallValue::*,
-    };
-
-    pub const RESERVED: Opcode = PushValue(SmallValue(OP_RESERVED));
-    pub const VERIF: Opcode = Control(OP_VERIF);
-    pub const VERNOTIF: Opcode = Control(OP_VERNOTIF);
-    pub const VER: Opcode = Operation(OP_VER);
-    pub const RESERVED1: Opcode = Operation(OP_RESERVED1);
-    pub const RESERVED2: Opcode = Operation(OP_RESERVED2);
 }
 
 const DEFAULT_FLAGS: VerificationFlags =
@@ -281,7 +267,7 @@ pub fn test_vectors() -> Vec<TestVector> {
     // VER non-functional (ok if not executed)
     TestVector {
         script_sig: &[N(0)],
-        script_pubkey: &[O(IF), O(bad::VER), O(ELSE), N(1), O(ENDIF)],
+        script_pubkey: &[O(IF), B(OP_VER), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
         result: Ok(()),
     },
@@ -290,9 +276,9 @@ pub fn test_vectors() -> Vec<TestVector> {
         script_sig: &[N(0)],
         script_pubkey: &[
             O(IF),
-            O(bad::RESERVED),
-            O(bad::RESERVED1),
-            O(bad::RESERVED2),
+            B(OP_RESERVED),
+            B(OP_RESERVED1),
+            B(OP_RESERVED2),
             O(ELSE),
             N(1),
             O(ENDIF),
@@ -7184,7 +7170,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("50"), O(ENDIF), N(1)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0x50))),
+        result: Err(ScriptError::BadOpcode(Some(OP_RESERVED))),
     },
     // 0x51 through 0x60 push 1 through 16 onto stack
     TestVector {
@@ -7202,37 +7188,37 @@ pub fn test_vectors() -> Vec<TestVector> {
     // VER non-functional
     TestVector {
         script_sig: &[N(1)],
-        script_pubkey: &[O(IF), O(bad::VER), O(ELSE), N(1), O(ENDIF)],
+        script_pubkey: &[O(IF), B(OP_VER), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0x62))),
+        result: Err(ScriptError::BadOpcode(Some(OP_VER))),
     },
     // VERIF illegal everywhere
     TestVector {
         script_sig: &[N(0)],
-        script_pubkey: &[O(IF), O(bad::VERIF), O(ELSE), N(1), O(ENDIF)],
+        script_pubkey: &[O(IF), B(OP_VERIF), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0x65))),
+        result: Err(ScriptError::BadOpcode(Some(OP_VERIF))),
     },
     // VERIF illegal everywhere
     TestVector {
         script_sig: &[N(0)],
-        script_pubkey: &[O(IF), O(ELSE), N(1), O(ELSE), O(bad::VERIF), O(ENDIF)],
+        script_pubkey: &[O(IF), O(ELSE), N(1), O(ELSE), B(OP_VERIF), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0x65))),
+        result: Err(ScriptError::BadOpcode(Some(OP_VERIF))),
     },
     // VERNOTIF illegal everywhere
     TestVector {
         script_sig: &[N(0)],
-        script_pubkey: &[O(IF), O(bad::VERNOTIF), O(ELSE), N(1), O(ENDIF)],
+        script_pubkey: &[O(IF), B(OP_VERNOTIF), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0x66))),
+        result: Err(ScriptError::BadOpcode(Some(OP_VERNOTIF))),
     },
     // VERNOTIF illegal everywhere
     TestVector {
         script_sig: &[N(0)],
-        script_pubkey: &[O(IF), O(ELSE), N(1), O(ELSE), O(bad::VERNOTIF), O(ENDIF)],
+        script_pubkey: &[O(IF), O(ELSE), N(1), O(ELSE), B(OP_VERNOTIF), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0x66))),
+        result: Err(ScriptError::BadOpcode(Some(OP_VERNOTIF))),
     },
     // IF/ENDIF can’t span scriptSig/scriptPubKey
     TestVector {
@@ -8288,428 +8274,428 @@ pub fn test_vectors() -> Vec<TestVector> {
         script_sig: &[H("50")],
         script_pubkey: &[N(1)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0x50))),
+        result: Err(ScriptError::BadOpcode(Some(OP_RESERVED))),
     },
     // opcodes above MAX_OPCODE invalid if executed
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("ba"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xba))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xba)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("bb"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xbb))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xbb)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("bc"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xbc))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xbc)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("bd"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xbd))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xbd)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("be"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xbe))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xbe)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("bf"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xbf))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xbf)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("c0"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xc0))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xc0)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("c1"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xc1))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xc1)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("c2"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xc2))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xc2)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("c3"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xc3))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xc3)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("c4"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xc4))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xc4)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("c5"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xc5))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xc5)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("c6"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xc6))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xc6)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("c7"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xc7))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xc7)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("c8"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xc8))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xc8)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("c9"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xc9))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xc9)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("ca"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xca))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xca)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("cb"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xcb))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xcb)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("cc"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xcc))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xcc)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("cd"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xcd))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xcd)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("ce"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xce))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xce)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("cf"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xcf))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xcf)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("d0"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xd0))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xd0)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("d1"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xd1))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xd1)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("d2"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xd2))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xd2)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("d3"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xd3))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xd3)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("d4"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xd4))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xd4)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("d5"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xd5))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xd5)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("d6"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xd6))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xd6)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("d7"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xd7))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xd7)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("d8"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xd8))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xd8)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("d9"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xd9))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xd9)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("da"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xda))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xda)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("db"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xdb))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xdb)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("dc"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xdc))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xdc)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("dd"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xdd))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xdd)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("de"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xde))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xde)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("df"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xdf))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xdf)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("e0"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xe0))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xe0)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("e1"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xe1))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xe1)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("e2"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xe2))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xe2)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("e3"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xe3))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xe3)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("e4"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xe4))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xe4)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("e5"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xe5))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xe5)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("e6"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xe6))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xe6)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("e7"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xe7))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xe7)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("e8"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xe8))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xe8)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("e9"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xe9))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xe9)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("ea"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xea))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xea)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("eb"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xeb))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xeb)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("ec"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xec))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xec)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("ed"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xed))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xed)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("ee"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xee))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xee)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("ef"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xef))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xef)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("f0"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xf0))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xf0)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("f1"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xf1))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xf1)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("f2"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xf2))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xf2)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("f3"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xf3))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xf3)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("f4"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xf4))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xf4)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("f5"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xf5))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xf5)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("f6"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xf6))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xf6)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("f7"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xf7))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xf7)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("f8"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xf8))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xf8)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("f9"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xf9))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xf9)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("fa"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xfa))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xfa)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("fb"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xfb))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xfb)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("fc"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xfc))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xfc)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("fd"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xfd))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xfd)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("fe"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xfe))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xfe)))),
     },
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[O(IF), H("ff"), O(ELSE), N(1), O(ENDIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xff))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xff)))),
     },
     // invalid because scriptSig and scriptPubKey are processed separately
     TestVector {
@@ -8930,51 +8916,51 @@ pub fn test_vectors() -> Vec<TestVector> {
     // OP_VER is reserved
     TestVector {
         script_sig: &[N(1)],
-        script_pubkey: &[O(bad::VER)],
+        script_pubkey: &[B(OP_VER)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0x62))),
+        result: Err(ScriptError::BadOpcode(Some(OP_VER))),
     },
     // OP_VERIF is reserved
     TestVector {
         script_sig: &[N(1)],
-        script_pubkey: &[O(bad::VERIF)],
+        script_pubkey: &[B(OP_VERIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0x65))),
+        result: Err(ScriptError::BadOpcode(Some(OP_VERIF))),
     },
     // OP_VERNOTIF is reserved
     TestVector {
         script_sig: &[N(1)],
-        script_pubkey: &[O(bad::VERNOTIF)],
+        script_pubkey: &[B(OP_VERNOTIF)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0x66))),
+        result: Err(ScriptError::BadOpcode(Some(OP_VERNOTIF))),
     },
     // OP_RESERVED is reserved
     TestVector {
         script_sig: &[N(1)],
-        script_pubkey: &[O(bad::RESERVED)],
+        script_pubkey: &[B(OP_RESERVED)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0x50))),
+        result: Err(ScriptError::BadOpcode(Some(OP_RESERVED))),
     },
     // OP_RESERVED1 is reserved
     TestVector {
         script_sig: &[N(1)],
-        script_pubkey: &[O(bad::RESERVED1)],
+        script_pubkey: &[B(OP_RESERVED1)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0x89))),
+        result: Err(ScriptError::BadOpcode(Some(OP_RESERVED1))),
     },
     // OP_RESERVED2 is reserved
     TestVector {
         script_sig: &[N(1)],
-        script_pubkey: &[O(bad::RESERVED2)],
+        script_pubkey: &[B(OP_RESERVED2)],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0x8a))),
+        result: Err(ScriptError::BadOpcode(Some(OP_RESERVED2))),
     },
     // 0xba == MAX_OPCODE + 1
     TestVector {
         script_sig: &[N(1)],
         script_pubkey: &[H("ba")],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0xba))),
+        result: Err(ScriptError::BadOpcode(Some(Unknown(0xba)))),
     },
     // We cannot do math on 5-byte integers
     TestVector {
@@ -11197,11 +11183,11 @@ pub fn test_vectors() -> Vec<TestVector> {
             O(EQUAL),
         ],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0x50))),
+        result: Err(ScriptError::BadOpcode(Some(OP_RESERVED))),
     },
     // OP_VER in P2SH should fail
     TestVector {
-        script_sig: &[N(0), H("01"), O(bad::VER)],
+        script_sig: &[N(0), H("01"), B(OP_VER)],
         script_pubkey: &[
             O(HASH160),
             H("14"),
@@ -11209,7 +11195,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             O(EQUAL),
         ],
         flags: DEFAULT_FLAGS,
-        result: Err(ScriptError::BadOpcode(Some(0x62))),
+        result: Err(ScriptError::BadOpcode(Some(OP_VER))),
     },
     // Basic OP_0 execution
     TestVector {

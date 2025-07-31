@@ -1,6 +1,9 @@
 use thiserror::Error;
 
-use crate::{script::Disabled, signature};
+use crate::{
+    script::{Bad, Disabled},
+    signature,
+};
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Error)]
 pub enum ScriptNumError {
@@ -62,8 +65,8 @@ pub enum ScriptError {
     NumEqualVerify,
 
     // Logical/Format/Canonical errors
-    #[error("bad opcode encountered")]
-    BadOpcode(Option<u8>),
+    #[error("bad opcode encountered: {}", .0.map_or("unknown".to_owned(), |op| format!("{:?}", op)))]
+    BadOpcode(Option<Bad>),
 
     /// __TODO__: `Option` can go away once C++ support is removed.
     #[error("disabled opcode encountered: {}", .0.map_or("unknown".to_owned(), |op| format!("{:?}", op)))]

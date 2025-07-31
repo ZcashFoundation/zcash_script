@@ -114,7 +114,6 @@ pub enum SmallValue {
     // push value
     OP_0 = 0x00,
     OP_1NEGATE = 0x4f,
-    OP_RESERVED = 0x50,
     OP_1 = 0x51,
     OP_2 = 0x52,
     OP_3 = 0x53,
@@ -138,12 +137,11 @@ use SmallValue::*;
 
 impl SmallValue {
     /// Get the [`Stack`] element represented by this [`SmallValue`].
-    pub fn value(&self) -> Option<Vec<u8>> {
+    pub fn value(&self) -> Vec<u8> {
         match self {
-            OP_0 => Some(vec![]),
-            OP_1NEGATE => Some(vec![0x81]),
-            OP_RESERVED => None,
-            _ => Some(vec![u8::from(*self) - (u8::from(OP_1) - 1)]),
+            OP_0 => vec![],
+            OP_1NEGATE => vec![0x81],
+            _ => vec![u8::from(*self) - (u8::from(OP_1) - 1)],
         }
     }
 }
@@ -192,9 +190,9 @@ impl PushValue {
     }
 
     /// Get the [`Stack`] element represented by this [`PushValue`].
-    pub fn value(&self) -> Option<Vec<u8>> {
+    pub fn value(&self) -> Vec<u8> {
         match self {
-            PushValue::LargeValue(pv) => Some(pv.value().to_vec()),
+            PushValue::LargeValue(pv) => pv.value().to_vec(),
             PushValue::SmallValue(pv) => pv.value(),
         }
     }
@@ -215,8 +213,6 @@ enum_from_primitive! {
 pub enum Control {
     OP_IF = 0x63,
     OP_NOTIF = 0x64,
-    OP_VERIF = 0x65,
-    OP_VERNOTIF = 0x66,
     OP_ELSE = 0x67,
     OP_ENDIF = 0x68,
 }
@@ -229,7 +225,6 @@ enum_from_primitive! {
 pub enum Operation {
     // control
     OP_NOP = 0x61,
-    OP_VER = 0x62,
     OP_VERIFY = 0x69,
     OP_RETURN = 0x6a,
 
@@ -260,8 +255,6 @@ pub enum Operation {
     // bit logic
     OP_EQUAL = 0x87,
     OP_EQUALVERIFY = 0x88,
-    OP_RESERVED1 = 0x89,
-    OP_RESERVED2 = 0x8a,
 
     // numeric
     OP_1ADD = 0x8b,
@@ -457,6 +450,55 @@ pub fn serialize_num(value: i64) -> Vec<u8> {
     result
 }
 
+/// Bad opcodes are a bit complicated.
+///
+/// - They only fail if they are evaluated, so we can’t statically fail scripts that contain them
+///   (unlike [Disabled]).
+/// - [Bad::OP_RESERVED] counts as a push value for the purposes of
+///   [interpreter::VerificationFlags::SigPushOnly] (but push-only sigs must necessarily evaluate
+///   all of their opcodes, so what we’re preserving here is that we get
+///   [script::Error::SigPushOnly] in this case instead of [script::Error::BadOpcode]).
+/// - [Bad::OP_VERIF] and [Bad::OP_VERNOTIF] both _always_ get evaluated, so we need to special case
+///   them when checking whether to throw [script::Error::BadOpcode]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum Bad {
+    OP_RESERVED,
+    OP_VER,
+    OP_VERIF,
+    OP_VERNOTIF,
+    OP_RESERVED1,
+    OP_RESERVED2,
+    Unknown(u8),
+}
+
+impl From<u8> for Bad {
+    fn from(value: u8) -> Self {
+        match value {
+            0x50 => Bad::OP_RESERVED,
+            0x62 => Bad::OP_VER,
+            0x65 => Bad::OP_VERIF,
+            0x66 => Bad::OP_VERNOTIF,
+            0x89 => Bad::OP_RESERVED1,
+            0x8a => Bad::OP_RESERVED2,
+            _ => Bad::Unknown(value),
+        }
+    }
+}
+
+impl From<Bad> for u8 {
+    fn from(value: Bad) -> Self {
+        match value {
+            Bad::OP_RESERVED => 0x50,
+            Bad::OP_VER => 0x62,
+            Bad::OP_VERIF => 0x65,
+            Bad::OP_VERNOTIF => 0x66,
+            Bad::OP_RESERVED1 => 0x89,
+            Bad::OP_RESERVED2 => 0x8a,
+            Bad::Unknown(byte) => byte,
+        }
+    }
+}
+
 enum_from_primitive! {
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[repr(u8)]
@@ -498,7 +540,7 @@ impl From<Disabled> for u8 {
 pub struct ParsedOpcode<'a> {
     /// The [`Result`] allows us to preserve unknown opcodes, which only trigger a failure if
     /// they’re on an active branch during interpretation.
-    pub opcode: Result<Opcode, u8>,
+    pub opcode: Result<Opcode, Bad>,
     pub remaining_code: &'a [u8],
 }
 
@@ -507,19 +549,27 @@ pub struct ParsedOpcode<'a> {
 pub struct Script<'a>(pub &'a [u8]);
 
 impl Script<'_> {
-    pub fn parse(&self) -> Result<Vec<Opcode>, ScriptError> {
+    /// Fails on all [`Bad`] opcodes, not just ones on active branches.
+    pub fn parse_strict(&self) -> Result<Vec<Opcode>, Result<ScriptError, Bad>> {
+        // TODO: Collect _all_ [opcode::Bad] failures.
+        match self.parse().map(|script| script.into_iter().collect()) {
+            Err(op_err) => Err(Ok(op_err)),
+            Ok(Err(bad_ops)) => Err(Err(bad_ops)),
+            Ok(Ok(ops)) => Ok(ops),
+        }
+    }
+
+    pub fn parse(&self) -> Result<Vec<Result<Opcode, Bad>>, ScriptError> {
         let mut pc = self.0;
         let mut result = vec![];
         while !pc.is_empty() {
-            Self::get_op(pc).and_then(
+            Self::get_op(pc).map(
                 |ParsedOpcode {
                      opcode,
                      remaining_code,
                  }| {
                     pc = remaining_code;
-                    opcode
-                        .map_err(|byte| ScriptError::BadOpcode(Some(byte)))
-                        .map(|op| result.push(op))
+                    result.push(opcode)
                 },
             )?;
         }
@@ -611,7 +661,9 @@ impl Script<'_> {
                         opcode: SmallValue::from_u8(*leading_byte).map_or(
                             Control::from_u8(*leading_byte).map_or(
                                 Operation::from_u8(*leading_byte)
-                                    .map_or(Err(*leading_byte), |op| Ok(Opcode::Operation(op))),
+                                    .map_or(Err((*leading_byte).into()), |op| {
+                                        Ok(Opcode::Operation(op))
+                                    }),
                                 |ctl| Ok(Opcode::Control(ctl)),
                             ),
                             |sv| Ok(Opcode::PushValue(PushValue::SmallValue(sv))),
@@ -681,7 +733,7 @@ impl Script<'_> {
 
     /// Returns true iff this script is P2SH.
     pub fn is_pay_to_script_hash(&self) -> bool {
-        self.parse().map_or(false, |ops| match &ops[..] {
+        self.parse_strict().map_or(false, |ops| match &ops[..] {
             [ Opcode::Operation(OP_HASH160),
               Opcode::PushValue(PushValue::LargeValue(PushdataBytelength(v))),
               Opcode::Operation(OP_EQUAL)
@@ -693,7 +745,8 @@ impl Script<'_> {
     /// Called by `IsStandardTx` and P2SH/BIP62 VerifyScript (which makes it consensus-critical).
     pub fn is_push_only(&self) -> bool {
         self.parse().map_or(false, |op| {
-            op.iter().all(|op| matches!(op, Opcode::PushValue(_)))
+            op.iter()
+                .all(|op| matches!(op, Ok(Opcode::PushValue(_)) | Err(Bad::OP_RESERVED)))
         })
     }
 }

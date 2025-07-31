@@ -10,11 +10,11 @@ use sha2::{Digest, Sha256};
 use crate::{
     external::pubkey::PubKey,
     script::{
-        parse_num, serialize_num,
+        parse_num, serialize_num, Bad,
         Control::{self, *},
         Opcode,
         Operation::{self, *},
-        ParsedOpcode, PushValue, Script, SmallValue, LOCKTIME_THRESHOLD, MAX_SCRIPT_ELEMENT_SIZE,
+        ParsedOpcode, PushValue, Script, LOCKTIME_THRESHOLD, MAX_SCRIPT_ELEMENT_SIZE,
         MAX_SCRIPT_SIZE,
     },
     script_error::ScriptError,
@@ -375,10 +375,12 @@ fn eval_step<'a>(
              opcode,
              remaining_code,
          }| match opcode {
-            Err(byte) => {
-                state.increment_op_count()?;
-                if should_exec(&state.vexec) {
-                    Err(ScriptError::BadOpcode(Some(byte)))
+            Err(bad) => {
+                if Bad::OP_RESERVED != bad {
+                    state.increment_op_count()?;
+                }
+                if Bad::OP_VERIF == bad || Bad::OP_VERNOTIF == bad || should_exec(&state.vexec) {
+                    Err(ScriptError::BadOpcode(Some(bad)))
                 } else {
                     Ok(remaining_code)
                 }
@@ -399,7 +401,7 @@ fn eval_opcode(
 ) -> Result<(), ScriptError> {
     (match opcode {
         Opcode::PushValue(pv) => {
-            if pv.value().map_or(0, |v| v.len()) <= MAX_SCRIPT_ELEMENT_SIZE {
+            if pv.value().len() <= MAX_SCRIPT_ELEMENT_SIZE {
                 if should_exec(&state.vexec) {
                     eval_push_value(
                         &pv,
@@ -454,13 +456,8 @@ fn eval_push_value(
     if require_minimal && !pv.is_minimal_push() {
         Err(ScriptError::MinimalData)
     } else {
-        pv.value().map_or(
-            Err(ScriptError::BadOpcode(Some(SmallValue::OP_RESERVED.into()))),
-            |v| {
-                stack.push(v);
-                Ok(())
-            },
-        )
+        stack.push(pv.value());
+        Ok(())
     }
 }
 
@@ -506,8 +503,6 @@ fn eval_control(
             }
             vexec.pop()?;
         }
-
-        OP_VERIF | OP_VERNOTIF => return Err(ScriptError::BadOpcode(Some(op.into()))),
     }
     Ok(())
 }
@@ -1034,10 +1029,6 @@ fn eval_operation(
                     return Err(ScriptError::CheckMultisigVerify);
                 }
             }
-        }
-
-        _ => {
-            return Err(ScriptError::BadOpcode(Some(op.into())));
         }
     }
     Ok(())
