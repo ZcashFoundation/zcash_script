@@ -8,7 +8,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 use thiserror::Error;
 
 use super::Opcode;
-use crate::interpreter;
+use crate::{interpreter, num};
 use push_value::{
     LargeValue,
     SmallValue::{self, *},
@@ -77,6 +77,14 @@ impl PushValue {
             errors.push(interpreter::Error::MinimalData);
         }
         errors
+    }
+
+    /// Returns the numeric value represented by the opcode, if one exists.
+    pub fn to_num(&self) -> Result<i64, num::Error> {
+        match self {
+            PushValue::LargeValue(lv) => lv.to_num(),
+            PushValue::SmallValue(sv) => Ok(sv.to_num().into()),
+        }
     }
 
     /// Get the [`Stack`] element represented by this [`PushValue`].
