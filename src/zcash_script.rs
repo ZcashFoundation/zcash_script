@@ -11,18 +11,16 @@ use crate::{
     signature,
 };
 
-/// This maps to `zcash_script_error_t`, but most of those cases aren’t used any more. This only
-/// replicates the still-used cases, and then an `Unknown` bucket for anything else that might
-/// happen.
+/// This extends `ScriptError` with cases that can only occur when using the C++ implementation.
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum Error {
-    /// Any failure that results in the script being invalid.
+    /// An error that could occur in any implementation has occurred.
     #[error("{0}")]
-    Ok(ScriptError),
+    Script(ScriptError),
 
-    /// An exception was caught.
-    #[error("script verification failed")]
-    VerifyScript,
+    /// An exception was caught during C++ verification.
+    #[error("caught exception during verification")]
+    CaughtException,
 
     /// The script size can’t fit in a `u32`, as required by the C++ code.
     #[error("invalid script size: {0}")]
@@ -53,7 +51,7 @@ pub trait ZcashScript {
     ///  - script_sig: the scriptSig of the input being validated.
     ///  - flags: the script verification flags to use.
     ///
-    ///  Note that script verification failure is indicated by `Err(Error::Ok)`.
+    ///  Note that script verification failure is indicated by `Err(Error::Script)`.
     fn verify_callback(
         &self,
         script_pub_key: &[u8],
@@ -85,7 +83,7 @@ where
         payload,
         stepper,
     )
-    .map_err(Error::Ok)
+    .map_err(Error::Script)
 }
 
 /// A payload for comparing the results of two steppers.
@@ -348,7 +346,7 @@ mod tests {
         // The final return value is from whichever stepper failed.
         assert_eq!(
             ret,
-            Err(Error::Ok(ScriptError::ReadError {
+            Err(Error::Script(ScriptError::ReadError {
                 expected_bytes: 1,
                 available_bytes: 0,
             }))
@@ -406,7 +404,7 @@ mod tests {
         if res.diverging_result.is_some() {
             panic!("mismatched result: {res:?}");
         }
-        assert_eq!(ret, Err(Error::Ok(ScriptError::EvalFalse)));
+        assert_eq!(ret, Err(Error::Script(ScriptError::EvalFalse)));
     }
 
     #[test]
@@ -433,7 +431,7 @@ mod tests {
         if res.diverging_result.is_some() {
             panic!("mismatched result: {res:?}");
         }
-        assert_eq!(ret, Err(Error::Ok(ScriptError::EvalFalse)));
+        assert_eq!(ret, Err(Error::Script(ScriptError::EvalFalse)));
     }
 
     proptest! {
