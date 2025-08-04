@@ -1177,3 +1177,144 @@ impl From<Disabled> for u8 {
         value as u8
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use enum_primitive::FromPrimitive;
+
+    use crate::{op, Opcode};
+
+    use super::{push_value::LargeValue, Control, Disabled, Operation, PushValue, SmallValue};
+
+    #[test]
+    fn round_trip_opcode_encodings() {
+        for op in [
+            op::_0,
+            op::_1NEGATE,
+            op::_1,
+            op::_2,
+            op::_3,
+            op::_4,
+            op::_5,
+            op::_6,
+            op::_7,
+            op::_8,
+            op::_9,
+            op::_10,
+            op::_11,
+            op::_12,
+            op::_13,
+            op::_14,
+            op::_15,
+            op::_16,
+            op::NOP,
+            op::IF,
+            op::NOTIF,
+            op::ELSE,
+            op::ENDIF,
+            op::VERIFY,
+            op::RETURN,
+            op::TOALTSTACK,
+            op::FROMALTSTACK,
+            op::_2DROP,
+            op::_2DUP,
+            op::_3DUP,
+            op::_2OVER,
+            op::_2ROT,
+            op::_2SWAP,
+            op::IFDUP,
+            op::DEPTH,
+            op::DROP,
+            op::DUP,
+            op::NIP,
+            op::OVER,
+            op::PICK,
+            op::ROLL,
+            op::ROT,
+            op::SWAP,
+            op::TUCK,
+            op::SIZE,
+            op::EQUAL,
+            op::EQUALVERIFY,
+            op::_1ADD,
+            op::_1SUB,
+            op::NEGATE,
+            op::ABS,
+            op::NOT,
+            op::_0NOTEQUAL,
+            op::ADD,
+            op::SUB,
+            op::BOOLAND,
+            op::BOOLOR,
+            op::NUMEQUAL,
+            op::NUMEQUALVERIFY,
+            op::NUMNOTEQUAL,
+            op::LESSTHAN,
+            op::GREATERTHAN,
+            op::LESSTHANOREQUAL,
+            op::GREATERTHANOREQUAL,
+            op::MIN,
+            op::MAX,
+            op::WITHIN,
+            op::RIPEMD160,
+            op::SHA1,
+            op::SHA256,
+            op::HASH160,
+            op::HASH256,
+            op::CHECKSIG,
+            op::CHECKSIGVERIFY,
+            op::CHECKMULTISIG,
+            op::CHECKMULTISIGVERIFY,
+            op::NOP1,
+            op::CHECKLOCKTIMEVERIFY,
+            op::NOP3,
+            op::NOP4,
+            op::NOP5,
+            op::NOP6,
+            op::NOP7,
+            op::NOP8,
+            op::NOP9,
+            op::NOP10,
+        ] {
+            match op {
+                Opcode::PushValue(pv) => match pv {
+                    PushValue::SmallValue(sv) => {
+                        assert_eq!(SmallValue::from_u8(sv.into()), Some(sv));
+                    }
+                    // LargeValues don't encode to a single opcode.
+                    PushValue::LargeValue(lv) => {
+                        assert_eq!(LargeValue::from_slice(&Vec::from(&lv)), Some(lv));
+                    }
+                },
+                Opcode::Control(control) => {
+                    assert_eq!(Control::from_u8(control.into()), Some(control));
+                }
+                Opcode::Operation(operation) => {
+                    assert_eq!(Operation::from_u8(operation.into()), Some(operation));
+                }
+            }
+        }
+
+        // Disabled opcodes are not valid `Opcode`s.
+        for op in [
+            Disabled::OP_CAT,
+            Disabled::OP_SUBSTR,
+            Disabled::OP_LEFT,
+            Disabled::OP_RIGHT,
+            Disabled::OP_INVERT,
+            Disabled::OP_AND,
+            Disabled::OP_OR,
+            Disabled::OP_XOR,
+            Disabled::OP_2MUL,
+            Disabled::OP_2DIV,
+            Disabled::OP_MUL,
+            Disabled::OP_DIV,
+            Disabled::OP_MOD,
+            Disabled::OP_LSHIFT,
+            Disabled::OP_RSHIFT,
+            Disabled::OP_CODESEPARATOR,
+        ] {
+            assert_eq!(Disabled::from_u8(op.into()), Some(op));
+        }
+    }
+}
