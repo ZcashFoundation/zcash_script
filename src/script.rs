@@ -2,6 +2,7 @@
 
 use bounded_vec::{BoundedVec, EmptyBoundedVec};
 use enum_primitive::FromPrimitive;
+use itertools::{Either, Itertools};
 
 use super::script_error::{ScriptError, ScriptNumError};
 
@@ -49,21 +50,18 @@ impl LargeValue {
     /// Returns a [`LargeValue`] as minimally-encoded as possible. That is, non-empty values that
     /// should be minimally-encoded as [`SmallValue`]s will be [`PushdataBytelength`].
     fn from_slice(v: &[u8]) -> Option<LargeValue> {
-        match v {
-            [] => None,
-            _ => {
-                let vec = v.to_vec();
-                vec.clone().try_into().map_or(
-                    vec.clone().try_into().map_or(
-                        vec.clone().try_into().map_or(
-                            vec.try_into().map_or(None, |bv| Some(OP_PUSHDATA4(bv))),
-                            |bv| Some(OP_PUSHDATA2(bv)),
-                        ),
-                        |bv| Some(OP_PUSHDATA1(bv)),
-                    ),
-                    |bv| Some(PushdataBytelength(bv)),
-                )
-            }
+        if v.is_empty() {
+            None
+        } else if let Ok(bv) = BoundedVec::try_from(v.to_vec()) {
+            Some(PushdataBytelength(bv))
+        } else if let Ok(bv) = BoundedVec::try_from(v.to_vec()) {
+            Some(OP_PUSHDATA1(bv))
+        } else if let Ok(bv) = BoundedVec::try_from(v.to_vec()) {
+            Some(OP_PUSHDATA2(bv))
+        } else if let Ok(bv) = BoundedVec::try_from(v.to_vec()) {
+            Some(OP_PUSHDATA4(bv))
+        } else {
+            None
         }
     }
 
@@ -156,7 +154,9 @@ impl From<SmallValue> for u8 {
 /// Opcodes that represent constants to be pushed onto the stack.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum PushValue {
+    /// Constants that are represented by a single byte.
     SmallValue(SmallValue),
+    /// Constants that contain data in addition to the opcode byte.
     LargeValue(LargeValue),
 }
 
@@ -165,26 +165,23 @@ impl PushValue {
     pub fn from_slice(v: &[u8]) -> Option<PushValue> {
         match v {
             [] => Some(PushValue::SmallValue(OP_0)),
-            [byte] => Some(match byte {
-                0x81 => PushValue::SmallValue(OP_1NEGATE),
-                1 => PushValue::SmallValue(OP_1),
-                2 => PushValue::SmallValue(OP_2),
-                3 => PushValue::SmallValue(OP_3),
-                4 => PushValue::SmallValue(OP_4),
-                5 => PushValue::SmallValue(OP_5),
-                6 => PushValue::SmallValue(OP_6),
-                7 => PushValue::SmallValue(OP_7),
-                8 => PushValue::SmallValue(OP_8),
-                9 => PushValue::SmallValue(OP_9),
-                10 => PushValue::SmallValue(OP_10),
-                11 => PushValue::SmallValue(OP_11),
-                12 => PushValue::SmallValue(OP_12),
-                13 => PushValue::SmallValue(OP_13),
-                14 => PushValue::SmallValue(OP_14),
-                15 => PushValue::SmallValue(OP_15),
-                16 => PushValue::SmallValue(OP_16),
-                _ => PushValue::LargeValue(PushdataBytelength([*byte; 1].into())),
-            }),
+            [0x81] => Some(PushValue::SmallValue(OP_1NEGATE)),
+            [1] => Some(PushValue::SmallValue(OP_1)),
+            [2] => Some(PushValue::SmallValue(OP_2)),
+            [3] => Some(PushValue::SmallValue(OP_3)),
+            [4] => Some(PushValue::SmallValue(OP_4)),
+            [5] => Some(PushValue::SmallValue(OP_5)),
+            [6] => Some(PushValue::SmallValue(OP_6)),
+            [7] => Some(PushValue::SmallValue(OP_7)),
+            [8] => Some(PushValue::SmallValue(OP_8)),
+            [9] => Some(PushValue::SmallValue(OP_9)),
+            [10] => Some(PushValue::SmallValue(OP_10)),
+            [11] => Some(PushValue::SmallValue(OP_11)),
+            [12] => Some(PushValue::SmallValue(OP_12)),
+            [13] => Some(PushValue::SmallValue(OP_13)),
+            [14] => Some(PushValue::SmallValue(OP_14)),
+            [15] => Some(PushValue::SmallValue(OP_15)),
+            [16] => Some(PushValue::SmallValue(OP_16)),
             _ => LargeValue::from_slice(v).map(PushValue::LargeValue),
         }
     }
@@ -534,14 +531,28 @@ impl From<Disabled> for u8 {
     }
 }
 
-/// When we parse a single [`Opcode`], the result is a bit complicated. It returns the remaining
-/// unparsed script code along with either a known [`Opcode`] or an unknown byte (which _may_ cause
-/// a script failure down the line).
+/// When writing scripts, we don’t want to allow bad opcodes, so `Opcode` doesn’t include them.
+/// However, when validating scripts, bad opcodes only cause a failure when they’re on an active
+/// branch, so this type allows us to hold onto the bad opcodes when parsing.
+pub enum PossiblyBad {
+    Good(Opcode),
+    Bad(Bad),
+}
+
 pub struct ParsedOpcode<'a> {
     /// The [`Result`] allows us to preserve unknown opcodes, which only trigger a failure if
     /// they’re on an active branch during interpretation.
-    pub opcode: Result<Opcode, Bad>,
+    pub opcode: PossiblyBad,
     pub remaining_code: &'a [u8],
+}
+
+/// “Strict” scripts disallow [`Bad`] opcodes, and so we collect any bad opcodes that we find, so we
+/// can report all of them, rather than just the first one.
+pub enum StrictError {
+    /// A script validation failure.
+    Script(ScriptError),
+    /// All of the [`Bad`] opcodes we found.
+    BadOpcodes(Vec<Bad>),
 }
 
 /** Serialized script, used inside transaction inputs and outputs */
@@ -550,28 +561,33 @@ pub struct Script<'a>(pub &'a [u8]);
 
 impl Script<'_> {
     /// Fails on all [`Bad`] opcodes, not just ones on active branches.
-    pub fn parse_strict(&self) -> Result<Vec<Opcode>, Result<ScriptError, Bad>> {
-        // TODO: Collect _all_ [opcode::Bad] failures.
-        match self.parse().map(|script| script.into_iter().collect()) {
-            Err(op_err) => Err(Ok(op_err)),
-            Ok(Err(bad_ops)) => Err(Err(bad_ops)),
-            Ok(Ok(ops)) => Ok(ops),
-        }
+    pub fn parse_strict(&self) -> Result<Vec<Opcode>, StrictError> {
+        self.parse()
+            .map_err(StrictError::Script)
+            .and_then(|script| {
+                let (opcodes, bad_opcodes): (Vec<_>, Vec<_>) =
+                    script.into_iter().partition_map(|pb| match pb {
+                        PossiblyBad::Good(opcode) => Either::Left(opcode),
+                        PossiblyBad::Bad(bad) => Either::Right(bad),
+                    });
+                if bad_opcodes.is_empty() {
+                    Ok(opcodes)
+                } else {
+                    Err(StrictError::BadOpcodes(bad_opcodes))
+                }
+            })
     }
 
-    pub fn parse(&self) -> Result<Vec<Result<Opcode, Bad>>, ScriptError> {
+    pub fn parse(&self) -> Result<Vec<PossiblyBad>, ScriptError> {
         let mut pc = self.0;
         let mut result = vec![];
         while !pc.is_empty() {
-            Self::get_op(pc).map(
-                |ParsedOpcode {
-                     opcode,
-                     remaining_code,
-                 }| {
-                    pc = remaining_code;
-                    result.push(opcode)
-                },
-            )?;
+            let ParsedOpcode {
+                opcode,
+                remaining_code,
+            } = Self::get_op(pc)?;
+            pc = remaining_code;
+            result.push(opcode)
         }
         Ok(result)
     }
@@ -649,37 +665,33 @@ impl Script<'_> {
     /// NB: The nested `Result` allows us to preserve unknown opcodes, which only trigger a failure
     ///     if they’re on an active branch during interpretation.
     pub fn get_op(script: &[u8]) -> Result<ParsedOpcode, ScriptError> {
-        let mlv = Self::get_lv(script)?;
-        mlv.map_or(
-            match script.split_first() {
+        match Self::get_lv(script)? {
+            None => match script.split_first() {
                 None => Err(ScriptError::ReadError {
                     expected_bytes: 1,
                     available_bytes: 0,
                 }),
                 Some((leading_byte, remaining_code)) => Disabled::from_u8(*leading_byte).map_or(
                     Ok(ParsedOpcode {
-                        opcode: SmallValue::from_u8(*leading_byte).map_or(
-                            Control::from_u8(*leading_byte).map_or(
-                                Operation::from_u8(*leading_byte)
-                                    .map_or(Err((*leading_byte).into()), |op| {
-                                        Ok(Opcode::Operation(op))
-                                    }),
-                                |ctl| Ok(Opcode::Control(ctl)),
-                            ),
-                            |sv| Ok(Opcode::PushValue(PushValue::SmallValue(sv))),
-                        ),
+                        opcode: if let Some(sv) = SmallValue::from_u8(*leading_byte) {
+                            PossiblyBad::Good(Opcode::PushValue(PushValue::SmallValue(sv)))
+                        } else if let Some(ctl) = Control::from_u8(*leading_byte) {
+                            PossiblyBad::Good(Opcode::Control(ctl))
+                        } else if let Some(op) = Operation::from_u8(*leading_byte) {
+                            PossiblyBad::Good(Opcode::Operation(op))
+                        } else {
+                            PossiblyBad::Bad(Bad::from(*leading_byte))
+                        },
                         remaining_code,
                     }),
                     |disabled| Err(ScriptError::DisabledOpcode(Some(disabled))),
                 ),
             },
-            |(v, remaining_code)| {
-                Ok(ParsedOpcode {
-                    opcode: Ok(Opcode::PushValue(PushValue::LargeValue(v))),
-                    remaining_code,
-                })
-            },
-        )
+            Some((v, remaining_code)) => Ok(ParsedOpcode {
+                opcode: PossiblyBad::Good(Opcode::PushValue(PushValue::LargeValue(v))),
+                remaining_code,
+            }),
+        }
     }
 
     /** Encode/decode small integers: */
@@ -710,23 +722,23 @@ impl Script<'_> {
                 Err(_) => break,
             };
             pc = remaining_code;
-            if let Ok(Opcode::Operation(op)) = opcode {
-                if op == OP_CHECKSIG || op == OP_CHECKSIGVERIFY {
-                    n += 1;
-                } else if op == OP_CHECKMULTISIG || op == OP_CHECKMULTISIGVERIFY {
-                    match last_opcode {
-                        Some(Opcode::PushValue(PushValue::SmallValue(pv))) => {
+            if let PossiblyBad::Good(Opcode::Operation(op)) = opcode {
+                n += match op {
+                    OP_CHECKSIG | OP_CHECKSIGVERIFY => 1,
+                    OP_CHECKMULTISIG | OP_CHECKMULTISIGVERIFY => match last_opcode {
+                        Some(PossiblyBad::Good(Opcode::PushValue(PushValue::SmallValue(pv)))) => {
                             if accurate && pv >= OP_1 && pv <= OP_16 {
-                                n += Self::decode_op_n(pv);
+                                Self::decode_op_n(pv)
                             } else {
-                                n += 20
+                                20
                             }
                         }
-                        _ => n += 20,
-                    }
-                }
+                        _ => 20,
+                    },
+                    _ => 0,
+                };
             }
-            last_opcode = opcode.ok();
+            last_opcode = Some(opcode);
         }
         n
     }
@@ -745,8 +757,12 @@ impl Script<'_> {
     /// Called by `IsStandardTx` and P2SH/BIP62 VerifyScript (which makes it consensus-critical).
     pub fn is_push_only(&self) -> bool {
         self.parse().map_or(false, |op| {
-            op.iter()
-                .all(|op| matches!(op, Ok(Opcode::PushValue(_)) | Err(Bad::OP_RESERVED)))
+            op.iter().all(|op| {
+                matches!(
+                    op,
+                    PossiblyBad::Good(Opcode::PushValue(_)) | PossiblyBad::Bad(Bad::OP_RESERVED)
+                )
+            })
         })
     }
 }

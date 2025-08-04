@@ -14,7 +14,7 @@ use crate::{
         Control::{self, *},
         Opcode,
         Operation::{self, *},
-        ParsedOpcode, PushValue, Script, LOCKTIME_THRESHOLD, MAX_SCRIPT_ELEMENT_SIZE,
+        ParsedOpcode, PossiblyBad, PushValue, Script, LOCKTIME_THRESHOLD, MAX_SCRIPT_ELEMENT_SIZE,
         MAX_SCRIPT_SIZE,
     },
     script_error::ScriptError,
@@ -375,17 +375,18 @@ fn eval_step<'a>(
              opcode,
              remaining_code,
          }| match opcode {
-            Err(bad) => {
+            // See the documentation of `Bad` for an explanation of this logic.
+            PossiblyBad::Bad(bad) => {
                 if Bad::OP_RESERVED != bad {
                     state.increment_op_count()?;
                 }
-                if Bad::OP_VERIF == bad || Bad::OP_VERNOTIF == bad || should_exec(&state.vexec) {
+                if matches!(bad, Bad::OP_VERIF | Bad::OP_VERNOTIF) || should_exec(&state.vexec) {
                     Err(ScriptError::BadOpcode(Some(bad)))
                 } else {
                     Ok(remaining_code)
                 }
             }
-            Ok(opcode) => {
+            PossiblyBad::Good(opcode) => {
                 eval_opcode(flags, opcode, script, &checker, state).map(|()| remaining_code)
             }
         },

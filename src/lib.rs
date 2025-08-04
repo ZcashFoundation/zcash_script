@@ -18,7 +18,7 @@ pub mod signature;
 mod zcash_script;
 
 #[cfg(any(test, feature = "test-dependencies"))]
-mod test_vectors;
+pub mod test_vectors;
 
 use std::os::raw::{c_int, c_uint, c_void};
 

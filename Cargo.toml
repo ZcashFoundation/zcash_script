@@ -80,6 +80,7 @@ bitflags = "2.8"
 bounded-vec = "0.9"
 enum_primitive = "0.1"
 hex = { version = ">= 0.4.3", optional = true } # See Note [explicit >= version requirements]
+itertools = "0.14"
 ripemd = "0.1"
 # This needs to match the version used by ECC crates (which are being used in
 # Zebra).
