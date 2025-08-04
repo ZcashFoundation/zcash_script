@@ -204,7 +204,6 @@ impl From<&LargeValue> for Vec<u8> {
     }
 }
 
-enum_from_primitive! {
 /// Data values represented entirely by their opcode byte.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[repr(u8)]
@@ -229,17 +228,47 @@ pub enum SmallValue {
     OP_15 = 0x5f,
     OP_16 = 0x60,
 }
-}
 
 use SmallValue::*;
 
 impl SmallValue {
+    /// Decodes this opcode from its byte encoding.
+    pub(super) fn decode(b: u8) -> Option<Self> {
+        match b {
+            0x00 => Some(Self::OP_0),
+            0x4f => Some(Self::OP_1NEGATE),
+            0x51 => Some(Self::OP_1),
+            0x52 => Some(Self::OP_2),
+            0x53 => Some(Self::OP_3),
+            0x54 => Some(Self::OP_4),
+            0x55 => Some(Self::OP_5),
+            0x56 => Some(Self::OP_6),
+            0x57 => Some(Self::OP_7),
+            0x58 => Some(Self::OP_8),
+            0x59 => Some(Self::OP_9),
+            0x5a => Some(Self::OP_10),
+            0x5b => Some(Self::OP_11),
+            0x5c => Some(Self::OP_12),
+            0x5d => Some(Self::OP_13),
+            0x5e => Some(Self::OP_14),
+            0x5f => Some(Self::OP_15),
+            0x60 => Some(Self::OP_16),
+            _ => None,
+        }
+    }
+
+    /// Returns the byte encoding of this opcode.
+    pub(crate) fn encode(self) -> u8 {
+        // This is how you get the discriminant, but using `as` everywhere is too much code smell
+        self as u8
+    }
+
     /// Get the [`interpreter::Stack`] element represented by this [`SmallValue`].
     pub fn value(&self) -> Vec<u8> {
         match self {
             OP_0 => vec![],
             OP_1NEGATE => vec![0x81],
-            _ => vec![u8::from(*self) - (u8::from(OP_1) - 1)],
+            _ => vec![self.encode() - (OP_1.encode() - 1)],
         }
     }
 
@@ -265,12 +294,5 @@ impl SmallValue {
             OP_15 => 15,
             OP_16 => 16,
         }
-    }
-}
-
-impl From<SmallValue> for u8 {
-    fn from(value: SmallValue) -> Self {
-        // This is how you get the discriminant, but using `as` everywhere is too much code smell
-        value as u8
     }
 }

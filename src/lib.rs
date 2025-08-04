@@ -6,8 +6,6 @@
 #![allow(non_snake_case)]
 #![allow(unsafe_code)]
 #![deny(missing_docs)]
-#[macro_use]
-extern crate enum_primitive;
 
 pub mod cxx;
 mod external;
@@ -182,8 +180,8 @@ impl From<&Opcode> for Vec<u8> {
     fn from(value: &Opcode) -> Self {
         match value {
             Opcode::PushValue(v) => v.into(),
-            Opcode::Control(v) => vec![(*v).into()],
-            Opcode::Operation(v) => vec![(*v).into()],
+            Opcode::Control(v) => vec![(*v).encode()],
+            Opcode::Operation(v) => vec![(*v).encode()],
         }
     }
 }
