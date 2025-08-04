@@ -55,8 +55,8 @@ impl Entry {
     fn serialize(&self) -> Result<Vec<u8>, FromHexError> {
         match self {
             Entry::O(opcode) => Ok(opcode.into()),
-            Entry::B(bad) => Ok(vec![(*bad).into()]),
-            Entry::D(disabled) => Ok(vec![(*disabled).into()]),
+            Entry::B(bad) => Ok(vec![bad.encode()]),
+            Entry::D(disabled) => Ok(vec![disabled.encode()]),
             Entry::H(bytes) => <Vec<u8>>::from_hex(*bytes),
             Entry::A(string) => Ok(Self::val_to_pv(string.as_bytes())),
             Entry::N(num) => Ok(Self::val_to_pv(&num::serialize(*num))),
