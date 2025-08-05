@@ -8,20 +8,19 @@ use crate::{
     },
     script::Script,
     script_error::ScriptError,
+    signature,
 };
 
-/// This maps to `zcash_script_error_t`, but most of those cases aren’t used any more. This only
-/// replicates the still-used cases, and then an `Unknown` bucket for anything else that might
-/// happen.
+/// This extends `ScriptError` with cases that can only occur when using the C++ implementation.
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum Error {
-    /// Any failure that results in the script being invalid.
+    /// An error that could occur in any implementation has occurred.
     #[error("{0}")]
-    Ok(ScriptError),
+    Script(ScriptError),
 
-    /// An exception was caught.
-    #[error("script verification failed")]
-    VerifyScript,
+    /// An exception was caught during C++ verification.
+    #[error("caught exception during verification")]
+    CaughtException,
 
     /// The script size can’t fit in a `u32`, as required by the C++ code.
     #[error("invalid script size: {0}")]
@@ -52,7 +51,7 @@ pub trait ZcashScript {
     ///  - script_sig: the scriptSig of the input being validated.
     ///  - flags: the script verification flags to use.
     ///
-    ///  Note that script verification failure is indicated by `Err(Error::Ok)`.
+    ///  Note that script verification failure is indicated by `Err(Error::Script)`.
     fn verify_callback(
         &self,
         script_pub_key: &[u8],
@@ -84,7 +83,7 @@ where
         payload,
         stepper,
     )
-    .map_err(Error::Ok)
+    .map_err(Error::Script)
 }
 
 /// A payload for comparing the results of two steppers.
@@ -112,6 +111,41 @@ impl<T, U> StepResults<T, U> {
             payload_l,
             payload_r,
         }
+    }
+}
+
+/// This case is only generated in comparisons. It merges the `interpreter::Error::OpCount` case
+/// with the `opcode::Error::DisabledOpcode` case. This is because there is an edge case when there
+/// is a disabled opcode as the `MAX_OP_COUNT + 1` operation (not opcode) in a script. In this case,
+/// the C++ implementation checks the op_count first, while the Rust implementation fails on
+/// disabled opcodes as soon as they’re read (since the script is guaranteed to fail if they occur,
+/// even in an inactive branch). To allow comparison tests to pass (especially property & fuzz
+/// tests), we need these two failure cases to be seen as identical.
+pub const AMBIGUOUS_COUNT_DISABLED_ERROR: ScriptError =
+    ScriptError::ExternalError("ambiguous OpCount or DisabledOpcode error");
+
+/// This case is only generated in comparisons. It merges `ScriptError::ScriptNumError` and
+/// `ScriptError::SigHighS`, which can only come from the Rust implementation, with
+/// `ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR`, which can only come from the C++ implementation, but
+/// in at least all of the cases that either of the Rust error cases would happen.
+pub const AMBIGUOUS_UNKNOWN_NUM_HIGHS_ERROR: ScriptError =
+    ScriptError::ExternalError("ambiguous Unknown, or ScriptNum, or HighS error");
+
+/// Convert errors that don’t exist in the C++ code into the cases that do.
+pub fn normalize_error(err: ScriptError) -> ScriptError {
+    match err {
+        ScriptError::OpCount => AMBIGUOUS_COUNT_DISABLED_ERROR,
+        ScriptError::BadOpcode(Some(_)) => ScriptError::BadOpcode(None),
+        ScriptError::DisabledOpcode(_) => AMBIGUOUS_COUNT_DISABLED_ERROR,
+        ScriptError::SignatureEncoding(sig_err) => match sig_err {
+            signature::Error::SigHashType(Some(_)) => signature::Error::SigHashType(None).into(),
+            signature::Error::SigDER(Some(_)) => signature::Error::SigDER(None).into(),
+            signature::Error::SigHighS => AMBIGUOUS_UNKNOWN_NUM_HIGHS_ERROR,
+            _ => sig_err.into(),
+        },
+        ScriptError::ReadError { .. } => ScriptError::BadOpcode(None),
+        ScriptError::ScriptNumError(_) => AMBIGUOUS_UNKNOWN_NUM_HIGHS_ERROR,
+        _ => err,
     }
 }
 
@@ -154,7 +188,7 @@ impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
                     // anything
                     payload.diverging_result =
                         Some((l.map(|_| state.clone()), r.map(|_| right_state.clone())));
-                    Err(ScriptError::UnknownError)
+                    Err(ScriptError::ExternalError("mismatched step results"))
                 }
             }
             // at least one is `Err`
@@ -312,7 +346,7 @@ mod tests {
         // The final return value is from whichever stepper failed.
         assert_eq!(
             ret,
-            Err(Error::Ok(ScriptError::ReadError {
+            Err(Error::Script(ScriptError::ReadError {
                 expected_bytes: 1,
                 available_bytes: 0,
             }))
@@ -370,7 +404,7 @@ mod tests {
         if res.diverging_result.is_some() {
             panic!("mismatched result: {res:?}");
         }
-        assert_eq!(ret, Err(Error::Ok(ScriptError::EvalFalse)));
+        assert_eq!(ret, Err(Error::Script(ScriptError::EvalFalse)));
     }
 
     #[test]
@@ -397,7 +431,7 @@ mod tests {
         if res.diverging_result.is_some() {
             panic!("mismatched result: {res:?}");
         }
-        assert_eq!(ret, Err(Error::Ok(ScriptError::EvalFalse)));
+        assert_eq!(ret, Err(Error::Script(ScriptError::EvalFalse)));
     }
 
     proptest! {

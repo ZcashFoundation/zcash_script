@@ -1,6 +1,9 @@
 use thiserror::Error;
 
-use crate::signature;
+use crate::{
+    script::{Bad, Disabled},
+    signature,
+};
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Error)]
 pub enum ScriptNumError {
@@ -13,11 +16,12 @@ pub enum ScriptNumError {
 
 #[derive(Clone, PartialEq, Eq, Debug, Error)]
 pub enum ScriptError {
-    #[error("Ok")]
-    Ok, // Unused (except in converting the C++ error to Rust)
-
-    #[error("unknown error")]
-    UnknownError,
+    /// A error external to the script validation code. This can come from the stepper.
+    ///
+    /// __TODO__: Replace the `str` with a type parameter, which will be `Void` in validation code,
+    /// but can be different in the steppers.
+    #[error("external error: {}", .0)]
+    ExternalError(&'static str),
 
     #[error("script evaluation failed")]
     EvalFalse,
@@ -61,11 +65,12 @@ pub enum ScriptError {
     NumEqualVerify,
 
     // Logical/Format/Canonical errors
-    #[error("bad opcode encountered")]
-    BadOpcode,
+    #[error("bad opcode encountered: {}", .0.map_or("unknown".to_owned(), |op| format!("{:?}", op)))]
+    BadOpcode(Option<Bad>),
 
-    #[error("disabled opcode encountered")]
-    DisabledOpcode,
+    /// __TODO__: `Option` can go away once C++ support is removed.
+    #[error("disabled opcode encountered: {}", .0.map_or("unknown".to_owned(), |op| format!("{:?}", op)))]
+    DisabledOpcode(Option<Disabled>),
 
     #[error("invalid stack operation encountered")]
     InvalidStackOperation,

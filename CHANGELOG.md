@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `interpreter::eval_step`,
   - `interpreter::verify_script`, and
   - `stepwise_verify`.
+- `ScriptError::Ok` has been removed, as it was never used
 
 ### Changed
 
@@ -39,10 +40,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `interpreter::Signature` is now `signature::Decoded`
 - `interpreter::SignatureChecker::check_sig` takes a `&signature::Decoded` instead of a `&[u8]`
 - `signature::HashType` now has private fields, but there are corresponding getter methods
+- `ScriptError::UnknownError` has been replaced by `ScriptError::ExternalError`
+- `BadOpcode` and `DisabledOpcode` in `ScriptError` now take parameters
 
 ### Added
 
 - `signature::Decoded` operations `from_bytes`, `sig`, and `sighash`
+- `pv::` containing all `PushValue` opcodes
+- `op::` containing all `Opcode`s (including `PushValues`)
 
 ## [0.3.2](https://github.com/ZcashFoundation/zcash_script/compare/v0.3.1...v0.3.2) - 2025-06-24
 

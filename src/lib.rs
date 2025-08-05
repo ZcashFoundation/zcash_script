@@ -11,13 +11,14 @@ pub mod cxx;
 mod external;
 pub mod interpreter;
 pub mod op;
+pub mod pv;
 mod script;
 pub mod script_error;
 pub mod signature;
 mod zcash_script;
 
-#[cfg(test)]
-mod test_vectors;
+#[cfg(any(test, feature = "test-dependencies"))]
+pub mod test_vectors;
 
 use std::os::raw::{c_int, c_uint, c_void};
 
@@ -42,65 +43,72 @@ impl From<cxx::ScriptError> for Error {
     #[allow(non_upper_case_globals)]
     fn from(err_code: cxx::ScriptError) -> Self {
         match err_code {
-            cxx::ScriptError_t_SCRIPT_ERR_OK => Error::Ok(ScriptError::Ok),
-            cxx::ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR => Error::Ok(ScriptError::UnknownError),
-            cxx::ScriptError_t_SCRIPT_ERR_EVAL_FALSE => Error::Ok(ScriptError::EvalFalse),
-            cxx::ScriptError_t_SCRIPT_ERR_OP_RETURN => Error::Ok(ScriptError::OpReturn),
-
-            cxx::ScriptError_t_SCRIPT_ERR_SCRIPT_SIZE => Error::Ok(ScriptError::ScriptSize),
-            cxx::ScriptError_t_SCRIPT_ERR_PUSH_SIZE => Error::Ok(ScriptError::PushSize),
-            cxx::ScriptError_t_SCRIPT_ERR_OP_COUNT => Error::Ok(ScriptError::OpCount),
-            cxx::ScriptError_t_SCRIPT_ERR_STACK_SIZE => Error::Ok(ScriptError::StackSize),
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_COUNT => Error::Ok(ScriptError::SigCount),
-            cxx::ScriptError_t_SCRIPT_ERR_PUBKEY_COUNT => Error::Ok(ScriptError::PubKeyCount),
-
-            cxx::ScriptError_t_SCRIPT_ERR_VERIFY => Error::Ok(ScriptError::Verify),
-            cxx::ScriptError_t_SCRIPT_ERR_EQUALVERIFY => Error::Ok(ScriptError::EqualVerify),
-            cxx::ScriptError_t_SCRIPT_ERR_CHECKMULTISIGVERIFY => {
-                Error::Ok(ScriptError::CheckMultisigVerify)
+            cxx::ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR => {
+                Error::Script(zcash_script::AMBIGUOUS_UNKNOWN_NUM_HIGHS_ERROR)
             }
-            cxx::ScriptError_t_SCRIPT_ERR_CHECKSIGVERIFY => Error::Ok(ScriptError::CheckSigVerify),
-            cxx::ScriptError_t_SCRIPT_ERR_NUMEQUALVERIFY => Error::Ok(ScriptError::NumEqualVerify),
+            cxx::ScriptError_t_SCRIPT_ERR_EVAL_FALSE => Error::Script(ScriptError::EvalFalse),
+            cxx::ScriptError_t_SCRIPT_ERR_OP_RETURN => Error::Script(ScriptError::OpReturn),
 
-            cxx::ScriptError_t_SCRIPT_ERR_BAD_OPCODE => Error::Ok(ScriptError::BadOpcode),
-            cxx::ScriptError_t_SCRIPT_ERR_DISABLED_OPCODE => Error::Ok(ScriptError::DisabledOpcode),
+            cxx::ScriptError_t_SCRIPT_ERR_SCRIPT_SIZE => Error::Script(ScriptError::ScriptSize),
+            cxx::ScriptError_t_SCRIPT_ERR_PUSH_SIZE => Error::Script(ScriptError::PushSize),
+            cxx::ScriptError_t_SCRIPT_ERR_OP_COUNT => Error::Script(ScriptError::OpCount),
+            cxx::ScriptError_t_SCRIPT_ERR_STACK_SIZE => Error::Script(ScriptError::StackSize),
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_COUNT => Error::Script(ScriptError::SigCount),
+            cxx::ScriptError_t_SCRIPT_ERR_PUBKEY_COUNT => Error::Script(ScriptError::PubKeyCount),
+
+            cxx::ScriptError_t_SCRIPT_ERR_VERIFY => Error::Script(ScriptError::Verify),
+            cxx::ScriptError_t_SCRIPT_ERR_EQUALVERIFY => Error::Script(ScriptError::EqualVerify),
+            cxx::ScriptError_t_SCRIPT_ERR_CHECKMULTISIGVERIFY => {
+                Error::Script(ScriptError::CheckMultisigVerify)
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_CHECKSIGVERIFY => {
+                Error::Script(ScriptError::CheckSigVerify)
+            }
+            cxx::ScriptError_t_SCRIPT_ERR_NUMEQUALVERIFY => {
+                Error::Script(ScriptError::NumEqualVerify)
+            }
+
+            cxx::ScriptError_t_SCRIPT_ERR_BAD_OPCODE => Error::Script(ScriptError::BadOpcode(None)),
+            cxx::ScriptError_t_SCRIPT_ERR_DISABLED_OPCODE => {
+                Error::Script(ScriptError::DisabledOpcode(None))
+            }
             cxx::ScriptError_t_SCRIPT_ERR_INVALID_STACK_OPERATION => {
-                Error::Ok(ScriptError::InvalidStackOperation)
+                Error::Script(ScriptError::InvalidStackOperation)
             }
             cxx::ScriptError_t_SCRIPT_ERR_INVALID_ALTSTACK_OPERATION => {
-                Error::Ok(ScriptError::InvalidAltstackOperation)
+                Error::Script(ScriptError::InvalidAltstackOperation)
             }
             cxx::ScriptError_t_SCRIPT_ERR_UNBALANCED_CONDITIONAL => {
-                Error::Ok(ScriptError::UnbalancedConditional)
+                Error::Script(ScriptError::UnbalancedConditional)
             }
 
             cxx::ScriptError_t_SCRIPT_ERR_NEGATIVE_LOCKTIME => {
-                Error::Ok(ScriptError::NegativeLockTime)
+                Error::Script(ScriptError::NegativeLockTime)
             }
             cxx::ScriptError_t_SCRIPT_ERR_UNSATISFIED_LOCKTIME => {
-                Error::Ok(ScriptError::UnsatisfiedLockTime)
+                Error::Script(ScriptError::UnsatisfiedLockTime)
             }
 
             cxx::ScriptError_t_SCRIPT_ERR_SIG_HASHTYPE => {
-                Error::Ok(signature::Error::SigHashType(None).into())
+                Error::Script(signature::Error::SigHashType(None).into())
             }
             cxx::ScriptError_t_SCRIPT_ERR_SIG_DER => {
-                Error::Ok(signature::Error::SigDER(None).into())
+                Error::Script(signature::Error::SigDER(None).into())
             }
-            cxx::ScriptError_t_SCRIPT_ERR_MINIMALDATA => Error::Ok(ScriptError::MinimalData),
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_PUSHONLY => Error::Ok(ScriptError::SigPushOnly),
+            cxx::ScriptError_t_SCRIPT_ERR_MINIMALDATA => Error::Script(ScriptError::MinimalData),
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_PUSHONLY => Error::Script(ScriptError::SigPushOnly),
             cxx::ScriptError_t_SCRIPT_ERR_SIG_HIGH_S => {
-                Error::Ok(signature::Error::SigHighS.into())
+                Error::Script(signature::Error::SigHighS.into())
             }
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_NULLDUMMY => Error::Ok(ScriptError::SigNullDummy),
-            cxx::ScriptError_t_SCRIPT_ERR_PUBKEYTYPE => Error::Ok(ScriptError::PubKeyType),
-            cxx::ScriptError_t_SCRIPT_ERR_CLEANSTACK => Error::Ok(ScriptError::CleanStack),
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_NULLDUMMY => Error::Script(ScriptError::SigNullDummy),
+            cxx::ScriptError_t_SCRIPT_ERR_PUBKEYTYPE => Error::Script(ScriptError::PubKeyType),
+            cxx::ScriptError_t_SCRIPT_ERR_CLEANSTACK => Error::Script(ScriptError::CleanStack),
 
             cxx::ScriptError_t_SCRIPT_ERR_DISCOURAGE_UPGRADABLE_NOPS => {
-                Error::Ok(ScriptError::DiscourageUpgradableNOPs)
+                Error::Script(ScriptError::DiscourageUpgradableNOPs)
             }
 
-            cxx::ScriptError_t_SCRIPT_ERR_VERIFY_SCRIPT => Error::VerifyScript,
+            cxx::ScriptError_t_SCRIPT_ERR_VERIFY_SCRIPT => Error::CaughtException,
             unknown => Error::Unknown(unknown.into()),
         }
     }
@@ -227,19 +235,7 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
 /// Convert errors that don’t exist in the C++ code into the cases that do.
 pub fn normalize_error(err: Error) -> Error {
     match err {
-        Error::Ok(serr) => Error::Ok(match serr {
-            ScriptError::SignatureEncoding(sig_err) => match sig_err {
-                signature::Error::SigHashType(Some(_)) => {
-                    signature::Error::SigHashType(None).into()
-                }
-                signature::Error::SigDER(Some(_)) => signature::Error::SigDER(None).into(),
-                signature::Error::SigHighS => ScriptError::UnknownError,
-                _ => sig_err.into(),
-            },
-            ScriptError::ReadError { .. } => ScriptError::BadOpcode,
-            ScriptError::ScriptNumError(_) => ScriptError::UnknownError,
-            _ => serr,
-        }),
+        Error::Script(serr) => Error::Script(zcash_script::normalize_error(serr)),
         _ => err,
     }
 }
@@ -299,7 +295,7 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U>
     ) -> Result<(), Error> {
         let (cxx, rust) =
             check_verify_callback(&self.first, &self.second, script_pub_key, script_sig, flags);
-        if rust.clone().map_err(normalize_error) != cxx {
+        if rust.clone().map_err(normalize_error) != cxx.clone().map_err(normalize_error) {
             // probably want to distinguish between
             // - one succeeding when the other fails (bad), and
             // - differing error codes (maybe not bad).
@@ -318,6 +314,8 @@ pub mod testing {
         interpreter::{State, StepFn, VerificationFlags},
         script::{self, Operation, Script},
         script_error::ScriptError,
+        test_vectors::TestVector,
+        zcash_script, Error,
     };
 
     /// Ensures that flags represent a supported state. This avoids crashes in the C++ code, which
@@ -361,6 +359,36 @@ pub mod testing {
             )
         }
     }
+
+    pub fn run_test_vector(
+        tv: &TestVector,
+        try_normalized_error: bool,
+        f: &dyn Fn(&[u8], &[u8], VerificationFlags) -> Result<(), Error>,
+    ) -> () {
+        match tv.run(&|sig, pubkey, flags| match f(sig, pubkey, flags) {
+            Ok(()) => Ok(()),
+            Err(Error::Script(err)) => Err(err),
+            Err(err) => panic!("failed in a very bad way: {:?}", err),
+        }) {
+            Ok(()) => (),
+            Err(actual) => {
+                if try_normalized_error
+                    && tv.result.clone().map_err(zcash_script::normalize_error)
+                        == actual.clone().map_err(zcash_script::normalize_error)
+                {
+                    ()
+                } else {
+                    panic!(
+                        "{:?} didn’t match the result in
+
+    {:?}
+",
+                        actual, tv
+                    );
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -370,8 +398,8 @@ mod tests {
 
     use super::{
         check_verify_callback, normalize_error, rust_interpreter,
-        test_vectors::{TestVector, TEST_VECTORS},
-        testing::{repair_flags, OVERFLOW_SCRIPT_SIZE},
+        test_vectors::test_vectors,
+        testing::{repair_flags, run_test_vector, OVERFLOW_SCRIPT_SIZE},
         CxxInterpreter, Error, ZcashScript,
     };
     use crate::{
@@ -426,7 +454,10 @@ mod tests {
             flags,
         );
 
-        assert_eq!(ret.0, ret.1.map_err(normalize_error));
+        assert_eq!(
+            ret.0.clone().map_err(normalize_error),
+            ret.1.map_err(normalize_error)
+        );
         assert!(ret.0.is_ok());
     }
 
@@ -456,8 +487,11 @@ mod tests {
             flags,
         );
 
-        assert_eq!(ret.0, ret.1.map_err(normalize_error));
-        assert_eq!(ret.0, Err(Error::Ok(ScriptError::EvalFalse)));
+        assert_eq!(
+            ret.0.clone().map_err(normalize_error),
+            ret.1.map_err(normalize_error)
+        );
+        assert_eq!(ret.0, Err(Error::Script(ScriptError::EvalFalse)));
     }
 
     #[test]
@@ -487,35 +521,17 @@ mod tests {
             flags,
         );
 
-        assert_eq!(ret.0, ret.1.map_err(normalize_error));
-        assert_eq!(ret.0, Err(Error::Ok(ScriptError::EvalFalse)));
-    }
-
-    fn run_test_vector(
-        tv: &TestVector,
-        f: &dyn Fn(&[u8], &[u8], VerificationFlags) -> Result<(), Error>,
-    ) {
-        match tv.run(&|sig, pubkey, flags| match f(sig, pubkey, flags) {
-            Ok(()) => Ok(()),
-            Err(Error::Ok(err)) => Err(err),
-            Err(err) => panic!("failed in a very bad way: {err:?}"),
-        }) {
-            Ok(()) => (),
-            Err(actual) => {
-                panic!(
-                    "{actual:?} didn’t match the result in
-
-    {tv:?}
-"
-                );
-            }
-        }
+        assert_eq!(
+            ret.0.clone().map_err(normalize_error),
+            ret.1.map_err(normalize_error)
+        );
+        assert_eq!(ret.0, Err(Error::Script(ScriptError::EvalFalse)));
     }
 
     #[test]
     fn test_vectors_for_cxx() {
-        for tv in TEST_VECTORS {
-            run_test_vector(tv, &|sig, pubkey, flags| {
+        for tv in test_vectors() {
+            run_test_vector(&tv, true, &|sig, pubkey, flags| {
                 CxxInterpreter {
                     sighash: &missing_sighash,
                     lock_time: 0,
@@ -528,8 +544,8 @@ mod tests {
 
     #[test]
     fn test_vectors_for_rust() {
-        for tv in TEST_VECTORS {
-            run_test_vector(tv, &|sig, pubkey, flags| {
+        for tv in test_vectors() {
+            run_test_vector(&tv, false, &|sig, pubkey, flags| {
                 rust_interpreter(
                     flags,
                     CallbackTransactionSignatureChecker {
@@ -538,8 +554,7 @@ mod tests {
                         is_final: false,
                     },
                 )
-                .verify_callback(pubkey, sig, flags)
-                .map_err(normalize_error)
+                .verify_callback(&pubkey, &sig, flags)
             })
         }
     }
@@ -576,7 +591,7 @@ mod tests {
                 &sig[..],
                 flags,
             );
-            prop_assert_eq!(ret.0, ret.1.clone().map_err(normalize_error),
+            prop_assert_eq!(ret.0.map_err(normalize_error), ret.1.clone().map_err(normalize_error),
                             "original Rust result: {:?}", ret.1);
         }
 
@@ -611,7 +626,7 @@ mod tests {
                 &sig[..],
                 flags,
             );
-            prop_assert_eq!(ret.0, ret.1.clone().map_err(normalize_error),
+            prop_assert_eq!(ret.0.map_err(normalize_error), ret.1.clone().map_err(normalize_error),
                             "original Rust result: {:?}", ret.1);
         }
 
