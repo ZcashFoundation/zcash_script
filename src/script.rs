@@ -540,7 +540,7 @@ pub enum PossiblyBad {
 }
 
 pub struct ParsedOpcode<'a> {
-    /// The [`Result`] allows us to preserve unknown opcodes, which only trigger a failure if
+    /// The [`PossiblyBad`] allows us to preserve unknown opcodes, which only trigger a failure if
     /// they’re on an active branch during interpretation.
     pub opcode: PossiblyBad,
     pub remaining_code: &'a [u8],
