@@ -1,8 +1,10 @@
 //! Reusable bits of scripts, to avoid writing hex strings.
 //!
-//! Much of this comes from https://gist.github.com/str4d/9d80f1b60e6787310897044502cb025b – the
-//! corresponding definitions here have a “label” tag in the documentation that indicates the result
-//! of `label_script` that they map to.
+//! Much of this comes from <https://gist.github.com/str4d/9d80f1b60e6787310897044502cb025b> – the
+//! definitions here generally start their rustdoc with the corresponding `label_script` result from
+//! that gist. If there are multiple matching labels, or if the `label_script` result doesn’t
+//! accurately describe the definiton, then there is a separate “label” tag in the rustdoc that
+//! matches the `label_script` result(s).
 //!
 //! Zcash Script doesn’t have a real type system, but many of these are annotated with some
 //! indication of the type. Being scripts with holes, the types are more complicated than those
@@ -13,16 +15,30 @@
 //! * `[]` – a comma-separated sequence of stack values
 //! * `+` – a concatenation of stack sequences (useful with type variables that represent sequences)
 //! * `*` – repetition `n*Signature` is a sequence of `n` Signature`s
-//! * `->` – input on the left, output on the right
-//! * `∪` – a union of stack sequences (in negative position, this is “existential”, and “universal”
-//!   in positive position)
-//! * `💥` – terminates evaluation, if followed by `?`, it _may_ terminate evaluation
+//! * `->` – the left side of the arrow represents the type of the top elements of the stack before
+//!   the script, and the right side is the type of the top elements of the stack after the script.
+//!   Scripts never care about elements below these, and the remainder of the stack is unchanged.
+//! * `∪` – a union of elements or stack sequence. If a union occurs to the left of an `->`, then
+//!   the alternative to provide depends on some conditional in the script. This is one way to
+//!   introduce a dependent type (described after this section).
+//! * `?` – optional. Shorthand for `∪ []` and can also be applied to an individual element
+//! * `-` – suffix removal. `x - y` first implies that one is a suffix of the other, then we want any
+//!   prefix of `x` that doesn’t overlap with `y`. So `[1, 2, 3] - [2, 3]` would be `[1]`,
+//!   `[2, 3] - [1, 2, 3]` would be `[]`, but `[1, 2, 3] - [2]` would be invalid.
+//! * `💥` – terminates evaluation, if followed by `?`, it _may_ terminate evaluation (`💥?` is the
+//!   behavior of `OP_*VERIFY`)
 //! * vars – identifiers in the Rust function signature, indicates where those values are used. In
 //!   the case of identifiers that represent `[Opcode]`, an occurrence in negative position
 //!   represents the input type of that script, and an occurence in positive position represents the
 //!   output type of that script. Identifiers that don’t show up in the rust function signature
 //!   represent type variables – they are the same type in each occurrence.
 //! * `_` – any type, each occurrence can represent a different type
+//!
+//! Some scripts have dependent types. This can be read as the script having potentially simpler
+//! types if we statically know some of the stack values. In the current set of scripts, this is
+//! always the top element, and always a `Bool`. These types are written out as two types with
+//! `True` and `False` in place of the `Bool`. The non-dependent version can be inferred by unioning
+//! the dependent ones, but it’s provided explicitly since union isn’t always trivial.
 
 use ripemd::Ripemd160;
 use sha2::{Digest, Sha256};
@@ -52,17 +68,32 @@ pub fn ignored_value(v: script::PushValue) -> [Opcode; 2] {
 
 /// Holds the two branches of a conditional, without the condition.
 ///
-/// type: `(thn ∪ els) + [Bool] -> (thn ∪ els)`
+/// type: `(ti ∪ ei) + [Bool] -> (to ∪ eo)`
+///   where
+///     thn: `ti -> to`
+///     els: `ei -> eo`
+///
+/// dependent type:
+/// - `ti + [True] -> to`
+/// - `ei + [False] -> eo`
 pub fn branch(thn: &[Opcode], els: &[Opcode]) -> Vec<Opcode> {
     [&[op::IF], thn, &[op::ELSE], els, &[op::ENDIF]].concat()
 }
 
 /// Like `branch`, but also holds the conditional.
 ///
-/// Example: `if_else(size_check(20), [], [op::RETURN])`
+/// Example: `if_else(EMPTY_STACK_CHECK, [], [op::RETURN])`
 ///
-/// type: `((thn ∪ els) - y) + x -> (y - (thn ∪ els)) + (thn ∪ els)`
-///     where cond: `x -> y + [Bool]`
+/// type: `((ti ∪ ei) - co) + ci -> (co - (ti ∪ ei)) + (to ∪ eo)`
+///   where
+///     cond: `ci -> co + [Bool]`
+///     thn: `ti -> to`
+///     els: `ei -> eo`
+///
+/// The suffix removasl (`-`) in the type here is because `cond` can put elements on the stack, and
+/// the branches must consume that output first (if they consume any input at all). And then on the
+/// output side, if the output of cond was more than the branches consume, that residue is left on
+/// the stack prior to the outputs of the branches.
 pub fn if_else(cond: &[Opcode], thn: &[Opcode], els: &[Opcode]) -> Vec<Opcode> {
     let mut vec = cond.to_vec();
     vec.extend(branch(thn, els));
@@ -73,6 +104,7 @@ pub fn if_else(cond: &[Opcode], thn: &[Opcode], els: &[Opcode]) -> Vec<Opcode> {
 ///
 /// if `verify`
 ///   type: `sig_count*Signature -> 💥?`
+/// else
 ///   type: `sig_count*Signature -> [Bool]`
 pub fn check_multisig(sig_count: u8, pks: &[&[u8]], verify: bool) -> Vec<Opcode> {
     [
@@ -100,6 +132,7 @@ pub fn check_multisig(sig_count: u8, pks: &[&[u8]], verify: bool) -> Vec<Opcode>
 ///
 /// if `verify`
 ///   type: `[_] -> 💥?`
+/// else
 ///   type: `[_] -> [Bool]`
 pub fn equals(expected: script::PushValue, verify: bool) -> [Opcode; 2] {
     [
@@ -112,6 +145,7 @@ pub fn equals(expected: script::PushValue, verify: bool) -> [Opcode; 2] {
 ///
 /// if `verify`
 ///   type: `[Signature] -> 💥?`
+/// else
 ///   type: `[Signature] -> [Bool]`
 pub fn check_sig(pubkey: &[u8], verify: bool) -> [Opcode; 2] {
     [
@@ -126,16 +160,14 @@ pub fn check_sig(pubkey: &[u8], verify: bool) -> [Opcode; 2] {
 
 /// Checks that the top of the stack has exactly the expected size.
 ///
-/// if `verify`
-///   type: `[a] -> [a] + 💥?`
-///   type: `[a] -> [a, Bool]`
-pub fn size_check(expected: u32, verify: bool) -> Vec<Opcode> {
-    [&[op::SIZE], &equals(push_num(expected.into()), verify)[..]].concat()
+/// type: `[a] -> [a] + 💥?`
+pub fn size_check(expected: u32) -> Vec<Opcode> {
+    [&[op::SIZE], &equals(push_num(expected.into()), true)[..]].concat()
 }
 
 /// “CLTV”
 ///
-/// type: `[] -> [lt] + 💥?`
+/// type: `[] -> ([lt] + 💥)?`
 pub fn check_lock_time_verify(lt: u32) -> [Opcode; 3] {
     [
         PushValue(push_num(lt.into())),
@@ -230,7 +262,7 @@ pub fn check_multisig_empty(n: u8, x: &[&[u8]], ignored: script::PushValue) -> V
 ///
 /// 1-of-3 and 2-of-2 combined multisig with compressed pubkeys
 ///
-/// type: m*Signature + n*Signature -> [Bool] ∪  💥
+/// type: `m*Signature + n*Signature -> (m*Signature + 💥) ∪ [Bool]`
 pub fn combined_multisig(m: u8, x: &[&[u8]], n: u8, y: &[&[u8]]) -> Vec<Opcode> {
     [
         &check_multisig(m, x, true)[..],
@@ -245,7 +277,7 @@ pub fn combined_multisig(m: u8, x: &[&[u8]], n: u8, y: &[&[u8]]) -> Vec<Opcode> 
 /// - P2PKH inside P2SH with a 32-byte ignored data value
 /// - P2PKH inside P2SH with a zero-value placeholder ignored data value
 ///
-/// type: [Signature, PubKey] -> [Bool] ∪  💥
+/// type: `[Signature, PubKey] -> [Bool] ∪  💥`
 pub fn p2pkh_ignored(ignored: script::PushValue, pk: &[u8]) -> Vec<Opcode> {
     [&ignored_value(ignored)[..], &pay_to_pubkey_hash(pk)].concat()
 }
@@ -265,6 +297,12 @@ pub fn p2pk_empty(recipient_pk: &[u8], ignored: script::PushValue) -> Vec<Opcode
 }
 
 /// Hash160 HTLC
+///
+/// type: `[Signature, _?, Bool] -> ([Signature, lt?] + 💥) ∪ [Bool]`
+///
+/// dependent type:
+/// - `[Signature, True] -> ([Signature, lt] + 💥) ∪ [Bool]`
+/// - `[Signature, _, False] -> ([Signature] + 💥) ∪ [Bool]`
 pub fn hash160_htlc(
     lt: u32,
     sender_pk: &[u8],
@@ -287,6 +325,11 @@ pub fn hash160_htlc(
 }
 
 /// Hash160 HTLC with size check
+/// type: `[Signature, a?, Bool] -> ([Signature, lt ∪ a?] + 💥) ∪ [Bool]`
+///
+/// dependent type:
+/// - `[Signature, True] -> ([Signature, lt] + 💥) ∪ [Bool]`
+/// - `[Signature, a, False] -> ([Signature, a?] + 💥) ∪ [Bool]`
 pub fn hash160_htlc_size_check(
     lt: u32,
     sender_pk: &[u8],
@@ -300,7 +343,7 @@ pub fn hash160_htlc_size_check(
         ]
         .concat(),
         &[
-            &size_check(20, true)[..],
+            &size_check(20)[..],
             &[op::HASH160],
             &equals(push_160b_hash(recipient_hash), true)[..],
             &check_sig(recipient_pk, false)[..],
@@ -310,7 +353,13 @@ pub fn hash160_htlc_size_check(
 }
 
 /// Hash160 HTLC
-pub fn hash160_htlc_neg(
+///
+/// type: `[Signature, PubKey, _?, Bool] -> ([Signature, lt?] + 💥) ∪ [Bool]`
+///
+/// dependent type:
+/// - `[Signature, PubKey, _, True] -> ([Signature] + 💥) ∪ [Bool]`
+/// - `[Signature, PubKey, False] -> ([Signature, lt] + 💥) ∪ [Bool]`
+pub fn hash160_htlc_p2pkh(
     lt: u32,
     sender_pk: &[u8],
     recipient_hash: &[u8; 20],
@@ -332,6 +381,12 @@ pub fn hash160_htlc_neg(
 }
 
 /// SHA-256 HTLC
+///
+/// type: `[Signature, _?, Bool] -> ([Signature, lt?] + 💥) ∪ [Bool]`
+///
+/// dependent type:
+/// - `[Signature, True] -> ([Signature, lt] + 💥) ∪ [Bool]`
+/// - `[Signature, _, False] -> ([Signature] + 💥) ∪ [Bool]`
 pub fn sha256_htlc(
     lt: u32,
     sender_pk: &[u8],
@@ -358,7 +413,13 @@ pub fn sha256_htlc(
 /// label:
 /// - SHA-256 HTLC (2-byte CLTV)
 /// - SHA-256 HTLC (3-byte CLTV)
-pub fn sha256_htlc_neg(
+///
+/// type: `[Signature, _?, Bool] -> ([Signature, lt?] + 💥) ∪ [Bool]`
+///
+/// dependent type:
+/// - `[Signature, PubKey, _, True] -> ([Signature] + 💥) ∪ [Bool]`
+/// - `[Signature, PubKey, False] -> ([Signature, lt] + 💥) ∪ [Bool]`
+pub fn sha256_htlc_p2pkh(
     lt: u32,
     sender_pk: &[u8],
     recipient_sha: &[u8; 32],
@@ -380,6 +441,12 @@ pub fn sha256_htlc_neg(
 }
 
 /// SHA-256 HTLC with size check
+///
+/// type: `[Signature, a?, Bool] -> ([Signature, lt ∪ a?] + 💥) ∪ [Bool]`
+///
+/// dependent type:
+/// - `[Signature, a, True] -> ([Signature, a?] + 💥) ∪ [Bool]`
+/// - `[Signature, False] -> ([Signature, lt] + 💥) ∪ [Bool]`
 pub fn sha256_htlc_size_check(
     lt: u32,
     sender_pk: &[u8],
@@ -388,7 +455,7 @@ pub fn sha256_htlc_size_check(
 ) -> Vec<Opcode> {
     branch(
         &[
-            &size_check(20, true)[..],
+            &size_check(20)[..],
             &[op::SHA256],
             &equals(push_256b_hash(recipient_sha), true)[..],
             &pay_to_pubkey_hash(recipient_pk)[..],
@@ -403,8 +470,10 @@ pub fn sha256_htlc_size_check(
 }
 
 /// One party has SHA-256 hashlock, other party can spend unconditionally
+///
+/// type: `[Signature, PubKey, _, Bool] -> ([Signature, PubKey] + 💥) ∪ [Bool]`
 pub fn sha256_htlc_with_unconditional(
-    sender_hash: &[u8; 20],
+    sender_pk: &[u8],
     recipient_sha: &[u8; 32],
     recipient_pk: &[u8],
 ) -> Vec<Opcode> {
@@ -416,8 +485,12 @@ pub fn sha256_htlc_with_unconditional(
         ]
         .concat(),
         &[
-            &[op::_1, op::DROP, op::HASH160],
-            &equals(push_160b_hash(sender_hash), true)[..],
+            &ignored_value(pv::_1)[..],
+            &[op::HASH160],
+            &equals(
+                push_160b_hash(&Ripemd160::digest(Sha256::digest(sender_pk)).into()),
+                true,
+            )[..],
             &[op::CHECKSIG],
         ]
         .concat(),
@@ -425,6 +498,12 @@ pub fn sha256_htlc_with_unconditional(
 }
 
 /// Two-sided Hash160 HTLC with size checks
+///
+/// type: `[Signature, a, Bool] -> ([Signature] + [a, lt?]? + 💥) ∪ [Bool]`
+///
+/// dependent type:
+/// - `[Signature, a, True] -> ([Signature] + [a, lt?]? + 💥) ∪ [Bool]`
+/// - `[Signature, a, False] -> ([Signature, a?] + 💥) ∪ [Bool]`
 pub fn dual_hash160_htlc_size_check(
     lt: u32,
     sender_hash: &[u8; 20],
@@ -432,10 +511,10 @@ pub fn dual_hash160_htlc_size_check(
     recipient_hash: &[u8; 20],
     recipient_pk: &[u8],
 ) -> Vec<Opcode> {
+    // type: `[Signature, _] -> ([Signature, _?] + 💥) ∪ [Bool]`
     let verify = |hash, pk| {
         [
-            &[op::SIZE],
-            &equals(push_num(20), true)[..],
+            &size_check(20)[..],
             &[op::HASH160],
             &equals(push_160b_hash(hash), true)[..],
             &check_sig(pk, false)[..],

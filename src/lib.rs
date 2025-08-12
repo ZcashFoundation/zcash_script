@@ -366,6 +366,7 @@ pub mod testing {
     }
 
     lazy_static::lazy_static! {
+        /// The P2SH redeem script used for the static test case.
         pub static ref REDEEM_SCRIPT: Vec<Opcode> = check_multisig(
             2,
             &[
@@ -374,7 +375,9 @@ pub mod testing {
                 &<[u8; 0x21]>::from_hex("03e32096b63fd57f3308149d238dcbb24d8d28aad95c0e4e74e3e5e6a11b61bcc4").expect("valid key")
             ],
             false);
+        /// The scriptPubkey used for the static test case.
         pub static ref SCRIPT_PUBKEY: Vec<u8> = Script::serialize(&pay_to_script_hash(&REDEEM_SCRIPT));
+        /// The scriptSig used for the static test case.
         pub static ref SCRIPT_SIG: Vec<u8> = Script::serialize(&[
             push_num(0),
             pv::push_value(&<[u8; 0x48]>::from_hex("3045022100d2ab3e6258fe244fa442cfb38f6cef9ac9a18c54e70b2f508e83fa87e20d040502200eead947521de943831d07a350e45af8e36c2166984a8636f0a8811ff03ed09401").expect("valid sig")).expect("fits into a PushValue"),
@@ -383,16 +386,19 @@ pub mod testing {
         ].map(Opcode::PushValue));
     }
 
+    /// The correct sighash for the static test case.
     pub fn sighash(_script_code: &[u8], _hash_type: &HashType) -> Option<[u8; 32]> {
         <[u8; 32]>::from_hex("e8c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
             .ok()
     }
 
+    /// An incorrect sighash for the static test case – for checking failure cases.
     pub fn invalid_sighash(_script_code: &[u8], _hash_type: &HashType) -> Option<[u8; 32]> {
         <[u8; 32]>::from_hex("08c7bdac77f6bb1f3aba2eaa1fada551a9c8b3b5ecd1ef86e6e58a5f1aab952c")
             .ok()
     }
 
+    /// A callback that returns no sighash at all – another failure case.
     pub fn missing_sighash(_script_code: &[u8], _hash_type: &HashType) -> Option<[u8; 32]> {
         None
     }

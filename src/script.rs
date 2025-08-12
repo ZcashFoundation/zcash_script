@@ -52,30 +52,23 @@ pub enum LargeValue {
 }
 use LargeValue::*;
 
-impl From<LargeValue> for Vec<u8> {
-    fn from(value: LargeValue) -> Self {
+impl From<&LargeValue> for Vec<u8> {
+    fn from(value: &LargeValue) -> Self {
+        let to_vec = |prefix: Option<u8>, contents: &[u8]| {
+            prefix
+                .into_iter()
+                .chain(serialize_num(
+                    contents.len().try_into().expect("upper bound fits in i64"),
+                ))
+                .chain(contents.iter().copied())
+                .collect()
+        };
+
         match value {
-            PushdataBytelength(bv) => {
-                [serialize_num(bv.len().try_into().unwrap()), bv.to_vec()].concat()
-            }
-            OP_PUSHDATA1(bv) => [
-                vec![0x4c],
-                serialize_num(bv.as_slice().len().try_into().unwrap()),
-                bv.to_vec(),
-            ]
-            .concat(),
-            OP_PUSHDATA2(bv) => [
-                vec![0x4d],
-                serialize_num(bv.as_slice().len().try_into().unwrap()),
-                bv.to_vec(),
-            ]
-            .concat(),
-            OP_PUSHDATA4(bv) => [
-                vec![0x4e],
-                serialize_num(bv.as_slice().len().try_into().unwrap()),
-                bv.to_vec(),
-            ]
-            .concat(),
+            PushdataBytelength(bv) => to_vec(None, bv.as_slice()),
+            OP_PUSHDATA1(bv) => to_vec(Some(LargeValue::PUSHDATA1_BYTE), bv.as_slice()),
+            OP_PUSHDATA2(bv) => to_vec(Some(LargeValue::PUSHDATA2_BYTE), bv.as_slice()),
+            OP_PUSHDATA4(bv) => to_vec(Some(LargeValue::PUSHDATA4_BYTE), bv.as_slice()),
         }
     }
 }
@@ -244,7 +237,7 @@ impl From<&PushValue> for Vec<u8> {
     fn from(value: &PushValue) -> Self {
         match value {
             PushValue::SmallValue(v) => vec![(*v).into()],
-            PushValue::LargeValue(v) => v.clone().into(),
+            PushValue::LargeValue(v) => v.into(),
         }
     }
 }
@@ -740,10 +733,9 @@ impl Script<'_> {
         }
     }
 
+    /// Convert a sequence of opcodes to the bytes that would be included in a transaction.
     pub fn serialize(script: &[Opcode]) -> Vec<u8> {
-        script
-            .iter()
-            .fold(Vec::new(), |acc, op| [acc, op.into()].concat())
+        script.iter().flat_map(Vec::from).collect()
     }
 
     /** Encode/decode small integers: */
