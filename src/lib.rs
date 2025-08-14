@@ -117,7 +117,6 @@ impl From<cxx::ScriptError> for Error {
             cxx::ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR => {
                 Self::from(script::Error::AMBIGUOUS_UNKNOWN_NUM_HIGHS)
             }
-            cxx::ScriptError_t_SCRIPT_ERR_EVAL_FALSE => Self::from(script::Error::EvalFalse),
             cxx::ScriptError_t_SCRIPT_ERR_OP_RETURN => Self::from(script::Error::Interpreter(
                 None,
                 interpreter::Error::OpReturn,
@@ -234,6 +233,14 @@ impl From<cxx::ScriptError> for Error {
     }
 }
 
+fn cxx_result(err_code: cxx::ScriptError) -> Result<bool, (Option<script::ComponentType>, Error)> {
+    match err_code {
+        cxx::ScriptError_t_SCRIPT_ERR_OK => Ok(true),
+        cxx::ScriptError_t_SCRIPT_ERR_EVAL_FALSE => Ok(false),
+        _ => Err((None, Error::from(err_code))),
+    }
+}
+
 /// The sighash callback to use with zcash_script.
 extern "C" fn sighash_callback(
     sighash_out: *mut u8,
@@ -274,7 +281,7 @@ impl<'a> ZcashScript for CxxInterpreter<'a> {
         script_pub_key: &[u8],
         signature_script: &[u8],
         flags: VerificationFlags,
-    ) -> Result<(), AnnError> {
+    ) -> Result<bool, AnnError> {
         let mut err = 0;
 
         // SAFETY: The `script` fields are created from a valid Rust `slice`.
@@ -304,9 +311,9 @@ impl<'a> ZcashScript for CxxInterpreter<'a> {
         };
 
         if ret == 1 {
-            Ok(())
+            Ok(true)
         } else {
-            Err((None, Error::from(err)))
+            cxx_result(err)
         }
     }
 
@@ -349,7 +356,7 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
     script_pub_key: &[u8],
     script_sig: &[u8],
     flags: VerificationFlags,
-) -> (Result<(), AnnError>, Result<(), AnnError>) {
+) -> (Result<bool, AnnError>, Result<bool, AnnError>) {
     (
         first.verify_callback(script_pub_key, script_sig, flags),
         second.verify_callback(script_pub_key, script_sig, flags),
@@ -416,7 +423,7 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U>
         script_pub_key: &[u8],
         script_sig: &[u8],
         flags: VerificationFlags,
-    ) -> Result<(), AnnError> {
+    ) -> Result<bool, AnnError> {
         let (cxx, rust) =
             check_verify_callback(&self.first, &self.second, script_pub_key, script_sig, flags);
         if rust.clone().map_err(normalize_err) != cxx.clone().map_err(normalize_err) {
@@ -536,12 +543,13 @@ pub mod testing {
     pub fn run_test_vector(
         tv: &TestVector,
         try_normalized_error: bool,
-        f: &dyn Fn(&[u8], &[u8], VerificationFlags) -> Result<(), AnnError>,
-    ) -> () {
-        match tv.run(&|sig, pubkey, flags| match f(sig, pubkey, flags) {
-            Ok(()) => Ok(()),
-            Err((t, Error::Script(e))) => Err((t, e)),
-            Err(err) => panic!("failed in a very bad way: {:?}", err),
+        f: &dyn Fn(&[u8], &[u8], VerificationFlags) -> Result<bool, AnnError>,
+    ) {
+        match tv.run(&|sig, pubkey, flags| {
+            f(sig, pubkey, flags).map_err(|err| match err {
+                (t, Error::Script(serr)) => (t, serr),
+                _ => panic!("failed in a very bad way: {:?}", err),
+            })
         }) {
             Ok(()) => (),
             Err(actual) => {
@@ -569,13 +577,13 @@ mod tests {
     use proptest::prelude::{prop, prop_assert_eq, proptest, ProptestConfig};
 
     use super::{
-        check_verify_callback, normalize_err, rust_interpreter, script,
+        check_verify_callback, normalize_err, rust_interpreter,
         test_vectors::test_vectors,
         testing::{
             invalid_sighash, missing_sighash, repair_flags, run_test_vector, sighash,
             OVERFLOW_SCRIPT_SIZE, SCRIPT_PUBKEY, SCRIPT_SIG,
         },
-        CxxInterpreter, Error, ZcashScript,
+        CxxInterpreter, ZcashScript,
     };
     use crate::interpreter::{CallbackTransactionSignatureChecker, VerificationFlags};
 
@@ -643,13 +651,7 @@ mod tests {
             ret.0.map_err(normalize_err),
             ret.1.clone().map_err(normalize_err)
         );
-        assert_eq!(
-            ret.1,
-            Err((
-                Some(script::ComponentType::Redeem),
-                Error::from(script::Error::EvalFalse)
-            ))
-        );
+        assert_eq!(ret.1, Ok(false));
     }
 
     #[test]
@@ -683,13 +685,7 @@ mod tests {
             ret.0.map_err(normalize_err),
             ret.1.clone().map_err(normalize_err)
         );
-        assert_eq!(
-            ret.1,
-            Err((
-                Some(script::ComponentType::Redeem),
-                Error::from(script::Error::EvalFalse)
-            ))
-        );
+        assert_eq!(ret.1, Ok(false));
     }
 
     #[test]

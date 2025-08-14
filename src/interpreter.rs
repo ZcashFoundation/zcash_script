@@ -1254,7 +1254,7 @@ fn eval_p2sh<F>(
     data_stack: Stack<Vec<u8>>,
     payload: &mut F::Payload,
     stepper: &F,
-) -> Result<Stack<Vec<u8>>, script::Error>
+) -> Result<Option<Stack<Vec<u8>>>, script::Error>
 where
     F: StepFn,
 {
@@ -1267,11 +1267,11 @@ where
         .and_then(|(pub_key_2, remaining_stack)| {
             eval_script(remaining_stack, &script::Code(pub_key_2), payload, stepper)
         })
-        .and_then(|p2sh_stack| {
+        .map(|p2sh_stack| {
             if p2sh_stack.last().is_ok_and(cast_to_bool) {
-                Ok(p2sh_stack)
+                Some(p2sh_stack)
             } else {
-                Err(script::Error::EvalFalse)
+                None
             }
         })
 }
@@ -1283,7 +1283,7 @@ pub fn verify_script<F>(
     flags: VerificationFlags,
     payload: &mut F::Payload,
     stepper: &F,
-) -> Result<(), (script::ComponentType, script::Error)>
+) -> Result<bool, (script::ComponentType, script::Error)>
 where
     F: StepFn,
 {
@@ -1301,25 +1301,30 @@ where
                 Err((script::ComponentType::Sig, script::Error::SigPushOnly))
             }
         } else {
-            Ok(pub_key_stack)
+            Ok(Some(pub_key_stack))
         }
-        .and_then(|result_stack| {
-            // The CLEANSTACK check is only performed after potential P2SH evaluation, as the
-            // non-P2SH evaluation of a P2SH script will obviously not result in a clean stack
-            // (the P2SH inputs remain).
-            if flags.contains(VerificationFlags::CleanStack) {
-                // Disallow CLEANSTACK without P2SH, because Bitcoin did.
-                assert!(flags.contains(VerificationFlags::P2SH));
-                if result_stack.len() == 1 {
-                    Ok(())
-                } else {
-                    Err((script::ComponentType::Redeem, script::Error::CleanStack))
+        .and_then(|mresult_stack| {
+            match mresult_stack {
+                None => Ok(false),
+                Some(result_stack) => {
+                    // The CLEANSTACK check is only performed after potential P2SH evaluation, as the
+                    // non-P2SH evaluation of a P2SH script will obviously not result in a clean stack
+                    // (the P2SH inputs remain).
+                    if flags.contains(VerificationFlags::CleanStack) {
+                        // Disallow CLEANSTACK without P2SH, because Bitcoin did.
+                        assert!(flags.contains(VerificationFlags::P2SH));
+                        if result_stack.len() == 1 {
+                            Ok(true)
+                        } else {
+                            Err((script::ComponentType::Redeem, script::Error::CleanStack))
+                        }
+                    } else {
+                        Ok(true)
+                    }
                 }
-            } else {
-                Ok(())
             }
         })
     } else {
-        Err((script::ComponentType::PubKey, script::Error::EvalFalse))
+        Ok(false)
     }
 }

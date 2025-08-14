@@ -53,7 +53,7 @@ impl Entry {
 #[derive(Clone, Debug)]
 pub enum ResultCmp {
     /// The exact result that should be returned.
-    Original(Result<(), (Option<script::ComponentType>, script::Error)>),
+    Original(Result<bool, (Option<script::ComponentType>, script::Error)>),
     /// The normalized form of an error result, for errors that are difficult to construct manually.
     /// This discards the info that the C++ implementation can’t contain, which includes any
     /// complicated error context.
@@ -62,7 +62,7 @@ pub enum ResultCmp {
 
 impl ResultCmp {
     /// Return the normalized form of the expected result.
-    pub fn normalized(self) -> Result<(), script::Error> {
+    pub fn normalized(self) -> Result<bool, script::Error> {
         match self {
             ResultCmp::Original(res) => res.map_err(|(_, e)| e.normalize()),
             ResultCmp::Normalized(err) => Err(err),
@@ -80,8 +80,8 @@ pub struct TestVector {
     pub result: ResultCmp,
 }
 
-const fn ok() -> ResultCmp {
-    ResultCmp::Original(Ok(()))
+const fn ok(r: bool) -> ResultCmp {
+    ResultCmp::Original(Ok(r))
 }
 
 const fn err(t: script::ComponentType, e: script::Error) -> ResultCmp {
@@ -93,7 +93,7 @@ const fn normalized_err(e: script::Error) -> ResultCmp {
 }
 
 fn compare_results(
-    actual: Result<(), (Option<script::ComponentType>, script::Error)>,
+    actual: Result<bool, (Option<script::ComponentType>, script::Error)>,
     expected: ResultCmp,
 ) -> bool {
     match expected {
@@ -112,8 +112,8 @@ impl TestVector {
             &[u8],
             &[u8],
             VerificationFlags,
-        ) -> Result<(), (Option<script::ComponentType>, script::Error)>,
-    ) -> Result<(), Result<(), (Option<script::ComponentType>, script::Error)>> {
+        ) -> Result<bool, (Option<script::ComponentType>, script::Error)>,
+    ) -> Result<(), Result<bool, (Option<script::ComponentType>, script::Error)>> {
         match (
             self.script_sig
                 .iter()
@@ -158,47 +158,47 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[],
             script_pubkey: &[O(DEPTH), N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // Similarly whitespace around and between symbols
         TestVector {
             script_sig: &[N(1), N(2)],
             script_pubkey: &[N(2), O(EQUALVERIFY), N(1), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // all bytes are significant, not only the last one
         TestVector {
             script_sig: &[H("02"), H("01"), H("00")],
             script_pubkey: &[],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // equals zero when cast to Int64
         TestVector {
             script_sig: &[H("09"), H("00000000"), H("00000000"), H("10")],
             script_pubkey: &[],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // push 1 byte
         TestVector {
             script_sig: &[H("01"), H("0b")],
             script_pubkey: &[N(11), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("417a")],
             script_pubkey: &[A("Az"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // push 75 bytes
         TestVector {
@@ -213,79 +213,79 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // 0x4c is OP_PUSHDATA1
         TestVector {
             script_sig: &[H("4c"), H("01"), H("07")],
             script_pubkey: &[N(7), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // 0x4d is OP_PUSHDATA2
         TestVector {
             script_sig: &[H("4d"), H("0100"), H("08")],
             script_pubkey: &[N(8), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // 0x4e is OP_PUSHDATA4
         TestVector {
             script_sig: &[H("4e"), H("01000000"), H("09")],
             script_pubkey: &[N(9), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("4c"), H("00")],
             script_pubkey: &[N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("4d"), H("0000")],
             script_pubkey: &[N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("4e"), H("00000000")],
             script_pubkey: &[N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("4f"), N(1000), O(ADD)],
             script_pubkey: &[N(999), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // 0x50 is reserved (ok if not executed)
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("50"), O(ENDIF), N(1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // H("51"), through H("60"), push 1 through 16 onto stack
         TestVector {
             script_sig: &[H("51")],
             script_pubkey: &[H("5f"), O(ADD), H("60"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // VER non-functional (ok if not executed)
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), B(OP_VER), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // RESERVED ok in un-executed IF
         TestVector {
@@ -300,49 +300,49 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(ENDIF),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(DUP), O(IF), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(DUP), O(IF), O(ELSE), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), N(1), O(ELSE), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(1)],
             script_pubkey: &[O(IF), O(IF), N(1), O(ELSE), N(0), O(ENDIF), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(0)],
             script_pubkey: &[O(IF), O(IF), N(1), O(ELSE), N(0), O(ENDIF), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(1)],
@@ -362,7 +362,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(ENDIF),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(0)],
@@ -382,19 +382,19 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(ENDIF),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(0)],
             script_pubkey: &[O(NOTIF), O(IF), N(1), O(ELSE), N(0), O(ENDIF), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(1)],
             script_pubkey: &[O(NOTIF), O(IF), N(1), O(ELSE), N(0), O(ENDIF), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(0)],
@@ -414,7 +414,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(ENDIF),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(1)],
@@ -434,26 +434,26 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(ENDIF),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // Multiple ELSEs are valid and executed inverts on each ELSE encountered
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), N(0), O(ELSE), N(1), O(ELSE), N(0), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), N(1), O(ELSE), N(0), O(ELSE), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), O(ELSE), N(0), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1)],
@@ -470,7 +470,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[A(""), N(1)],
@@ -540,26 +540,26 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // Multiple ELSEs are valid and execution inverts on each ELSE encountered
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NOTIF), N(0), O(ELSE), N(1), O(ELSE), N(0), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(NOTIF), N(1), O(ELSE), N(0), O(ELSE), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(NOTIF), O(ELSE), N(0), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
@@ -576,7 +576,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[A(""), N(0)],
@@ -646,7 +646,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // Nested ELSE ELSE
         TestVector {
@@ -678,7 +678,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1)],
@@ -709,52 +709,52 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // RETURN only works if executed
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), O(RETURN), O(ENDIF), N(1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(1)],
             script_pubkey: &[O(VERIFY)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // values >4 bytes can be cast to boolean
         TestVector {
             script_sig: &[N(1), H("05"), H("01"), H("00"), H("00"), H("00"), H("00")],
             script_pubkey: &[O(VERIFY)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // negative 0 is false
         TestVector {
             script_sig: &[N(1), H("01"), H("80")],
             script_pubkey: &[O(IF), N(0), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(10), N(0), N(11), O(TOALTSTACK), O(DROP), O(FROMALTSTACK)],
             script_pubkey: &[O(ADD), N(21), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[A("gavin_was_here"), O(TOALTSTACK), N(11), O(FROMALTSTACK)],
             script_pubkey: &[A("gavin_was_here"), O(EQUALVERIFY), N(11), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), O(IFDUP)],
             script_pubkey: &[O(DEPTH), N(1), O(EQUALVERIFY), N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), O(IFDUP)],
@@ -768,7 +768,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // IFDUP dups non ints
         TestVector {
@@ -782,31 +782,31 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), O(DROP)],
             script_pubkey: &[O(DEPTH), N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(DUP), N(1), O(ADD), N(1), O(EQUALVERIFY), N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(1)],
             script_pubkey: &[O(NIP)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(0)],
             script_pubkey: &[O(OVER), O(DEPTH), N(3), O(EQUALVERIFY)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(22), N(21), N(20)],
@@ -820,7 +820,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(22), N(21), N(20)],
@@ -834,7 +834,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(22), N(21), N(20)],
@@ -848,7 +848,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(22), N(21), N(20)],
@@ -862,7 +862,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(22), N(21), N(20)],
@@ -876,7 +876,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(22), N(21), N(20)],
@@ -890,103 +890,103 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(22), N(21), N(20)],
             script_pubkey: &[O(ROT), N(22), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(22), N(21), N(20)],
             script_pubkey: &[O(ROT), O(DROP), N(20), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(22), N(21), N(20)],
             script_pubkey: &[O(ROT), O(DROP), O(DROP), N(21), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(22), N(21), N(20)],
             script_pubkey: &[O(ROT), O(ROT), N(21), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(22), N(21), N(20)],
             script_pubkey: &[O(ROT), O(ROT), O(ROT), N(20), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(25), N(24), N(23), N(22), N(21), N(20)],
             script_pubkey: &[O(_2ROT), N(24), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(25), N(24), N(23), N(22), N(21), N(20)],
             script_pubkey: &[O(_2ROT), O(DROP), N(25), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(25), N(24), N(23), N(22), N(21), N(20)],
             script_pubkey: &[O(_2ROT), O(_2DROP), N(20), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(25), N(24), N(23), N(22), N(21), N(20)],
             script_pubkey: &[O(_2ROT), O(_2DROP), O(DROP), N(21), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(25), N(24), N(23), N(22), N(21), N(20)],
             script_pubkey: &[O(_2ROT), O(_2DROP), O(_2DROP), N(22), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(25), N(24), N(23), N(22), N(21), N(20)],
             script_pubkey: &[O(_2ROT), O(_2DROP), O(_2DROP), O(DROP), N(23), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(25), N(24), N(23), N(22), N(21), N(20)],
             script_pubkey: &[O(_2ROT), O(_2ROT), N(22), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(25), N(24), N(23), N(22), N(21), N(20)],
             script_pubkey: &[O(_2ROT), O(_2ROT), O(_2ROT), N(20), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(0)],
             script_pubkey: &[O(SWAP), N(1), O(EQUALVERIFY), N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(1)],
             script_pubkey: &[O(TUCK), O(DEPTH), N(3), O(EQUALVERIFY), O(SWAP), O(_2DROP)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(13), N(14)],
             script_pubkey: &[O(_2DUP), O(ROT), O(EQUALVERIFY), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-1), N(0), N(1), N(2)],
@@ -1004,7 +1004,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUALVERIFY),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(2), N(3), N(5)],
@@ -1020,7 +1020,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(3), N(5), N(7)],
@@ -1034,675 +1034,675 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(SIZE), N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(SIZE), N(1), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(127)],
             script_pubkey: &[O(SIZE), N(1), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(128)],
             script_pubkey: &[O(SIZE), N(2), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(32767)],
             script_pubkey: &[O(SIZE), N(2), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(32768)],
             script_pubkey: &[O(SIZE), N(3), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(8388607)],
             script_pubkey: &[O(SIZE), N(3), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(8388608)],
             script_pubkey: &[O(SIZE), N(4), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(2147483647)],
             script_pubkey: &[O(SIZE), N(4), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(2147483648)],
             script_pubkey: &[O(SIZE), N(5), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("05ffffffff7f")],
             script_pubkey: &[O(SIZE), N(5), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("06000000008000")],
             script_pubkey: &[O(SIZE), N(6), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("08ffffffffffffff7f")],
             script_pubkey: &[O(SIZE), N(8), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-1)],
             script_pubkey: &[O(SIZE), N(1), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-127)],
             script_pubkey: &[O(SIZE), N(1), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-128)],
             script_pubkey: &[O(SIZE), N(2), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-32767)],
             script_pubkey: &[O(SIZE), N(2), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-32768)],
             script_pubkey: &[O(SIZE), N(3), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-8388607)],
             script_pubkey: &[O(SIZE), N(3), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-8388608)],
             script_pubkey: &[O(SIZE), N(4), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-2147483647)],
             script_pubkey: &[O(SIZE), N(4), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-2147483648)],
             script_pubkey: &[O(SIZE), N(5), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("05ffffffffff")],
             script_pubkey: &[O(SIZE), N(5), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("06000000008080")],
             script_pubkey: &[O(SIZE), N(6), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("08ffffffffffffffff")],
             script_pubkey: &[O(SIZE), N(8), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[A("abcdefghijklmnopqrstuvwxyz")],
             script_pubkey: &[O(SIZE), N(26), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // SIZE does not consume argument
         TestVector {
             script_sig: &[N(42)],
             script_pubkey: &[O(SIZE), N(1), O(EQUALVERIFY), N(42), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(2), N(-2), O(ADD)],
             script_pubkey: &[N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(2147483647), N(-2147483647), O(ADD)],
             script_pubkey: &[N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-1), N(-1), O(ADD)],
             script_pubkey: &[N(-2), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(0)],
             script_pubkey: &[O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(1), O(ADD)],
             script_pubkey: &[N(2), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), O(_1ADD)],
             script_pubkey: &[N(2), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(111), O(_1SUB)],
             script_pubkey: &[N(110), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(111), N(1), O(ADD), N(12), O(SUB)],
             script_pubkey: &[N(100), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), O(ABS)],
             script_pubkey: &[N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(16), O(ABS)],
             script_pubkey: &[N(16), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-16), O(ABS)],
             script_pubkey: &[N(-16), O(NEGATE), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), O(NOT)],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), O(NOT)],
             script_pubkey: &[N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(11), O(NOT)],
             script_pubkey: &[N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), O(_0NOTEQUAL)],
             script_pubkey: &[N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), O(_0NOTEQUAL)],
             script_pubkey: &[N(1), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(111), O(_0NOTEQUAL)],
             script_pubkey: &[N(1), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-111), O(_0NOTEQUAL)],
             script_pubkey: &[N(1), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(1), O(BOOLAND)],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(0), O(BOOLAND)],
             script_pubkey: &[O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(1), O(BOOLAND)],
             script_pubkey: &[O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(0), O(BOOLAND)],
             script_pubkey: &[O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(16), N(17), O(BOOLAND)],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(1), O(BOOLOR)],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(0), O(BOOLOR)],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(1), O(BOOLOR)],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(0), O(BOOLOR)],
             script_pubkey: &[O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // negative-0 negative-0 BOOLOR
         TestVector {
             script_sig: &[H("01"), H("80")],
             script_pubkey: &[O(DUP), O(BOOLOR)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // non-minimal-0  non-minimal-0 BOOLOR
         TestVector {
             script_sig: &[H("01"), H("00")],
             script_pubkey: &[O(DUP), O(BOOLOR)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // -1 -1 BOOLOR
         TestVector {
             script_sig: &[H("01"), H("81")],
             script_pubkey: &[O(DUP), O(BOOLOR)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // negative-0 negative-0 BOOLAND
         TestVector {
             script_sig: &[H("01"), H("80")],
             script_pubkey: &[O(DUP), O(BOOLAND)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // non-minimal-0  non-minimal-0 BOOLAND
         TestVector {
             script_sig: &[H("01"), H("00")],
             script_pubkey: &[O(DUP), O(BOOLAND)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // -1 -1 BOOLAND
         TestVector {
             script_sig: &[H("01"), H("81")],
             script_pubkey: &[O(DUP), O(BOOLAND)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // non-minimal-0 NOT
         TestVector {
             script_sig: &[H("01"), H("00")],
             script_pubkey: &[O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // negative-0 NOT
         TestVector {
             script_sig: &[H("01"), H("80")],
             script_pubkey: &[O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // negative 1 NOT
         TestVector {
             script_sig: &[H("01"), H("81")],
             script_pubkey: &[O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // -0 0 NUMEQUAL
         TestVector {
             script_sig: &[H("01"), H("80"), N(0)],
             script_pubkey: &[O(NUMEQUAL)],
             flags: VerificationFlags::P2SH,
-            result: ok(),
+            result: ok(true),
         },
         // non-minimal-0 0 NUMEQUAL
         TestVector {
             script_sig: &[H("01"), H("00"), N(0)],
             script_pubkey: &[O(NUMEQUAL)],
             flags: VerificationFlags::P2SH,
-            result: ok(),
+            result: ok(true),
         },
         // non-minimal-0 0 NUMEQUAL
         TestVector {
             script_sig: &[H("02"), H("00"), H("00"), N(0)],
             script_pubkey: &[O(NUMEQUAL)],
             flags: VerificationFlags::P2SH,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(16), N(17), O(BOOLOR)],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(11), N(10), N(1), O(ADD)],
             script_pubkey: &[O(NUMEQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(11), N(10), N(1), O(ADD)],
             script_pubkey: &[O(NUMEQUALVERIFY), N(1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(11), N(10), N(1), O(ADD)],
             script_pubkey: &[O(NUMNOTEQUAL), O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(111), N(10), N(1), O(ADD)],
             script_pubkey: &[O(NUMNOTEQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(11), N(10)],
             script_pubkey: &[O(LESSTHAN), O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(4), N(4)],
             script_pubkey: &[O(LESSTHAN), O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(10), N(11)],
             script_pubkey: &[O(LESSTHAN)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-11), N(11)],
             script_pubkey: &[O(LESSTHAN)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-11), N(-10)],
             script_pubkey: &[O(LESSTHAN)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(11), N(10)],
             script_pubkey: &[O(GREATERTHAN)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(4), N(4)],
             script_pubkey: &[O(GREATERTHAN), O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(10), N(11)],
             script_pubkey: &[O(GREATERTHAN), O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-11), N(11)],
             script_pubkey: &[O(GREATERTHAN), O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-11), N(-10)],
             script_pubkey: &[O(GREATERTHAN), O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(11), N(10)],
             script_pubkey: &[O(LESSTHANOREQUAL), O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(4), N(4)],
             script_pubkey: &[O(LESSTHANOREQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(10), N(11)],
             script_pubkey: &[O(LESSTHANOREQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-11), N(11)],
             script_pubkey: &[O(LESSTHANOREQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-11), N(-10)],
             script_pubkey: &[O(LESSTHANOREQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(11), N(10)],
             script_pubkey: &[O(GREATERTHANOREQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(4), N(4)],
             script_pubkey: &[O(GREATERTHANOREQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(10), N(11)],
             script_pubkey: &[O(GREATERTHANOREQUAL), O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-11), N(11)],
             script_pubkey: &[O(GREATERTHANOREQUAL), O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-11), N(-10)],
             script_pubkey: &[O(GREATERTHANOREQUAL), O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(0), O(MIN)],
             script_pubkey: &[N(0), O(NUMEQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(1), O(MIN)],
             script_pubkey: &[N(0), O(NUMEQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-1), N(0), O(MIN)],
             script_pubkey: &[N(-1), O(NUMEQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(-2147483647), O(MIN)],
             script_pubkey: &[N(-2147483647), O(NUMEQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(2147483647), N(0), O(MAX)],
             script_pubkey: &[N(2147483647), O(NUMEQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(100), O(MAX)],
             script_pubkey: &[N(100), O(NUMEQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-100), N(0), O(MAX)],
             script_pubkey: &[N(0), O(NUMEQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(-2147483647), O(MAX)],
             script_pubkey: &[N(0), O(NUMEQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(0), N(1)],
             script_pubkey: &[O(WITHIN)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(0), N(1)],
             script_pubkey: &[O(WITHIN), O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(-2147483647), N(2147483647)],
             script_pubkey: &[O(WITHIN)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-1), N(-100), N(100)],
             script_pubkey: &[O(WITHIN)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(11), N(-100), N(100)],
             script_pubkey: &[O(WITHIN)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-2147483647), N(-100), N(100)],
             script_pubkey: &[O(WITHIN), O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(2147483647), N(-100), N(100)],
             script_pubkey: &[O(WITHIN), O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(2147483647), N(2147483647), O(SUB)],
             script_pubkey: &[N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // >32 bit EQUAL is valid
         TestVector {
             script_sig: &[N(2147483647), O(DUP), O(ADD)],
             script_pubkey: &[N(4294967294), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(2147483647), O(NEGATE), O(DUP), O(ADD)],
             script_pubkey: &[N(-4294967294), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[A("")],
@@ -1713,7 +1713,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[A("a")],
@@ -1724,7 +1724,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[A("abcdefghijklmnopqrstuvwxyz")],
@@ -1735,7 +1735,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[A("")],
@@ -1746,7 +1746,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[A("a")],
@@ -1757,7 +1757,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[A("abcdefghijklmnopqrstuvwxyz")],
@@ -1768,7 +1768,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[A("")],
@@ -1779,7 +1779,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[A("a")],
@@ -1790,7 +1790,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[A("abcdefghijklmnopqrstuvwxyz")],
@@ -1801,7 +1801,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[A("")],
@@ -1814,13 +1814,13 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[A("")],
             script_pubkey: &[O(DUP), O(HASH256), O(SWAP), O(SHA256), O(SHA256), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[A("")],
@@ -1832,7 +1832,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[A("a")],
@@ -1844,7 +1844,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[A("abcdefghijklmnopqrstuvwxyz")],
@@ -1856,7 +1856,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[A("")],
@@ -1867,7 +1867,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[A("a")],
@@ -1878,7 +1878,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[A("abcdefghijklmnopqrstuvwxyz")],
@@ -1890,7 +1890,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1)],
@@ -1909,7 +1909,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[
@@ -1927,7 +1927,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             script_pubkey: &[A("NOP_1_to_10"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // Discourage NOPx flag allows OP_NOP
         TestVector {
@@ -1936,7 +1936,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             flags: VerificationFlags::P2SH
                 .union(VerificationFlags::StrictEnc)
                 .union(VerificationFlags::DiscourageUpgradableNOPs),
-            result: ok(),
+            result: ok(true),
         },
         // Discouraged NOPs are allowed if not executed
         TestVector {
@@ -1945,428 +1945,428 @@ pub fn test_vectors() -> Vec<TestVector> {
             flags: VerificationFlags::P2SH
                 .union(VerificationFlags::StrictEnc)
                 .union(VerificationFlags::DiscourageUpgradableNOPs),
-            result: ok(),
+            result: ok(true),
         },
         // opcodes above MAX_OPCODE invalid if executed
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("ba"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("bb"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("bc"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("bd"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("be"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("bf"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("c0"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("c1"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("c2"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("c3"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("c4"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("c5"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("c6"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("c7"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("c8"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("c9"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("ca"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("cb"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("cc"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("cd"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("ce"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("cf"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("d0"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("d1"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("d2"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("d3"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("d4"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("d5"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("d6"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("d7"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("d8"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("d9"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("da"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("db"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("dc"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("dd"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("de"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("df"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("e0"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("e1"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("e2"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("e3"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("e4"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("e5"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("e6"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("e7"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("e8"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("e9"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("ea"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("eb"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("ec"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("ed"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("ee"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("ef"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("f0"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("f1"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("f2"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("f3"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("f4"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("f5"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("f6"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("f7"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("f8"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("f9"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("fa"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("fb"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("fc"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("fd"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("fe"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), H("ff"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // 520 byte push
         TestVector {
@@ -2375,7 +2375,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             )],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // 201 opcodes executed. H("61"), is NOP
         TestVector {
@@ -2384,7 +2384,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 "616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161",
             )],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // 1,000 stack size (0x6f is 3DUP)
         TestVector {
@@ -2409,7 +2409,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 ),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // 1,000 stack size (altstack cleared between scriptSig/scriptPubKey)
         TestVector {
@@ -2438,7 +2438,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 ),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // Max-size (10,000-byte), max-push(520 bytes), max-opcodes(201), max stack size(1,000 items). 0x6f is 3DUP, 0x61 is NOP
         TestVector {
@@ -2571,7 +2571,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 ),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // >201 opcodes, but RESERVED (H("50)"), doesn’t count towards opcode limit.
         TestVector {
@@ -2585,631 +2585,631 @@ pub fn test_vectors() -> Vec<TestVector> {
                 N(1),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[N(1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // The following is useful for checking implementations of BN_bn2mpi
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[H("01"), H("01"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(127)],
             script_pubkey: &[H("01"), H("7F"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // Leave room for the sign bit
         TestVector {
             script_sig: &[N(128)],
             script_pubkey: &[H("02"), H("8000"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(32767)],
             script_pubkey: &[H("02"), H("FF7F"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(32768)],
             script_pubkey: &[H("03"), H("008000"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(8388607)],
             script_pubkey: &[H("03"), H("FFFF7F"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(8388608)],
             script_pubkey: &[H("04"), H("00008000"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(2147483647)],
             script_pubkey: &[H("04"), H("FFFFFF7F"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(2147483648)],
             script_pubkey: &[H("05"), H("0000008000"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("05ffffffff7f")],
             script_pubkey: &[H("05"), H("FFFFFFFF7F"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("06000000008000")],
             script_pubkey: &[H("06"), H("FFFFFFFF7F"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("08ffffffffffffff7f")],
             script_pubkey: &[H("08"), H("FFFFFFFFFFFFFF7F"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // Numbers are little-endian with the MSB being a sign bit
         TestVector {
             script_sig: &[N(-1)],
             script_pubkey: &[H("01"), H("81"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-127)],
             script_pubkey: &[H("01"), H("FF"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-128)],
             script_pubkey: &[H("02"), H("8080"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-32767)],
             script_pubkey: &[H("02"), H("FFFF"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-32768)],
             script_pubkey: &[H("03"), H("008080"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-8388607)],
             script_pubkey: &[H("03"), H("FFFFFF"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-8388608)],
             script_pubkey: &[H("04"), H("00008080"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-2147483647)],
             script_pubkey: &[H("04"), H("FFFFFFFF"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-2147483648)],
             script_pubkey: &[H("05"), H("0000008080"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-4294967295)],
             script_pubkey: &[H("05"), H("FFFFFFFF80"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("05ffffffffff")],
             script_pubkey: &[H("05"), H("FFFFFFFFFF"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("06000000008080")],
             script_pubkey: &[H("06"), H("000000008080"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("08ffffffffffffffff")],
             script_pubkey: &[H("08"), H("FFFFFFFFFFFFFFFF"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // We can do math on 4-byte integers, and compare 5-byte ones
         TestVector {
             script_sig: &[N(2147483647)],
             script_pubkey: &[O(_1ADD), N(2147483648), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(2147483647)],
             script_pubkey: &[O(_1ADD), N(1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-2147483647)],
             script_pubkey: &[O(_1ADD), N(1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // Not the same byte array...
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[H("02"), H("0100"), O(EQUAL), O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // ... but they are numerically equal
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[H("02"), H("0100"), O(NUMEQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(11)],
             script_pubkey: &[H("4c"), H("03"), H("0b0000"), O(NUMEQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[H("01"), H("80"), O(EQUAL), O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // Zero numerically equals negative zero
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[H("01"), H("80"), O(NUMEQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[H("02"), H("0080"), O(NUMEQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("03"), H("000080")],
             script_pubkey: &[H("04"), H("00000080"), O(NUMEQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("03"), H("100080")],
             script_pubkey: &[H("04"), H("10000080"), O(NUMEQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("03"), H("100000")],
             script_pubkey: &[H("04"), H("10000000"), O(NUMEQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // The following tests check the if(stack.size() < N) tests in each opcode
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(NOP), N(1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // They are here to catch copy-and-paste errors
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // Most of them are duplicated elsewhere,
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(NOTIF), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // but, hey, more is always better, right?
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(VERIFY), N(1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(TOALTSTACK), N(1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(TOALTSTACK), O(FROMALTSTACK)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(0)],
             script_pubkey: &[O(_2DROP), N(1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(1)],
             script_pubkey: &[O(_2DUP)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(0), N(1)],
             script_pubkey: &[O(_3DUP)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(1), N(0), N(0)],
             script_pubkey: &[O(_2OVER)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(1), N(0), N(0), N(0), N(0)],
             script_pubkey: &[O(_2ROT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(1), N(0), N(0)],
             script_pubkey: &[O(_2SWAP)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IFDUP)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(DEPTH), N(1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(DROP), N(1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(DUP)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(1)],
             script_pubkey: &[O(NIP)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(0)],
             script_pubkey: &[O(OVER)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(0), N(0), N(0), N(3)],
             script_pubkey: &[O(PICK)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(0)],
             script_pubkey: &[O(PICK)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(0), N(0), N(0), N(3)],
             script_pubkey: &[O(ROLL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(0)],
             script_pubkey: &[O(ROLL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(0), N(0)],
             script_pubkey: &[O(ROT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(0)],
             script_pubkey: &[O(SWAP)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(1)],
             script_pubkey: &[O(TUCK)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(SIZE)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(0)],
             script_pubkey: &[O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(0)],
             script_pubkey: &[O(EQUALVERIFY), N(1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // OP_0 and bools must have identical byte representations
         TestVector {
             script_sig: &[N(0), N(0), N(1)],
             script_pubkey: &[O(EQUAL), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(_1ADD)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(2)],
             script_pubkey: &[O(_1SUB)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-1)],
             script_pubkey: &[O(NEGATE)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-1)],
             script_pubkey: &[O(ABS)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-1)],
             script_pubkey: &[O(_0NOTEQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(0)],
             script_pubkey: &[O(ADD)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(0)],
             script_pubkey: &[O(SUB)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-1), N(-1)],
             script_pubkey: &[O(BOOLAND)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-1), N(0)],
             script_pubkey: &[O(BOOLOR)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(0)],
             script_pubkey: &[O(NUMEQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(0)],
             script_pubkey: &[O(NUMEQUALVERIFY), N(1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-1), N(0)],
             script_pubkey: &[O(NUMNOTEQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-1), N(0)],
             script_pubkey: &[O(LESSTHAN)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(0)],
             script_pubkey: &[O(GREATERTHAN)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(0)],
             script_pubkey: &[O(LESSTHANOREQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(0)],
             script_pubkey: &[O(GREATERTHANOREQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-1), N(0)],
             script_pubkey: &[O(MIN)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), N(0)],
             script_pubkey: &[O(MAX)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(-1), N(-1), N(0)],
             script_pubkey: &[O(WITHIN)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(RIPEMD160)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(SHA1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(SHA256)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(HASH160)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(HASH256)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(NOP1), N(1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(CHECKLOCKTIMEVERIFY), N(1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(NOP3), N(1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(NOP4), N(1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(NOP5), N(1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(NOP6), N(1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(NOP7), N(1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(NOP8), N(1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(NOP9), N(1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(NOP10), N(1)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // CHECKMULTISIG is allowed to have zero keys and/or sigs
         TestVector {
@@ -3225,7 +3225,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3239,7 +3239,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // Zero sigs means no sigs are checked
         TestVector {
@@ -3256,7 +3256,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3271,7 +3271,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // CHECKMULTISIG is allowed to have zero keys and/or sigs
         TestVector {
@@ -3287,7 +3287,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3301,7 +3301,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // Zero sigs means no sigs are checked
         TestVector {
@@ -3318,7 +3318,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3333,7 +3333,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // Test from up to 20 pubkeys, all not checked
         TestVector {
@@ -3351,7 +3351,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3369,7 +3369,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3388,7 +3388,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3408,7 +3408,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3429,7 +3429,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3451,7 +3451,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3474,7 +3474,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3498,7 +3498,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3523,7 +3523,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3549,7 +3549,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3576,7 +3576,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3604,7 +3604,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3633,7 +3633,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3663,7 +3663,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3694,7 +3694,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3726,7 +3726,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3759,7 +3759,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3793,7 +3793,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3828,7 +3828,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3843,7 +3843,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3859,7 +3859,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3876,7 +3876,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3894,7 +3894,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3913,7 +3913,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3933,7 +3933,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3954,7 +3954,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3976,7 +3976,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -3999,7 +3999,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -4023,7 +4023,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -4048,7 +4048,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -4074,7 +4074,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -4101,7 +4101,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -4129,7 +4129,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -4158,7 +4158,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -4188,7 +4188,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -4219,7 +4219,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -4251,7 +4251,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -4284,7 +4284,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[],
@@ -4318,7 +4318,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // nOpCount is incremented by the number of keys evaluated in addition to the usual one op per op. In this case we have zero keys, so we can execute 201 CHECKMULTISIGS
         TestVector {
@@ -4930,7 +4930,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKMULTISIG),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1)],
@@ -5741,7 +5741,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKMULTISIGVERIFY),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // Even though there are no signatures being checked nOpCount is incremented by the number of keys.
         TestVector {
@@ -5977,7 +5977,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKMULTISIG),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1)],
@@ -6212,7 +6212,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKMULTISIGVERIFY),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // Very basic P2SH
         TestVector {
@@ -6224,7 +6224,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("4c"), N(0), H("01"), N(1)],
@@ -6235,7 +6235,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // Basic PUSH signedness check
         TestVector {
@@ -6254,7 +6254,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // Basic PUSHDATA1 signedness check
         TestVector {
@@ -6274,7 +6274,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // all PUSHDATA forms are equivalent
 
@@ -6295,7 +6295,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // PUSHDATA2 of 255 bytes equals PUSHDATA1 of it
         TestVector {
@@ -6315,14 +6315,14 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // Basic OP_0 execution
         TestVector {
             script_sig: &[H("00")],
             script_pubkey: &[O(SIZE), N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // Numeric pushes
 
@@ -6331,119 +6331,119 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[H("01"), H("81")],
             script_pubkey: &[H("4f"), O(EQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // OP_1  pushes 0x01
         TestVector {
             script_sig: &[H("01"), H("01")],
             script_pubkey: &[H("51"), O(EQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // OP_2  pushes 0x02
         TestVector {
             script_sig: &[H("01"), H("02")],
             script_pubkey: &[H("52"), O(EQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // OP_3  pushes 0x03
         TestVector {
             script_sig: &[H("01"), H("03")],
             script_pubkey: &[H("53"), O(EQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // OP_4  pushes 0x04
         TestVector {
             script_sig: &[H("01"), H("04")],
             script_pubkey: &[H("54"), O(EQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // OP_5  pushes 0x05
         TestVector {
             script_sig: &[H("01"), H("05")],
             script_pubkey: &[H("55"), O(EQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // OP_6  pushes 0x06
         TestVector {
             script_sig: &[H("01"), H("06")],
             script_pubkey: &[H("56"), O(EQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // OP_7  pushes 0x07
         TestVector {
             script_sig: &[H("01"), H("07")],
             script_pubkey: &[H("57"), O(EQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // OP_8  pushes 0x08
         TestVector {
             script_sig: &[H("01"), H("08")],
             script_pubkey: &[H("58"), O(EQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // OP_9  pushes 0x09
         TestVector {
             script_sig: &[H("01"), H("09")],
             script_pubkey: &[H("59"), O(EQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // OP_10 pushes 0x0a
         TestVector {
             script_sig: &[H("01"), H("0a")],
             script_pubkey: &[H("5a"), O(EQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // OP_11 pushes 0x0b
         TestVector {
             script_sig: &[H("01"), H("0b")],
             script_pubkey: &[H("5b"), O(EQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // OP_12 pushes 0x0c
         TestVector {
             script_sig: &[H("01"), H("0c")],
             script_pubkey: &[H("5c"), O(EQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // OP_13 pushes 0x0d
         TestVector {
             script_sig: &[H("01"), H("0d")],
             script_pubkey: &[H("5d"), O(EQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // OP_14 pushes 0x0e
         TestVector {
             script_sig: &[H("01"), H("0e")],
             script_pubkey: &[H("5e"), O(EQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // OP_15 pushes 0x0f
         TestVector {
             script_sig: &[H("01"), H("0f")],
             script_pubkey: &[H("5f"), O(EQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // OP_16 pushes 0x10
         TestVector {
             script_sig: &[H("01"), H("10")],
             script_pubkey: &[H("60"), O(EQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // Equivalency of different numeric encodings"
 
@@ -6452,59 +6452,59 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[H("02"), H("8000")],
             script_pubkey: &[N(128), O(NUMEQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // 0x00 numequals 0
         TestVector {
             script_sig: &[H("01"), H("00")],
             script_pubkey: &[N(0), O(NUMEQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // 0x80 (negative zero) numequals 0
         TestVector {
             script_sig: &[H("01"), H("80")],
             script_pubkey: &[N(0), O(NUMEQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // 0x0080 numequals 0
         TestVector {
             script_sig: &[H("02"), H("0080")],
             script_pubkey: &[N(0), O(NUMEQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // 0x0500 numequals 5
         TestVector {
             script_sig: &[H("02"), H("0500")],
             script_pubkey: &[N(5), O(NUMEQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("03"), H("ff7f80")],
             script_pubkey: &[H("02"), H("ffff"), O(NUMEQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("03"), H("ff7f00")],
             script_pubkey: &[H("02"), H("ff7f"), O(NUMEQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("04"), H("ffff7f80")],
             script_pubkey: &[H("03"), H("ffffff"), O(NUMEQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("04"), H("ffff7f00")],
             script_pubkey: &[H("03"), H("ffff7f"), O(NUMEQUAL)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // Unevaluated non-minimal pushes are ignored
 
@@ -6513,140 +6513,140 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[N(0), O(IF), H("4c"), H("00"), O(ENDIF), N(1)],
             script_pubkey: &[],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         // non-minimal PUSHDATA2 ignored
         TestVector {
             script_sig: &[N(0), O(IF), H("4d"), H("0000"), O(ENDIF), N(1)],
             script_pubkey: &[],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         // non-minimal PUSHDATA4 ignored
         TestVector {
             script_sig: &[N(0), O(IF), H("4c"), H("00000000"), O(ENDIF), N(1)],
             script_pubkey: &[],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         // 1NEGATE equiv
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("81"), O(ENDIF), N(1)],
             script_pubkey: &[],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         // OP_1  equiv
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("01"), O(ENDIF), N(1)],
             script_pubkey: &[],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         // OP_2  equiv
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("02"), O(ENDIF), N(1)],
             script_pubkey: &[],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         // OP_3  equiv
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("03"), O(ENDIF), N(1)],
             script_pubkey: &[],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         // OP_4  equiv
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("04"), O(ENDIF), N(1)],
             script_pubkey: &[],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         // OP_5  equiv
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("05"), O(ENDIF), N(1)],
             script_pubkey: &[],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         // OP_6  equiv
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("06"), O(ENDIF), N(1)],
             script_pubkey: &[],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         // OP_7  equiv
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("07"), O(ENDIF), N(1)],
             script_pubkey: &[],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         // OP_8  equiv
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("08"), O(ENDIF), N(1)],
             script_pubkey: &[],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         // OP_9  equiv
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("09"), O(ENDIF), N(1)],
             script_pubkey: &[],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         // OP_10 equiv
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("0a"), O(ENDIF), N(1)],
             script_pubkey: &[],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         // OP_11 equiv
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("0b"), O(ENDIF), N(1)],
             script_pubkey: &[],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         // OP_12 equiv
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("0c"), O(ENDIF), N(1)],
             script_pubkey: &[],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         // OP_13 equiv
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("0d"), O(ENDIF), N(1)],
             script_pubkey: &[],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         // OP_14 equiv
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("0e"), O(ENDIF), N(1)],
             script_pubkey: &[],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         // OP_15 equiv
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("0f"), O(ENDIF), N(1)],
             script_pubkey: &[],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         // OP_16 equiv
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("10"), O(ENDIF), N(1)],
             script_pubkey: &[],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         // Numeric minimaldata rules are only applied when a stack item is numerically evaluated; the
         // push itself is allowed
@@ -6654,115 +6654,115 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[H("01"), H("00")],
             script_pubkey: &[N(1)],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("01"), H("80")],
             script_pubkey: &[N(1)],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0180")],
             script_pubkey: &[N(1)],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0100")],
             script_pubkey: &[N(1)],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0200")],
             script_pubkey: &[N(1)],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0300")],
             script_pubkey: &[N(1)],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0400")],
             script_pubkey: &[N(1)],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0500")],
             script_pubkey: &[N(1)],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0600")],
             script_pubkey: &[N(1)],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0700")],
             script_pubkey: &[N(1)],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0800")],
             script_pubkey: &[N(1)],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0900")],
             script_pubkey: &[N(1)],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0a00")],
             script_pubkey: &[N(1)],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0b00")],
             script_pubkey: &[N(1)],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0c00")],
             script_pubkey: &[N(1)],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0d00")],
             script_pubkey: &[N(1)],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0e00")],
             script_pubkey: &[N(1)],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0f00")],
             script_pubkey: &[N(1)],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("1000")],
             script_pubkey: &[N(1)],
             flags: VerificationFlags::MinimalData,
-            result: ok(),
+            result: ok(true),
         },
         // Valid version of the 'Test every numeric-accepting opcode for correct handling of the numeric
         // minimal encoding rule' script_invalid test
@@ -6770,253 +6770,253 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[N(1), H("02"), H("0000")],
             script_pubkey: &[O(PICK), O(DROP)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(1), H("02"), H("0000")],
             script_pubkey: &[O(ROLL), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(_1ADD), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(_1SUB), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(NEGATE), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(ABS), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(_0NOTEQUAL), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(ADD), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(ADD), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(SUB), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(SUB), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(BOOLAND), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(BOOLAND), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(BOOLOR), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(BOOLOR), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(NUMEQUAL), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(1)],
             script_pubkey: &[O(NUMEQUAL), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(NUMEQUALVERIFY), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(NUMEQUALVERIFY), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(NUMNOTEQUAL), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(NUMNOTEQUAL), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(LESSTHAN), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(LESSTHAN), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(GREATERTHAN), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(GREATERTHAN), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(LESSTHANOREQUAL), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(LESSTHANOREQUAL), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(GREATERTHANOREQUAL), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(GREATERTHANOREQUAL), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(MIN), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(MIN), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(MAX), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(MAX), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0), N(0)],
             script_pubkey: &[O(WITHIN), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000"), N(0)],
             script_pubkey: &[O(WITHIN), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(0), H("02"), H("0000")],
             script_pubkey: &[O(WITHIN), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(0), H("02"), H("0000")],
             script_pubkey: &[O(CHECKMULTISIG), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000"), N(0)],
             script_pubkey: &[O(CHECKMULTISIG), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000"), N(0), N(1)],
             script_pubkey: &[O(CHECKMULTISIG), O(DROP), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(0), H("02"), H("0000")],
             script_pubkey: &[O(CHECKMULTISIGVERIFY), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000"), N(0)],
             script_pubkey: &[O(CHECKMULTISIGVERIFY), N(1)],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // While not really correctly DER encoded, the empty signature is allowed by
         // STRICTENC to provide a compact way to provide a deliberately invalid signature.
@@ -7029,7 +7029,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(NOT),
             ],
             flags: VerificationFlags::StrictEnc,
-            result: ok(),
+            result: ok(true),
         },
         TestVector {
             script_sig: &[N(0), N(0)],
@@ -7042,7 +7042,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(NOT),
             ],
             flags: VerificationFlags::StrictEnc,
-            result: ok(),
+            result: ok(true),
         },
         // CHECKMULTISIG evaluation order tests. CHECKMULTISIG evaluates signatures and
         // pubkeys in a specific order, and will exit early if the number of signatures
@@ -7079,7 +7079,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(NOT),
             ],
             flags: VerificationFlags::StrictEnc,
-            result: ok(),
+            result: ok(true),
         },
         // 2-of-2 CHECKMULTISIG NOT with both pubkeys valid, but second signature invalid. Valid pubkey
         // fails, and CHECKMULTISIG exits early, prior to evaluation of second invalid signature.
@@ -7103,62 +7103,62 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(NOT),
             ],
             flags: VerificationFlags::StrictEnc,
-            result: ok(),
+            result: ok(true),
         },
         // Test the test: we should have an empty stack after scriptSig evaluation
         TestVector {
             script_sig: &[],
             script_pubkey: &[O(DEPTH)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[],
             script_pubkey: &[],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[],
             script_pubkey: &[O(NOP), O(DEPTH)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(DEPTH)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(NOP), O(DEPTH)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[O(DEPTH)],
             script_pubkey: &[],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // PUSHDATA1 with not enough bytes
         TestVector {
@@ -7193,13 +7193,13 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[H("52")],
             script_pubkey: &[H("5f"), O(ADD), H("60"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // VER non-functional
         TestVector {
@@ -7265,43 +7265,43 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[N(0)],
             script_pubkey: &[O(DUP), O(IF), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(DUP), O(IF), O(ELSE), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), N(1), O(ELSE), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(NOTIF), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[N(0), N(1)],
             script_pubkey: &[O(IF), O(IF), N(1), O(ELSE), N(0), O(ENDIF), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[N(0), N(0)],
             script_pubkey: &[O(IF), O(IF), N(1), O(ELSE), N(0), O(ENDIF), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[N(1), N(0)],
@@ -7321,7 +7321,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(ENDIF),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[N(0), N(1)],
@@ -7341,19 +7341,19 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(ENDIF),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[N(0), N(0)],
             script_pubkey: &[O(NOTIF), O(IF), N(1), O(ELSE), N(0), O(ENDIF), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[N(0), N(1)],
             script_pubkey: &[O(NOTIF), O(IF), N(1), O(ELSE), N(0), O(ENDIF), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[N(1), N(1)],
@@ -7373,7 +7373,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(ENDIF),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[N(0), N(0)],
@@ -7393,7 +7393,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(ENDIF),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // Multiple ELSEs
         TestVector {
@@ -7493,13 +7493,13 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[N(1)],
             script_pubkey: &[O(VERIFY)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(VERIFY), N(0)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // alt stack not shared between sig/pubkey
         TestVector {
@@ -7530,7 +7530,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[N(1)],
             script_pubkey: &[O(DUP), N(1), O(ADD), N(2), O(EQUALVERIFY), N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[O(NOP)],
@@ -7548,7 +7548,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[O(NOP)],
             script_pubkey: &[N(1), N(0), O(NIP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[O(NOP)],
@@ -7566,7 +7566,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[N(0), N(1)],
             script_pubkey: &[O(OVER), O(DEPTH), N(3), O(EQUALVERIFY)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[N(19), N(20), N(21)],
@@ -7704,7 +7704,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[O(NOP)],
             script_pubkey: &[N(0), N(1), N(2), O(ROT)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[O(NOP)],
@@ -7740,7 +7740,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[N(1), N(0)],
             script_pubkey: &[O(TUCK), O(DEPTH), N(3), O(EQUALVERIFY), O(SWAP), O(_2DROP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[O(NOP)],
@@ -7794,7 +7794,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[N(1)],
             script_pubkey: &[O(DUP), N(1), O(ADD), N(2), O(EQUALVERIFY), N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[O(NOP)],
@@ -7812,7 +7812,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[O(NOP)],
             script_pubkey: &[N(1), N(0), O(NIP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[O(NOP)],
@@ -7830,7 +7830,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[N(0), N(1)],
             script_pubkey: &[O(OVER), O(DEPTH), N(3), O(EQUALVERIFY)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[N(19), N(20), N(21)],
@@ -8083,19 +8083,19 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[N(0), N(1)],
             script_pubkey: &[O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[N(1), N(1), O(ADD)],
             script_pubkey: &[N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[N(11), N(1), O(ADD), N(12), O(SUB)],
             script_pubkey: &[N(11), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // arithmetic operands must be in range [-2^31...2^31]
         TestVector {
@@ -8191,7 +8191,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         TestVector {
             script_sig: &[
@@ -8209,7 +8209,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             script_pubkey: &[A("NOP_1_to_11"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // Ensure 100% coverage of discouraged NOPS
         TestVector {
@@ -8927,7 +8927,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[O(NOP1)],
             script_pubkey: &[O(NOP10)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // OP_VER is reserved
         TestVector {
@@ -11218,7 +11218,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[H("00")],
             script_pubkey: &[A("00"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // MINIMALDATA enforcement for PUSHDATAs
 
@@ -11915,7 +11915,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // P2PK, bad sig
         TestVector {
@@ -11933,7 +11933,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKSIG),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // P2PKH
         TestVector {
@@ -11955,7 +11955,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // P2PKH, bad pubkey
         TestVector {
@@ -11995,7 +11995,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // P2PK anyonecanpay marked with normal hashtype
         TestVector {
@@ -12013,7 +12013,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKSIG),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // P2SH(P2PK)
         TestVector {
@@ -12033,7 +12033,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: VerificationFlags::P2SH,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::ComponentType::Redeem, script::Error::EvalFalse),
+            result: ok(false),
         },
         // P2SH(P2PK), bad redeemscript
         TestVector {
@@ -12052,7 +12052,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: VerificationFlags::P2SH,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // P2SH(P2PKH)
         TestVector {
@@ -12076,7 +12076,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: VerificationFlags::P2SH,
             // FIXME: This should return `Ok(())`
-            result: err(script::ComponentType::Redeem, script::Error::EvalFalse),
+            result: ok(false),
         },
         // P2SH(P2PKH), bad sig but no VERIFY_P2SH
         TestVector {
@@ -12095,7 +12095,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // P2SH(P2PKH), bad sig
         TestVector {
@@ -12146,7 +12146,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // 3-of-3, 2 sigs
         TestVector {
@@ -12174,7 +12174,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKMULTISIG),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // P2SH(2-of-3)
         TestVector {
@@ -12201,7 +12201,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: VerificationFlags::P2SH,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::ComponentType::Redeem, script::Error::EvalFalse),
+            result: ok(false),
         },
         // P2SH(2-of-3), 1 sig
         TestVector {
@@ -12224,7 +12224,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: VerificationFlags::P2SH,
-            result: err(script::ComponentType::Redeem, script::Error::EvalFalse),
+            result: ok(false),
         },
         // P2PK with too much R padding
         TestVector {
@@ -12378,7 +12378,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKSIG),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // BIP66 example 4
         TestVector {
@@ -12390,7 +12390,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(NOT),
             ],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // BIP66 example 4, with non-null DER-compliant signature
         TestVector {
@@ -12402,7 +12402,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(NOT),
             ],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // BIP66 example 5
         TestVector {
@@ -12451,7 +12451,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should this be returning `SigDER(None)`?
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // BIP66 example 8
         TestVector {
@@ -12478,7 +12478,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Err(script::Error::EvalFalse)` (see #240).
-            result: ok(),
+            result: ok(true),
         },
         // BIP66 example 9
         TestVector {
@@ -12553,7 +12553,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKMULTISIG),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // BIP66 example 12
         TestVector {
@@ -12576,7 +12576,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(NOT),
             ],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // P2PK with multi-byte hashtype
         TestVector {
@@ -12609,7 +12609,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // P2PK with high S
         TestVector {
@@ -12644,7 +12644,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // P2PK with hybrid pubkey
         TestVector {
@@ -12682,7 +12682,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Err(script::Error::EvalFalse)` (see #240).
-            result: ok(),
+            result: ok(true),
         },
         // P2PK NOT with hybrid pubkey
         TestVector {
@@ -12720,7 +12720,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(NOT),
             ],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // P2PK NOT with invalid hybrid pubkey
         TestVector {
@@ -12763,7 +12763,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // 1-of-2 with the second 1 hybrid pubkey
         TestVector {
@@ -12829,7 +12829,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // P2PK with undefined hashtype
         TestVector {
@@ -12866,7 +12866,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(NOT),
             ],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // P2PK NOT with invalid sig and undefined hashtype
         TestVector {
@@ -12917,7 +12917,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // 3-of-3 with nonzero dummy
         TestVector {
@@ -12980,7 +12980,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(NOT),
             ],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // 3-of-3 NOT with invalid sig with nonzero dummy
         TestVector {
@@ -13035,7 +13035,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // 2-of-2 with two identical keys and sigs pushed using OP_DUP
         TestVector {
@@ -13076,7 +13076,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // P2PK NOT with invalid hybrid pubkey but no STRICTENC
         TestVector {
@@ -13095,7 +13095,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(NOT),
             ],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // 1-of-2 with the second 1 hybrid pubkey and no STRICTENC
         TestVector {
@@ -13119,7 +13119,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // 1-of-2 with the second 1 hybrid pubkey
         TestVector {
@@ -13162,7 +13162,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // P2PK NOT with invalid sig and undefined hashtype but no STRICTENC
         TestVector {
@@ -13181,7 +13181,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(NOT),
             ],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // 3-of-3 with nonzero dummy but no NULLDUMMY
         TestVector {
@@ -13213,7 +13213,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // 3-of-3 NOT with invalid sig and nonzero dummy but no NULLDUMMY
         TestVector {
@@ -13245,7 +13245,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(NOT),
             ],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // 2-of-2 with two identical keys and sigs pushed using OP_DUP but no SIGPUSHONLY
         TestVector {
@@ -13268,7 +13268,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // P2SH(P2PK) with non-push scriptSig but no P2SH or SIGPUSHONLY
         TestVector {
@@ -13288,7 +13288,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: EMPTY_FLAGS,
-            result: ok(),
+            result: ok(true),
         },
         // P2PK with non-push scriptSig but with P2SH validation
         TestVector {
@@ -13306,7 +13306,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // P2SH(P2PK) with non-push scriptSig but no SIGPUSHONLY
         TestVector {
@@ -13372,7 +13372,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: VerificationFlags::SigPushOnly,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // P2PK with unnecessary input but no CLEANSTACK
         TestVector {
@@ -13392,7 +13392,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: VerificationFlags::P2SH,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // P2PK with unnecessary input
         TestVector {
@@ -13411,7 +13411,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKSIG),
             ],
             flags: VerificationFlags::CleanStack.union(VerificationFlags::P2SH),
-            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
+            result: ok(false),
         },
         // P2SH with unnecessary input but no CLEANSTACK
         TestVector {
@@ -13434,7 +13434,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: VerificationFlags::P2SH,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::ComponentType::Redeem, script::Error::EvalFalse),
+            result: ok(false),
         },
         // P2SH with unnecessary input
         TestVector {
@@ -13456,7 +13456,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: VerificationFlags::CleanStack.union(VerificationFlags::P2SH),
-            result: err(script::ComponentType::Redeem, script::Error::EvalFalse),
+            result: ok(false),
         },
         // P2SH with CLEANSTACK
         TestVector {
@@ -13478,7 +13478,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: VerificationFlags::CleanStack.union(VerificationFlags::P2SH),
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::ComponentType::Redeem, script::Error::EvalFalse),
+            result: ok(false),
         },
 
         // Zcash-specific tests

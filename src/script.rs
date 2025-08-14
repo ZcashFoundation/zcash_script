@@ -48,9 +48,6 @@ pub enum Error {
 
     #[error("clean stack requirement not met")]
     CleanStack,
-
-    #[error("script evaluation failed")]
-    EvalFalse,
 }
 
 impl Error {
