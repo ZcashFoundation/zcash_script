@@ -25,7 +25,6 @@ pub mod test_vectors;
 
 use std::os::raw::{c_int, c_uint, c_void};
 
-use enum_primitive::FromPrimitive;
 use tracing::warn;
 
 use interpreter::{
@@ -52,40 +51,36 @@ pub enum Opcode {
 
 impl Opcode {
     /// This parses a single opcode from a byte stream.
-    pub fn parse(script: &[u8]) -> Result<opcode::Parsed<'_>, opcode::Error> {
-        match opcode::push_value::LargeValue::parse(script)? {
-            None => match script.split_first() {
-                None => Err(opcode::Error::ReadError {
-                    expected_bytes: 1,
-                    available_bytes: 0,
-                }),
-                Some((leading_byte, remaining_code)) => opcode::Disabled::from_u8(*leading_byte)
-                    .map_or(
-                        Ok(opcode::Parsed {
-                            opcode: if let Some(sv) =
-                                opcode::push_value::SmallValue::from_u8(*leading_byte)
-                            {
-                                opcode::PossiblyBad::Good(Opcode::PushValue(
-                                    opcode::PushValue::SmallValue(sv),
-                                ))
-                            } else if let Some(ctl) = opcode::Control::from_u8(*leading_byte) {
-                                opcode::PossiblyBad::Good(Opcode::Control(ctl))
-                            } else if let Some(op) = opcode::Operation::from_u8(*leading_byte) {
-                                opcode::PossiblyBad::Good(Opcode::Operation(op))
-                            } else {
-                                opcode::PossiblyBad::Bad(opcode::Bad::from(*leading_byte))
-                            },
-                            remaining_code,
-                        }),
-                        |disabled| Err(opcode::Error::Disabled(Some(disabled))),
-                    ),
-            },
-            Some((v, remaining_code)) => Ok(opcode::Parsed {
-                opcode: opcode::PossiblyBad::Good(Opcode::PushValue(
-                    opcode::PushValue::LargeValue(v),
+    ///
+    /// This always returns the unparsed bytes, because parsing failures don’t invalidate the
+    /// remainder of the stream (if any).
+    ///
+    /// __NB__: This is stricter than the parsing allowed by script verification. For that, use
+    ///         [`opcode::PossiblyBad::parse`].
+    pub fn parse(script: &[u8]) -> (Result<Opcode, script::Error>, &[u8]) {
+        let (res, rem) = opcode::PossiblyBad::parse(script);
+        (
+            res.map_err(script::Error::Opcode).and_then(|pb| match pb {
+                opcode::PossiblyBad::Bad(_) => Err(script::Error::Interpreter(
+                    Some(pb),
+                    interpreter::Error::BadOpcode,
                 )),
-                remaining_code,
+                opcode::PossiblyBad::Good(op) => Ok(op),
             }),
+            rem,
+        )
+    }
+
+    /// Statically analyze an opcode. That is, this identifies potential runtime errors without
+    /// needing to evaluate the script.
+    ///
+    /// __NB__: [`opcode::Operation::OP_RETURN`] isn’t tracked by this function because it’s
+    ///         functionally more like a `break` then an error.
+    pub fn analyze(&self, flags: &interpreter::VerificationFlags) -> Vec<interpreter::Error> {
+        match self {
+            Opcode::PushValue(pv) => pv.analyze(flags),
+            Opcode::Operation(op) => op.analyze(flags),
+            Opcode::Control(_) => vec![],
         }
     }
 }
