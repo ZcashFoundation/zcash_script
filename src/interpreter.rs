@@ -64,18 +64,6 @@ pub enum Error {
     #[error("verify operation failed")]
     Verify,
 
-    #[error("equal verify operation failed")]
-    EqualVerify,
-
-    #[error("check multisig verify operation failed")]
-    CheckMultisigVerify,
-
-    #[error("check sig verify operation failed")]
-    CheckSigVerify,
-
-    #[error("num equal verfiy operation failed")]
-    NumEqualVerify,
-
     // Logical/Format/Canonical errors
     #[error("bad opcode encountered")]
     BadOpcode,
@@ -939,13 +927,16 @@ fn eval_operation(
         //
         // (x1 x2 - bool)
         OP_EQUAL => binop(stack, |x1, x2| Ok(cast_from_bool(x1 == x2)))?,
-        OP_EQUALVERIFY => binfn(stack, |x1, x2| {
-            if x1 == x2 {
-                Ok(())
-            } else {
-                Err(Error::EqualVerify)
-            }
-        })?,
+        OP_EQUALVERIFY => binfn(
+            stack,
+            |x1, x2| {
+                if x1 == x2 {
+                    Ok(())
+                } else {
+                    Err(Error::Verify)
+                }
+            },
+        )?,
 
         //
         // Numeric
@@ -969,7 +960,7 @@ fn eval_operation(
             if x1 == x2 {
                 Ok(())
             } else {
-                Err(Error::NumEqualVerify)
+                Err(Error::Verify)
             }
         })?,
         OP_NUMNOTEQUAL => binrel(stack, &|x1, x2| x1 != x2)?,
@@ -1028,7 +1019,7 @@ fn eval_operation(
                 if success {
                     stack.pop()?;
                 } else {
-                    return Err(Error::CheckSigVerify);
+                    return Err(Error::Verify);
                 }
             }
         }
@@ -1113,7 +1104,7 @@ fn eval_operation(
                 if success {
                     stack.pop()?;
                 } else {
-                    return Err(Error::CheckMultisigVerify);
+                    return Err(Error::Verify);
                 }
             }
         }

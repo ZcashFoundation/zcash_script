@@ -152,21 +152,21 @@ impl From<cxx::ScriptError> for Error {
             )),
             cxx::ScriptError_t_SCRIPT_ERR_EQUALVERIFY => Self::from(script::Error::Interpreter(
                 Some(opcode::PossiblyBad::from(op::EQUALVERIFY)),
-                interpreter::Error::EqualVerify,
+                interpreter::Error::Verify,
             )),
             cxx::ScriptError_t_SCRIPT_ERR_CHECKMULTISIGVERIFY => {
                 Self::from(script::Error::Interpreter(
                     Some(opcode::PossiblyBad::from(op::CHECKMULTISIGVERIFY)),
-                    interpreter::Error::CheckMultisigVerify,
+                    interpreter::Error::Verify,
                 ))
             }
             cxx::ScriptError_t_SCRIPT_ERR_CHECKSIGVERIFY => Self::from(script::Error::Interpreter(
                 Some(opcode::PossiblyBad::from(op::CHECKSIGVERIFY)),
-                interpreter::Error::CheckSigVerify,
+                interpreter::Error::Verify,
             )),
             cxx::ScriptError_t_SCRIPT_ERR_NUMEQUALVERIFY => Self::from(script::Error::Interpreter(
                 Some(opcode::PossiblyBad::from(op::NUMEQUALVERIFY)),
-                interpreter::Error::NumEqualVerify,
+                interpreter::Error::Verify,
             )),
 
             cxx::ScriptError_t_SCRIPT_ERR_BAD_OPCODE => Self::from(script::Error::Interpreter(
