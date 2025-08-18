@@ -535,22 +535,18 @@ fn eval_step<'a>(
     pc: &'a [u8],
     script: &script::Code,
     flags: VerificationFlags,
-    checker: impl SignatureChecker,
+    checker: &dyn SignatureChecker,
     state: &mut State,
 ) -> Result<&'a [u8], script::Error> {
     //
     // Read instruction
     //
-    Opcode::parse(pc).map_err(script::Error::Opcode).and_then(
-        |opcode::Parsed {
-             opcode,
-             remaining_code,
-         }| {
-            eval_possibly_bad(&opcode, script, flags, checker, state)
-                .map_err(|ierr| script::Error::Interpreter(Some(opcode), ierr))
-                .map(|()| remaining_code)
-        },
-    )
+    let (res, remaining_code) = opcode::PossiblyBad::parse(pc);
+    res.map_err(script::Error::Opcode).and_then(|opcode| {
+        eval_possibly_bad(&opcode, script, flags, checker, state)
+            .map_err(|ierr| script::Error::Interpreter(Some(opcode), ierr))
+            .map(|()| remaining_code)
+    })
 }
 
 /// Bad opcodes are a bit complicated.
@@ -576,16 +572,17 @@ fn eval_bad(bad: &opcode::Bad, state: &mut State) -> Result<(), Error> {
     }
 }
 
-fn eval_possibly_bad(
+/// Eval a single [`Opcode`] … which may be [`opcode::Bad`].
+pub fn eval_possibly_bad(
     opcode: &opcode::PossiblyBad,
     script: &script::Code,
     flags: VerificationFlags,
-    checker: impl SignatureChecker,
+    checker: &dyn SignatureChecker,
     state: &mut State,
 ) -> Result<(), Error> {
     match opcode {
         opcode::PossiblyBad::Bad(bad) => eval_bad(bad, state),
-        opcode::PossiblyBad::Good(opcode) => eval_opcode(flags, opcode, script, &checker, state),
+        opcode::PossiblyBad::Good(opcode) => eval_opcode(flags, opcode, script, checker, state),
     }
 }
 
@@ -1143,7 +1140,7 @@ impl<C: SignatureChecker + Copy> StepFn for DefaultStepEvaluator<C> {
         state: &mut State,
         _payload: &mut (),
     ) -> Result<&'a [u8], script::Error> {
-        eval_step(pc, script, self.flags, self.checker, state)
+        eval_step(pc, script, self.flags, &self.checker, state)
     }
 }
 
