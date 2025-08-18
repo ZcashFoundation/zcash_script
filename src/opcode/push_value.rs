@@ -45,13 +45,17 @@ impl LargeValue {
         }
     }
 
-    fn split_value(script: &[u8], needed_bytes: usize) -> Result<(&[u8], &[u8]), opcode::Error> {
-        script
-            .split_at_checked(needed_bytes)
-            .ok_or(opcode::Error::ReadError {
-                expected_bytes: needed_bytes,
-                available_bytes: script.len(),
-            })
+    fn split_value(script: &[u8], needed_bytes: usize) -> (Result<&[u8], opcode::Error>, &[u8]) {
+        match script.split_at_checked(needed_bytes) {
+            None => (
+                Err(opcode::Error::ReadError {
+                    expected_bytes: needed_bytes,
+                    available_bytes: script.len(),
+                }),
+                &[],
+            ),
+            Some((value, remainder)) => (Ok(value), remainder),
+        }
     }
 
     /// First splits `size_size` bytes to determine the size of the value to read, then splits the
@@ -59,59 +63,70 @@ impl LargeValue {
     fn split_tagged_value(
         script: &[u8],
         size_size: usize,
-    ) -> Result<(&[u8], &[u8]), opcode::Error> {
-        Self::split_value(script, size_size).and_then(|(bytes, script)| {
-            let mut size = 0;
-            for byte in bytes.iter().rev() {
-                size <<= 8;
-                size |= usize::from(*byte);
+    ) -> (Result<&[u8], opcode::Error>, &[u8]) {
+        let (res, rem) = Self::split_value(script, size_size);
+        match res {
+            Err(_) => (res, rem),
+            Ok(bytes) => {
+                let mut size = 0;
+                for byte in bytes.iter().rev() {
+                    size <<= 8;
+                    size |= usize::from(*byte);
+                }
+                Self::split_value(rem, size)
             }
-            Self::split_value(script, size)
-        })
+        }
     }
 
-    /// Parse a single [`LargeValue`] from a script. Returns `Ok(None)` if the first byte doesn’t
+    /// Parse a single [`LargeValue`] from a script. Returns `None` if the first byte doesn’t
     /// correspond to a [`LargeValue`].
-    pub fn parse(script: &[u8]) -> Result<Option<(LargeValue, &[u8])>, opcode::Error> {
+    pub fn parse(script: &[u8]) -> Option<(Result<LargeValue, opcode::Error>, &[u8])> {
         match script.split_first() {
-            None => Err(opcode::Error::ReadError {
-                expected_bytes: 1,
-                available_bytes: 0,
-            }),
+            None => Some((
+                Err(opcode::Error::ReadError {
+                    expected_bytes: 1,
+                    available_bytes: 0,
+                }),
+                &[],
+            )),
             Some((leading_byte, script)) => match leading_byte {
                 0x01..LargeValue::PUSHDATA1_BYTE => {
-                    Self::split_value(script, (*leading_byte).into()).map(|(v, script)| {
-                        v.to_vec()
-                            .try_into()
-                            .map(|bv| (PushdataBytelength(bv), script))
-                            .ok()
-                    })
+                    let (res, rem) = Self::split_value(script, (*leading_byte).into());
+                    Some((
+                        res.map(|v| {
+                            PushdataBytelength(v.to_vec().try_into().expect("fits into BoundedVec"))
+                        }),
+                        rem,
+                    ))
                 }
                 &LargeValue::PUSHDATA1_BYTE => {
-                    Self::split_tagged_value(script, 1).map(|(v, script)| {
-                        v.to_vec()
-                            .try_into()
-                            .map(|bv| (OP_PUSHDATA1(bv), script))
-                            .ok()
-                    })
+                    let (res, rem) = Self::split_tagged_value(script, 1);
+                    Some((
+                        res.map(|v| {
+                            OP_PUSHDATA1(v.to_vec().try_into().expect("fits into BoundedVec"))
+                        }),
+                        rem,
+                    ))
                 }
                 &LargeValue::PUSHDATA2_BYTE => {
-                    Self::split_tagged_value(script, 2).map(|(v, script)| {
-                        v.to_vec()
-                            .try_into()
-                            .map(|bv| (OP_PUSHDATA2(bv), script))
-                            .ok()
-                    })
+                    let (res, rem) = Self::split_tagged_value(script, 2);
+                    Some((
+                        res.map(|v| {
+                            OP_PUSHDATA2(v.to_vec().try_into().expect("fits into BoundedVec"))
+                        }),
+                        rem,
+                    ))
                 }
                 &LargeValue::PUSHDATA4_BYTE => {
-                    Self::split_tagged_value(script, 4).map(|(v, script)| {
-                        v.to_vec()
-                            .try_into()
-                            .map(|bv| (OP_PUSHDATA4(bv), script))
-                            .ok()
-                    })
+                    let (res, rem) = Self::split_tagged_value(script, 4);
+                    Some((
+                        res.map(|v| {
+                            OP_PUSHDATA4(v.to_vec().try_into().expect("fits into BoundedVec"))
+                        }),
+                        rem,
+                    ))
                 }
-                _ => Ok(None),
+                _ => None,
             },
         }
     }
