@@ -7589,7 +7589,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::EqualVerify)),
+            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
         },
         TestVector {
             script_sig: &[N(19), N(20), N(21)],
@@ -7603,7 +7603,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::EqualVerify)),
+            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
         },
         TestVector {
             script_sig: &[N(19), N(20), N(21)],
@@ -7617,7 +7617,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::EqualVerify)),
+            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
         },
         TestVector {
             script_sig: &[O(NOP)],
@@ -7643,7 +7643,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::EqualVerify)),
+            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
         },
         TestVector {
             script_sig: &[N(19), N(20), N(21)],
@@ -7657,7 +7657,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::EqualVerify)),
+            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
         },
         TestVector {
             script_sig: &[N(19), N(20), N(21)],
@@ -7671,7 +7671,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::EqualVerify)),
+            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
         },
         TestVector {
             script_sig: &[O(NOP)],
@@ -7713,7 +7713,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[N(0), N(1)],
             script_pubkey: &[O(SWAP), N(1), O(EQUALVERIFY)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::EqualVerify)),
+            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
         },
         TestVector {
             script_sig: &[O(NOP)],
@@ -11967,7 +11967,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKSIG),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::EqualVerify)),
+            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
         },
         // P2PK anyonecanpay
         TestVector {
@@ -12105,7 +12105,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: VerificationFlags::P2SH,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::EqualVerify)),
+            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
         },
         // 3-of-3
         TestVector {
