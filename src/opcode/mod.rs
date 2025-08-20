@@ -1,12 +1,19 @@
 #![allow(non_camel_case_types)]
 
+use std::fmt::Display;
+
 pub mod push_value;
 
 use enum_primitive::FromPrimitive;
 use thiserror::Error;
 
 use super::Opcode;
-use crate::{interpreter, num};
+use crate::{
+    interpreter::{self},
+    num,
+    script::Asm,
+    signature,
+};
 use push_value::{
     LargeValue,
     SmallValue::{self, *},
@@ -117,6 +124,33 @@ impl From<LargeValue> for PushValue {
     }
 }
 
+impl Asm for PushValue {
+    fn to_asm(&self, attempt_sighash_decode: bool) -> String {
+        let mut value = self.value();
+        let mut hash_type = String::new();
+        if attempt_sighash_decode {
+            if let signature::Validity::Valid(signature) =
+                signature::Decoded::from_bytes(&value, false, true)
+            {
+                value = signature.sig().serialize_der().to_vec();
+                hash_type = format!("[{}]", signature.sighash_type().to_asm(false));
+            }
+        }
+        value
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<Vec<_>>()
+            .join("")
+            + &hash_type
+    }
+}
+
+impl std::fmt::Display for PushValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_asm(false))
+    }
+}
+
 enum_from_primitive! {
 /// Control operations are evaluated regardless of whether the current branch is active.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -127,6 +161,24 @@ pub enum Control {
     OP_ELSE = 0x67,
     OP_ENDIF = 0x68,
 }
+}
+
+impl Asm for Control {
+    fn to_asm(&self, _attempt_sighash_decode: bool) -> String {
+        match self {
+            Control::OP_IF => "OP_IF",
+            Control::OP_NOTIF => "OP_NOTIF",
+            Control::OP_ELSE => "OP_ELSE",
+            Control::OP_ENDIF => "OP_ENDIF",
+        }
+        .into()
+    }
+}
+
+impl std::fmt::Display for Control {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_asm(false))
+    }
 }
 
 enum_from_primitive! {
@@ -275,6 +327,84 @@ impl From<Operation> for u8 {
     }
 }
 
+impl Asm for Operation {
+    fn to_asm(&self, _attempt_sighash_decode: bool) -> String {
+        match self {
+            Operation::OP_NOP => "OP_NOP",
+            Operation::OP_VERIFY => "OP_VERIFY",
+            Operation::OP_RETURN => "OP_RETURN",
+            Operation::OP_TOALTSTACK => "OP_TOALTSTACK",
+            Operation::OP_FROMALTSTACK => "OP_FROMALTSTACK",
+            Operation::OP_2DROP => "OP_2DROP",
+            Operation::OP_2DUP => "OP_2DUP",
+            Operation::OP_3DUP => "OP_3DUP",
+            Operation::OP_2OVER => "OP_2OVER",
+            Operation::OP_2ROT => "OP_2ROT",
+            Operation::OP_2SWAP => "OP_2SWAP",
+            Operation::OP_IFDUP => "OP_IFDUP",
+            Operation::OP_DEPTH => "OP_DEPTH",
+            Operation::OP_DROP => "OP_DROP",
+            Operation::OP_DUP => "OP_DUP",
+            Operation::OP_NIP => "OP_NIP",
+            Operation::OP_OVER => "OP_OVER",
+            Operation::OP_PICK => "OP_PICK",
+            Operation::OP_ROLL => "OP_ROLL",
+            Operation::OP_ROT => "OP_ROT",
+            Operation::OP_SWAP => "OP_SWAP",
+            Operation::OP_TUCK => "OP_TUCK",
+            Operation::OP_SIZE => "OP_SIZE",
+            Operation::OP_EQUAL => "OP_EQUAL",
+            Operation::OP_EQUALVERIFY => "OP_EQUALVERIFY",
+            Operation::OP_1ADD => "OP_1ADD",
+            Operation::OP_1SUB => "OP_1SUB",
+            Operation::OP_NEGATE => "OP_NEGATE",
+            Operation::OP_ABS => "OP_ABS",
+            Operation::OP_NOT => "OP_NOT",
+            Operation::OP_0NOTEQUAL => "OP_0NOTEQUAL",
+            Operation::OP_ADD => "OP_ADD",
+            Operation::OP_SUB => "OP_SUB",
+            Operation::OP_BOOLAND => "OP_BOOLAND",
+            Operation::OP_BOOLOR => "OP_BOOLOR",
+            Operation::OP_NUMEQUAL => "OP_NUMEQUAL",
+            Operation::OP_NUMEQUALVERIFY => "OP_NUMEQUALVERIFY",
+            Operation::OP_NUMNOTEQUAL => "OP_NUMNOTEQUAL",
+            Operation::OP_LESSTHAN => "OP_LESSTHAN",
+            Operation::OP_GREATERTHAN => "OP_GREATERTHAN",
+            Operation::OP_LESSTHANOREQUAL => "OP_LESSTHANOREQUAL",
+            Operation::OP_GREATERTHANOREQUAL => "OP_GREATERTHANOREQUAL",
+            Operation::OP_MIN => "OP_MIN",
+            Operation::OP_MAX => "OP_MAX",
+            Operation::OP_WITHIN => "OP_WITHIN",
+            Operation::OP_RIPEMD160 => "OP_RIPEMD160",
+            Operation::OP_SHA1 => "OP_SHA1",
+            Operation::OP_SHA256 => "OP_SHA256",
+            Operation::OP_HASH160 => "OP_HASH160",
+            Operation::OP_HASH256 => "OP_HASH256",
+            Operation::OP_CHECKSIG => "OP_CHECKSIG",
+            Operation::OP_CHECKSIGVERIFY => "OP_CHECKSIGVERIFY",
+            Operation::OP_CHECKMULTISIG => "OP_CHECKMULTISIG",
+            Operation::OP_CHECKMULTISIGVERIFY => "OP_CHECKMULTISIGVERIFY",
+            Operation::OP_NOP1 => "OP_NOP1",
+            Operation::OP_CHECKLOCKTIMEVERIFY => "OP_NOP2",
+            Operation::OP_NOP3 => "OP_NOP3",
+            Operation::OP_NOP4 => "OP_NOP4",
+            Operation::OP_NOP5 => "OP_NOP5",
+            Operation::OP_NOP6 => "OP_NOP6",
+            Operation::OP_NOP7 => "OP_NOP7",
+            Operation::OP_NOP8 => "OP_NOP8",
+            Operation::OP_NOP9 => "OP_NOP9",
+            Operation::OP_NOP10 => "OP_NOP10",
+        }
+        .into()
+    }
+}
+
+impl Display for Operation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_asm(false))
+    }
+}
+
 /// Opcodes that fail if they’re on an active branch.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Bad {
@@ -420,5 +550,21 @@ impl From<Disabled> for u8 {
     fn from(value: Disabled) -> Self {
         // This is how you get the discriminant, but using `as` everywhere is too much code smell
         value as u8
+    }
+}
+
+impl Asm for Opcode {
+    fn to_asm(&self, attempt_sighash_decode: bool) -> String {
+        match self {
+            Opcode::PushValue(pv) => pv.to_asm(attempt_sighash_decode),
+            Opcode::Operation(op) => op.to_asm(attempt_sighash_decode),
+            Opcode::Control(c) => c.to_asm(attempt_sighash_decode),
+        }
+    }
+}
+
+impl Display for Opcode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_asm(false))
     }
 }
