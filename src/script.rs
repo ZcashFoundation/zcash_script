@@ -130,6 +130,18 @@ impl From<Error> for StrictError {
     }
 }
 
+/// When an entire [`Script`] is validated, this is used to tag errors with which component they
+/// came from.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ComponentType {
+    /// The script sig.
+    Sig,
+    /// The script pubkey.
+    PubKey,
+    /// The redeem script from a P2SH script.
+    Redeem,
+}
+
 /// Serialized script, used inside transaction inputs and outputs
 #[derive(Clone, Debug)]
 pub struct Code<'a>(pub &'a [u8]);

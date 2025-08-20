@@ -6,7 +6,7 @@ extern crate zcash_script;
 use zcash_script::{
     check_verify_callback,
     interpreter::{CallbackTransactionSignatureChecker, VerificationFlags},
-    rust_interpreter,
+    normalize_err, rust_interpreter,
     signature::HashType,
     testing, CxxInterpreter,
 };
@@ -38,8 +38,8 @@ fuzz_target!(|tup: (u32, bool, &[u8], &[u8], u32)| {
         flags,
     );
     assert_eq!(
-        ret.0.map_err(|e| e.normalize()),
-        ret.1.clone().map_err(|e| e.normalize()),
+        ret.0.map_err(normalize_err),
+        ret.1.clone().map_err(normalize_err),
         "original Rust result: {:?}",
         ret.1
     );

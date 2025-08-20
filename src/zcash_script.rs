@@ -42,6 +42,9 @@ impl From<script::Error> for Error {
     }
 }
 
+/// A verification error annotated with the script component it occurred in.
+pub type AnnError = (Option<script::ComponentType>, Error);
+
 /// The external API of zcash_script. This is defined to make it possible to compare the C++ and
 /// Rust implementations.
 pub trait ZcashScript {
@@ -65,7 +68,7 @@ pub trait ZcashScript {
         script_pub_key: &[u8],
         script_sig: &[u8],
         flags: VerificationFlags,
-    ) -> Result<(), Error>;
+    ) -> Result<(), AnnError>;
 
     /// Returns the number of transparent signature operations in the input or
     /// output script pointed to by script.
@@ -80,7 +83,7 @@ fn stepwise_verify<F>(
     flags: VerificationFlags,
     payload: &mut F::Payload,
     stepper: &F,
-) -> Result<(), Error>
+) -> Result<(), (script::ComponentType, Error)>
 where
     F: StepFn,
 {
@@ -91,7 +94,7 @@ where
         payload,
         stepper,
     )
-    .map_err(Error::Script)
+    .map_err(|(t, e)| (t, Error::Script(e)))
 }
 
 /// A payload for comparing the results of two steppers.
@@ -227,7 +230,7 @@ impl<F: StepFn> ZcashScript for StepwiseInterpreter<F> {
         script_pub_key: &[u8],
         script_sig: &[u8],
         flags: VerificationFlags,
-    ) -> Result<(), Error> {
+    ) -> Result<(), AnnError> {
         let mut payload = self.initial_payload.clone();
         stepwise_verify(
             script_pub_key,
@@ -236,6 +239,7 @@ impl<F: StepFn> ZcashScript for StepwiseInterpreter<F> {
             &mut payload,
             &self.stepper,
         )
+        .map_err(|(t, e)| (Some(t), e))
     }
 }
 
@@ -307,10 +311,13 @@ mod tests {
         // The final return value is from whichever stepper failed.
         assert_eq!(
             ret,
-            Err(Error::from(script::Error::from(opcode::Error::ReadError {
-                expected_bytes: 1,
-                available_bytes: 0,
-            })))
+            Err((
+                script::ComponentType::PubKey,
+                Error::from(script::Error::from(opcode::Error::ReadError {
+                    expected_bytes: 1,
+                    available_bytes: 0,
+                }))
+            ))
         );
 
         // `State`s are large, so we just check that there was some progress in lock step, and a
@@ -365,7 +372,13 @@ mod tests {
         if res.diverging_result.is_some() {
             panic!("mismatched result: {res:?}");
         }
-        assert_eq!(ret, Err(Error::from(script::Error::EvalFalse)));
+        assert_eq!(
+            ret,
+            Err((
+                script::ComponentType::Redeem,
+                Error::from(script::Error::EvalFalse)
+            ))
+        );
     }
 
     #[test]
@@ -392,7 +405,13 @@ mod tests {
         if res.diverging_result.is_some() {
             panic!("mismatched result: {res:?}");
         }
-        assert_eq!(ret, Err(Error::from(script::Error::EvalFalse)));
+        assert_eq!(
+            ret,
+            Err((
+                script::ComponentType::Redeem,
+                Error::from(script::Error::EvalFalse)
+            ))
+        );
     }
 
     proptest! {
