@@ -1,6 +1,6 @@
 //! Managing sequences of opcodes.
 
-use std::iter;
+use std::{fmt::Display, iter};
 
 use thiserror::Error;
 
@@ -113,6 +113,12 @@ impl From<opcode::Error> for Error {
     fn from(value: opcode::Error) -> Self {
         Error::Opcode(value)
     }
+}
+
+/// Type that has a "asm" representation.
+pub(crate) trait Asm {
+    /// Return the "asm" representation of this type.
+    fn to_asm(&self, attempt_sighash_decode: bool) -> String;
 }
 
 /// An iterator that provides `Opcode`s from a byte stream.
@@ -292,6 +298,29 @@ impl Code<'_> {
     }
 }
 
+impl Asm for Code<'_> {
+    fn to_asm(&self, attempt_sighash_decode: bool) -> String {
+        let mut v = Vec::new();
+        for r in self.parse_strict(&interpreter::VerificationFlags::StrictEnc) {
+            match r {
+                Ok(op) => v.push(op.to_asm(attempt_sighash_decode)),
+                Err(_) => {
+                    v.push("[error]".to_string());
+                    break;
+                }
+            }
+        }
+        v.join(" ")
+    }
+}
+
+/// Implement Display for any type that implements Asm
+impl Display for Code<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_asm(false))
+    }
+}
+
 /// A script represented by two byte sequences – one is the sig, the other is the pubkey.
 pub struct Raw<'a> {
     /// The script signature from the spending transaction.
@@ -382,5 +411,17 @@ impl<'a> Raw<'a> {
                 Ok(false)
             }
         }
+    }
+}
+
+impl Asm for Raw<'_> {
+    fn to_asm(&self, attempt_sighash_decode: bool) -> String {
+        self.sig.to_asm(attempt_sighash_decode) + " " + &self.pub_key.to_asm(false)
+    }
+}
+
+impl Display for Raw<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_asm(true))
     }
 }

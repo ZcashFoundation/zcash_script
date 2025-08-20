@@ -607,6 +607,7 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
+    use hex::FromHex;
     use proptest::prelude::{prop, prop_assert_eq, proptest, ProptestConfig};
 
     use super::{
@@ -620,7 +621,10 @@ mod tests {
     };
     use crate::{
         interpreter::{CallbackTransactionSignatureChecker, VerificationFlags},
-        script,
+        opcode::Operation,
+        pv,
+        script::{self, Asm, Code},
+        Opcode,
     };
 
     #[test]
@@ -713,6 +717,55 @@ mod tests {
             ret.1.clone().map_err(normalize_err)
         );
         assert_eq!(ret.1, Ok(false));
+    }
+
+    #[test]
+    fn display_works() {
+        let script_pub_key =
+            hex::decode("76a914d6791b1b29afe3997a5cdbc40f03d37baed379b988ac").unwrap();
+
+        let pubkey = Code(&script_pub_key);
+        assert_eq!(
+            format!("{}", pubkey),
+            "OP_DUP OP_HASH160 d6791b1b29afe3997a5cdbc40f03d37baed379b9 OP_EQUALVERIFY OP_CHECKSIG"
+        );
+
+        assert_eq!(
+            "OP_NOP2",
+            format!("{}", Opcode::Operation(Operation::OP_CHECKLOCKTIMEVERIFY))
+        );
+
+        let der_sig = "304502207fa7a6d1e0ee81132a269ad84e68d695483745cde8b541e3bf630749894e342a022100c1f7ab20e13e22fb95281a870f3dcf38d782e53023ee313d741ad0cfbc0c5090";
+        let pubkey = "03b0da749730dc9b4b1f4a14d6902877a92541f5368778853d9c4a0cb7802dcfb2";
+
+        // Helper for signature suffix tests
+        fn check_sig_display(der_sig: &str, pubkey: &str, suffix: &str, expected_suffix: &str) {
+            let sig_bytes = <[u8; 72]>::from_hex(der_sig.to_owned() + suffix).expect("valid sig");
+            let vch_pubkey = hex::decode(pubkey).unwrap();
+            let expected = der_sig.to_string() + expected_suffix + " " + pubkey;
+            let actual = format!(
+                "{} {}",
+                pv::push_value(&sig_bytes).unwrap().to_asm(true),
+                pv::push_value(&vch_pubkey).unwrap().to_asm(false),
+            );
+            assert_eq!(expected, actual);
+        }
+
+        // Sighash suffixes and their expected asm string representations
+        let sighash_cases = [
+            ("00", "00"),
+            ("80", "80"),
+            ("01", "[ALL]"),
+            ("02", "[NONE]"),
+            ("03", "[SINGLE]"),
+            ("81", "[ALL|ANYONECANPAY]"),
+            ("82", "[NONE|ANYONECANPAY]"),
+            ("83", "[SINGLE|ANYONECANPAY]"),
+        ];
+
+        for (suffix, expected_suffix) in sighash_cases.iter() {
+            check_sig_display(der_sig, pubkey, suffix, expected_suffix);
+        }
     }
 
     #[test]
