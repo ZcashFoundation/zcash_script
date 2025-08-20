@@ -53,7 +53,7 @@ impl Entry {
 #[derive(Clone, Debug)]
 pub enum ResultCmp {
     /// The exact result that should be returned.
-    Original(Result<(), script::Error>),
+    Original(Result<(), (Option<script::ComponentType>, script::Error)>),
     /// The normalized form of an error result, for errors that are difficult to construct manually.
     /// This discards the info that the C++ implementation can’t contain, which includes any
     /// complicated error context.
@@ -64,7 +64,7 @@ impl ResultCmp {
     /// Return the normalized form of the expected result.
     pub fn normalized(self) -> Result<(), script::Error> {
         match self {
-            ResultCmp::Original(res) => res.map_err(|e| e.normalize()),
+            ResultCmp::Original(res) => res.map_err(|(_, e)| e.normalize()),
             ResultCmp::Normalized(err) => Err(err),
         }
     }
@@ -84,18 +84,23 @@ const fn ok() -> ResultCmp {
     ResultCmp::Original(Ok(()))
 }
 
-const fn err(e: script::Error) -> ResultCmp {
-    ResultCmp::Original(Err(e))
+const fn err(t: script::ComponentType, e: script::Error) -> ResultCmp {
+    ResultCmp::Original(Err((Some(t), e)))
 }
 
 const fn normalized_err(e: script::Error) -> ResultCmp {
     ResultCmp::Normalized(e)
 }
 
-fn compare_results(actual: Result<(), script::Error>, expected: ResultCmp) -> bool {
+fn compare_results(
+    actual: Result<(), (Option<script::ComponentType>, script::Error)>,
+    expected: ResultCmp,
+) -> bool {
     match expected {
         ResultCmp::Original(original) => actual == original,
-        ResultCmp::Normalized(normalized) => actual.map_err(|e| e.normalize()) == Err(normalized),
+        ResultCmp::Normalized(normalized) => {
+            actual.map_err(|(_, e)| e.normalize()) == Err(normalized)
+        }
     }
 }
 
@@ -103,8 +108,12 @@ impl TestVector {
     /// A successful run is uninteresting, but a failure returns the actual `Result` in `Err`.
     pub fn run(
         &self,
-        f: &dyn Fn(&[u8], &[u8], VerificationFlags) -> Result<(), script::Error>,
-    ) -> Result<(), Result<(), script::Error>> {
+        f: &dyn Fn(
+            &[u8],
+            &[u8],
+            VerificationFlags,
+        ) -> Result<(), (Option<script::ComponentType>, script::Error)>,
+    ) -> Result<(), Result<(), (Option<script::ComponentType>, script::Error)>> {
         match (
             self.script_sig
                 .iter()
@@ -1357,14 +1366,14 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[H("01"), H("80")],
             script_pubkey: &[O(DUP), O(BOOLOR)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // non-minimal-0  non-minimal-0 BOOLOR
         TestVector {
             script_sig: &[H("01"), H("00")],
             script_pubkey: &[O(DUP), O(BOOLOR)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // -1 -1 BOOLOR
         TestVector {
@@ -1378,14 +1387,14 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[H("01"), H("80")],
             script_pubkey: &[O(DUP), O(BOOLAND)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // non-minimal-0  non-minimal-0 BOOLAND
         TestVector {
             script_sig: &[H("01"), H("00")],
             script_pubkey: &[O(DUP), O(BOOLAND)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // -1 -1 BOOLAND
         TestVector {
@@ -1413,7 +1422,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[H("01"), H("81")],
             script_pubkey: &[O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // -0 0 NUMEQUAL
         TestVector {
@@ -7101,198 +7110,198 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[],
             script_pubkey: &[O(DEPTH)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[],
             script_pubkey: &[],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[],
             script_pubkey: &[O(NOP), O(DEPTH)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(DEPTH)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(NOP), O(DEPTH)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[O(DEPTH)],
             script_pubkey: &[],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // PUSHDATA1 with not enough bytes
         TestVector {
             script_sig: &[H("4c01")],
             script_pubkey: &[H("01"), O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::ReadError { expected_bytes: 1, available_bytes: 0 })),
+            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::ReadError { expected_bytes: 1, available_bytes: 0 })),
         },
         // PUSHDATA2 with not enough bytes
         TestVector {
             script_sig: &[H("4d0200ff")],
             script_pubkey: &[H("01"), O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::ReadError { expected_bytes: 2, available_bytes: 1 })),
+            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::ReadError { expected_bytes: 2, available_bytes: 1 })),
         },
         // PUSHDATA4 with not enough bytes
         TestVector {
             script_sig: &[H("4e03000000ffff")],
             script_pubkey: &[H("01"), O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::ReadError { expected_bytes: 3, available_bytes: 2 })),
+            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::ReadError { expected_bytes: 3, available_bytes: 2 })),
         },
         // 0x50 is reserved
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("50"), O(ENDIF), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_RESERVED)), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_RESERVED)), interpreter::Error::BadOpcode)),
         },
         // 0x51 through 0x60 push 1 through 16 onto stack
         TestVector {
             script_sig: &[H("52")],
             script_pubkey: &[H("5f"), O(ADD), H("60"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // VER non-functional
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), B(OP_VER), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_VER)), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_VER)), interpreter::Error::BadOpcode)),
         },
         // VERIF illegal everywhere
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), B(OP_VERIF), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_VERIF)), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_VERIF)), interpreter::Error::BadOpcode)),
         },
         // VERIF illegal everywhere
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), O(ELSE), N(1), O(ELSE), B(OP_VERIF), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_VERIF)), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_VERIF)), interpreter::Error::BadOpcode)),
         },
         // VERNOTIF illegal everywhere
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), B(OP_VERNOTIF), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_VERNOTIF)), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_VERNOTIF)), interpreter::Error::BadOpcode)),
         },
         // VERNOTIF illegal everywhere
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), O(ELSE), N(1), O(ELSE), B(OP_VERNOTIF), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_VERNOTIF)), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_VERNOTIF)), interpreter::Error::BadOpcode)),
         },
         // IF/ENDIF can’t span scriptSig/scriptPubKey
         TestVector {
             script_sig: &[N(1), O(IF)],
             script_pubkey: &[N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::UnclosedConditional(1)),
+            result: err(script::ComponentType::Sig, script::Error::UnclosedConditional(1)),
         },
         TestVector {
             script_sig: &[N(1), O(IF), N(0), O(ENDIF)],
             script_pubkey: &[N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ENDIF)), interpreter::Error::UnbalancedConditional)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ENDIF)), interpreter::Error::UnbalancedConditional)),
         },
         TestVector {
             script_sig: &[N(1), O(ELSE), N(0), O(ENDIF)],
             script_pubkey: &[N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ELSE)), interpreter::Error::UnbalancedConditional)),
+            result: err(script::ComponentType::Sig, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ELSE)), interpreter::Error::UnbalancedConditional)),
         },
         TestVector {
             script_sig: &[N(0), O(NOTIF)],
             script_pubkey: &[N(123)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::UnclosedConditional(1)),
+            result: err(script::ComponentType::Sig, script::Error::UnclosedConditional(1)),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(DUP), O(IF), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(DUP), O(IF), O(ELSE), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), N(1), O(ELSE), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(NOTIF), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[N(0), N(1)],
             script_pubkey: &[O(IF), O(IF), N(1), O(ELSE), N(0), O(ENDIF), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[N(0), N(0)],
             script_pubkey: &[O(IF), O(IF), N(1), O(ELSE), N(0), O(ENDIF), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[N(1), N(0)],
@@ -7312,7 +7321,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(ENDIF),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[N(0), N(1)],
@@ -7332,19 +7341,19 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(ENDIF),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[N(0), N(0)],
             script_pubkey: &[O(NOTIF), O(IF), N(1), O(ELSE), N(0), O(ENDIF), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[N(0), N(1)],
             script_pubkey: &[O(NOTIF), O(IF), N(1), O(ELSE), N(0), O(ENDIF), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[N(1), N(1)],
@@ -7364,7 +7373,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(ENDIF),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[N(0), N(0)],
@@ -7384,198 +7393,198 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(ENDIF),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // Multiple ELSEs
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), O(RETURN), O(ELSE), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(RETURN)), interpreter::Error::OpReturn)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(RETURN)), interpreter::Error::OpReturn)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), N(1), O(ELSE), O(ELSE), O(RETURN), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(RETURN)), interpreter::Error::OpReturn)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(RETURN)), interpreter::Error::OpReturn)),
         },
         // Malformed IF/ELSE/ENDIF sequence
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ENDIF)), interpreter::Error::UnbalancedConditional)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ENDIF)), interpreter::Error::UnbalancedConditional)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(ELSE), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ELSE)), interpreter::Error::UnbalancedConditional)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ELSE)), interpreter::Error::UnbalancedConditional)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(ENDIF), O(ELSE)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ENDIF)), interpreter::Error::UnbalancedConditional)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ENDIF)), interpreter::Error::UnbalancedConditional)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(ENDIF), O(ELSE), O(IF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ENDIF)), interpreter::Error::UnbalancedConditional)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ENDIF)), interpreter::Error::UnbalancedConditional)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), O(ELSE), O(ENDIF), O(ELSE)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ELSE)), interpreter::Error::UnbalancedConditional)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ELSE)), interpreter::Error::UnbalancedConditional)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), O(ELSE), O(ENDIF), O(ELSE), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ELSE)), interpreter::Error::UnbalancedConditional)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ELSE)), interpreter::Error::UnbalancedConditional)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), O(ENDIF), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ENDIF)), interpreter::Error::UnbalancedConditional)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ENDIF)), interpreter::Error::UnbalancedConditional)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), O(ELSE), O(ELSE), O(ENDIF), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ENDIF)), interpreter::Error::UnbalancedConditional)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ENDIF)), interpreter::Error::UnbalancedConditional)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(RETURN)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(RETURN)), interpreter::Error::OpReturn)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(RETURN)), interpreter::Error::OpReturn)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(DUP), O(IF), O(RETURN), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(RETURN)), interpreter::Error::OpReturn)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(RETURN)), interpreter::Error::OpReturn)),
         },
         // canonical prunable txout format
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(RETURN), A("data")],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(RETURN)), interpreter::Error::OpReturn)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(RETURN)), interpreter::Error::OpReturn)),
         },
         // still prunable because IF/ENDIF can’t span scriptSig/scriptPubKey
         TestVector {
             script_sig: &[N(0), O(IF)],
             script_pubkey: &[O(RETURN), O(ENDIF), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::UnclosedConditional(1)),
+            result: err(script::ComponentType::Sig, script::Error::UnclosedConditional(1)),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(VERIFY), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(VERIFY)), interpreter::Error::Verify)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(VERIFY)), interpreter::Error::Verify)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(VERIFY)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(VERIFY), N(0)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // alt stack not shared between sig/pubkey
         TestVector {
             script_sig: &[N(1), O(TOALTSTACK)],
             script_pubkey: &[O(FROMALTSTACK), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(FROMALTSTACK)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(FROMALTSTACK)), interpreter::Error::InvalidStackOperation(Some((0,0))))),
         },
         TestVector {
             script_sig: &[O(IFDUP)],
             script_pubkey: &[O(DEPTH), N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(IFDUP)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::Sig, script::Error::Interpreter(Some(opcode::PossiblyBad::from(IFDUP)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[O(DROP)],
             script_pubkey: &[O(DEPTH), N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(DROP)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::Sig, script::Error::Interpreter(Some(opcode::PossiblyBad::from(DROP)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[O(DUP)],
             script_pubkey: &[O(DEPTH), N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(DUP)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::Sig, script::Error::Interpreter(Some(opcode::PossiblyBad::from(DUP)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(DUP), N(1), O(ADD), N(2), O(EQUALVERIFY), N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(NIP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NIP)), interpreter::Error::InvalidStackOperation(Some((1, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NIP)), interpreter::Error::InvalidStackOperation(Some((1, 0))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[N(1), O(NIP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NIP)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NIP)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[N(1), N(0), O(NIP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(OVER), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(OVER)), interpreter::Error::InvalidStackOperation(Some((1, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(OVER)), interpreter::Error::InvalidStackOperation(Some((1, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(OVER)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(OVER)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(OVER)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
         },
         TestVector {
             script_sig: &[N(0), N(1)],
             script_pubkey: &[O(OVER), O(DEPTH), N(3), O(EQUALVERIFY)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[N(19), N(20), N(21)],
             script_pubkey: &[O(PICK), N(19), O(EQUALVERIFY), O(DEPTH), N(2), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(PICK)), interpreter::Error::InvalidStackOperation(Some((21, 2))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(PICK)), interpreter::Error::InvalidStackOperation(Some((21, 2))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[N(0), O(PICK)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(PICK)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(PICK)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[N(-1), O(PICK)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(PICK)), interpreter::Error::InvalidStackOperation(None))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(PICK)), interpreter::Error::InvalidStackOperation(None))),
         },
         TestVector {
             script_sig: &[N(19), N(20), N(21)],
@@ -7589,7 +7598,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
         },
         TestVector {
             script_sig: &[N(19), N(20), N(21)],
@@ -7603,7 +7612,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
         },
         TestVector {
             script_sig: &[N(19), N(20), N(21)],
@@ -7617,19 +7626,19 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[N(0), O(ROLL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ROLL)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ROLL)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[N(-1), O(ROLL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ROLL)), interpreter::Error::InvalidStackOperation(None))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ROLL)), interpreter::Error::InvalidStackOperation(None))),
         },
         TestVector {
             script_sig: &[N(19), N(20), N(21)],
@@ -7643,7 +7652,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
         },
         TestVector {
             script_sig: &[N(19), N(20), N(21)],
@@ -7657,7 +7666,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
         },
         TestVector {
             script_sig: &[N(19), N(20), N(21)],
@@ -7671,181 +7680,181 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(ROT), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ROT)), interpreter::Error::InvalidStackOperation(Some((2, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ROT)), interpreter::Error::InvalidStackOperation(Some((2, 0))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[N(1), O(ROT), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ROT)), interpreter::Error::InvalidStackOperation(Some((2, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ROT)), interpreter::Error::InvalidStackOperation(Some((2, 1))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[N(1), N(2), O(ROT), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ROT)), interpreter::Error::InvalidStackOperation(Some((2, 2))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ROT)), interpreter::Error::InvalidStackOperation(Some((2, 2))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[N(0), N(1), N(2), O(ROT)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(SWAP), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(SWAP)), interpreter::Error::InvalidStackOperation(Some((1, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(SWAP)), interpreter::Error::InvalidStackOperation(Some((1, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(SWAP), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(SWAP)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(SWAP)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
         },
         TestVector {
             script_sig: &[N(0), N(1)],
             script_pubkey: &[O(SWAP), N(1), O(EQUALVERIFY)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(TUCK), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(TUCK)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(TUCK)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(TUCK), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(TUCK)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(TUCK)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
         },
         TestVector {
             script_sig: &[N(1), N(0)],
             script_pubkey: &[O(TUCK), O(DEPTH), N(3), O(EQUALVERIFY), O(SWAP), O(_2DROP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(_2DUP), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_2DUP)), interpreter::Error::InvalidStackOperation(Some((1, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_2DUP)), interpreter::Error::InvalidStackOperation(Some((1, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(_2DUP), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_2DUP)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_2DUP)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(_3DUP), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_3DUP)), interpreter::Error::InvalidStackOperation(Some((2, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_3DUP)), interpreter::Error::InvalidStackOperation(Some((2, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(_3DUP), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_3DUP)), interpreter::Error::InvalidStackOperation(Some((2, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_3DUP)), interpreter::Error::InvalidStackOperation(Some((2, 1))))),
         },
         TestVector {
             script_sig: &[N(1), N(2)],
             script_pubkey: &[O(_3DUP), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_3DUP)), interpreter::Error::InvalidStackOperation(Some((2, 2))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_3DUP)), interpreter::Error::InvalidStackOperation(Some((2, 2))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(_2OVER), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_2OVER)), interpreter::Error::InvalidStackOperation(Some((3, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_2OVER)), interpreter::Error::InvalidStackOperation(Some((3, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[N(2), N(3), O(_2OVER), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_2OVER)), interpreter::Error::InvalidStackOperation(Some((3, 3))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_2OVER)), interpreter::Error::InvalidStackOperation(Some((3, 3))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(_2SWAP), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_2SWAP)), interpreter::Error::InvalidStackOperation(Some((3, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_2SWAP)), interpreter::Error::InvalidStackOperation(Some((3, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(DUP), N(1), O(ADD), N(2), O(EQUALVERIFY), N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(NIP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NIP)), interpreter::Error::InvalidStackOperation(Some((1, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NIP)), interpreter::Error::InvalidStackOperation(Some((1, 0))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[N(1), O(NIP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NIP)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NIP)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[N(1), N(0), O(NIP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(OVER), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(OVER)), interpreter::Error::InvalidStackOperation(Some((1, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(OVER)), interpreter::Error::InvalidStackOperation(Some((1, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(OVER)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(OVER)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(OVER)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
         },
         TestVector {
             script_sig: &[N(0), N(1)],
             script_pubkey: &[O(OVER), O(DEPTH), N(3), O(EQUALVERIFY)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[N(19), N(20), N(21)],
             script_pubkey: &[O(PICK), N(19), O(EQUALVERIFY), O(DEPTH), N(2), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(PICK)), interpreter::Error::InvalidStackOperation(Some((21, 2))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(PICK)), interpreter::Error::InvalidStackOperation(Some((21, 2))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[N(0), O(PICK)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(PICK)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(PICK)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[N(2), N(3), O(_2SWAP), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_2SWAP)), interpreter::Error::InvalidStackOperation(Some((3, 3))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_2SWAP)), interpreter::Error::InvalidStackOperation(Some((3, 3))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(SIZE), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(SIZE)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(SIZE)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         // TEST DISABLED OP CODES (CVE-2010-5137)
 
@@ -7854,49 +7863,49 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[A("a"), A("b")],
             script_pubkey: &[D(OP_CAT)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_CAT)))),
+            result: err(script::ComponentType::PubKey, script::Error::from(opcode::Error::Disabled(Some(OP_CAT)))),
         },
         // CAT disabled
         TestVector {
             script_sig: &[A("a"), A("b"), N(0)],
             script_pubkey: &[O(IF), D(OP_CAT), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_CAT)))),
+            result: err(script::ComponentType::PubKey, script::Error::from(opcode::Error::Disabled(Some(OP_CAT)))),
         },
         // SUBSTR disabled
         TestVector {
             script_sig: &[A("abc"), N(1), N(1)],
             script_pubkey: &[D(OP_SUBSTR)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_SUBSTR)))),
+            result: err(script::ComponentType::PubKey, script::Error::from(opcode::Error::Disabled(Some(OP_SUBSTR)))),
         },
         // SUBSTR disabled
         TestVector {
             script_sig: &[A("abc"), N(1), N(1), N(0)],
             script_pubkey: &[O(IF), D(OP_SUBSTR), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_SUBSTR)))),
+            result: err(script::ComponentType::PubKey, script::Error::from(opcode::Error::Disabled(Some(OP_SUBSTR)))),
         },
         // LEFT disabled
         TestVector {
             script_sig: &[A("abc"), N(2), N(0)],
             script_pubkey: &[O(IF), D(OP_LEFT), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_LEFT)))),
+            result: err(script::ComponentType::PubKey, script::Error::from(opcode::Error::Disabled(Some(OP_LEFT)))),
         },
         // RIGHT disabled
         TestVector {
             script_sig: &[A("abc"), N(2), N(0)],
             script_pubkey: &[O(IF), D(OP_RIGHT), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_RIGHT)))),
+            result: err(script::ComponentType::PubKey, script::Error::from(opcode::Error::Disabled(Some(OP_RIGHT)))),
         },
         // INVERT disabled
         TestVector {
             script_sig: &[A("abc")],
             script_pubkey: &[O(IF), D(OP_INVERT), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_INVERT)))),
+            result: err(script::ComponentType::PubKey, script::Error::from(opcode::Error::Disabled(Some(OP_INVERT)))),
         },
         // AND disabled
         TestVector {
@@ -7912,7 +7921,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_AND)))),
+            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::Disabled(Some(OP_AND)))),
         },
         // OR disabled
         TestVector {
@@ -7928,7 +7937,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_OR)))),
+            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::Disabled(Some(OP_OR)))),
         },
         // XOR disabled
         TestVector {
@@ -7944,7 +7953,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_XOR)))),
+            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::Disabled(Some(OP_XOR)))),
         },
         // 2MUL disabled
         TestVector {
@@ -7959,7 +7968,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_2MUL)))),
+            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::Disabled(Some(OP_2MUL)))),
         },
         // 2DIV disabled
         TestVector {
@@ -7974,7 +7983,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_2DIV)))),
+            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::Disabled(Some(OP_2DIV)))),
         },
         // MUL disabled
         TestVector {
@@ -7990,7 +7999,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_MUL)))),
+            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::Disabled(Some(OP_MUL)))),
         },
         // DIV disabled
         TestVector {
@@ -8006,7 +8015,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_DIV)))),
+            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::Disabled(Some(OP_DIV)))),
         },
         // MOD disabled
         TestVector {
@@ -8022,7 +8031,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_MOD)))),
+            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::Disabled(Some(OP_MOD)))),
         },
         // LSHIFT disabled
         TestVector {
@@ -8038,7 +8047,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_LSHIFT)))),
+            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::Disabled(Some(OP_LSHIFT)))),
         },
         // RSHIFT disabled
         TestVector {
@@ -8054,116 +8063,116 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_RSHIFT)))),
+            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::Disabled(Some(OP_RSHIFT)))),
         },
         // EQUAL must error when there are no stack items
         TestVector {
             script_sig: &[],
             script_pubkey: &[O(EQUAL), O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUAL)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUAL)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         // EQUAL must error when there are not 2 stack items
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(EQUAL), O(NOT)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUAL)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUAL)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[N(0), N(1)],
             script_pubkey: &[O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[N(1), N(1), O(ADD)],
             script_pubkey: &[N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[N(11), N(1), O(ADD), N(12), O(SUB)],
             script_pubkey: &[N(11), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // arithmetic operands must be in range [-2^31...2^31]
         TestVector {
             script_sig: &[N(2147483648), N(0), O(ADD)],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ADD)), interpreter::Error::Num(num::Error::Overflow { max_size: 4, actual: 5 }))),
+            result: err(script::ComponentType::Sig, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ADD)), interpreter::Error::Num(num::Error::Overflow { max_size: 4, actual: 5 }))),
         },
         // arithmetic operands must be in range TestVector [-2^31...2^31]
         TestVector {
             script_sig: &[N(-2147483648), N(0), O(ADD)],
             script_pubkey: &[O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ADD)), interpreter::Error::Num(num::Error::Overflow { max_size: 4, actual: 5 }))),
+            result: err(script::ComponentType::Sig, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ADD)), interpreter::Error::Num(num::Error::Overflow { max_size: 4, actual: 5 }))),
         },
         // NUMEQUAL must be in numeric range
         TestVector {
             script_sig: &[N(2147483647), O(DUP), O(ADD)],
             script_pubkey: &[N(4294967294), O(NUMEQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMEQUAL)), interpreter::Error::Num(num::Error::Overflow { max_size: 4, actual: 5 }))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMEQUAL)), interpreter::Error::Num(num::Error::Overflow { max_size: 4, actual: 5 }))),
         },
         // NOT is an arithmetic operand
         TestVector {
             script_sig: &[A("abcdef"), O(NOT)],
             script_pubkey: &[N(0), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::Overflow { max_size: 4, actual: 6 }))),
+            result: err(script::ComponentType::Sig, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::Overflow { max_size: 4, actual: 6 }))),
         },
         // disabled
         TestVector {
             script_sig: &[N(2), O(DUP), D(OP_MUL)],
             script_pubkey: &[N(4), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_MUL)))),
+            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::Disabled(Some(OP_MUL)))),
         },
         // disabled
         TestVector {
             script_sig: &[N(2), O(DUP), D(OP_DIV)],
             script_pubkey: &[N(1), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_DIV)))),
+            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::Disabled(Some(OP_DIV)))),
         },
         // disabled
         TestVector {
             script_sig: &[N(2), D(OP_2MUL)],
             script_pubkey: &[N(4), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_2MUL)))),
+            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::Disabled(Some(OP_2MUL)))),
         },
         // disabled
         TestVector {
             script_sig: &[N(2), D(OP_2DIV)],
             script_pubkey: &[N(1), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_2DIV)))),
+            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::Disabled(Some(OP_2DIV)))),
         },
         // disabled
         TestVector {
             script_sig: &[N(7), N(3), D(OP_MOD)],
             script_pubkey: &[N(1), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_MOD)))),
+            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::Disabled(Some(OP_MOD)))),
         },
         // disabled
         TestVector {
             script_sig: &[N(2), N(2), D(OP_LSHIFT)],
             script_pubkey: &[N(8), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_LSHIFT)))),
+            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::Disabled(Some(OP_LSHIFT)))),
         },
         // disabled
         TestVector {
             script_sig: &[N(2), N(1), D(OP_RSHIFT)],
             script_pubkey: &[N(1), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_RSHIFT)))),
+            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::Disabled(Some(OP_RSHIFT)))),
         },
         TestVector {
             script_sig: &[N(1)],
@@ -8182,7 +8191,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         TestVector {
             script_sig: &[
@@ -8200,69 +8209,69 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             script_pubkey: &[A("NOP_1_to_11"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // Ensure 100% coverage of discouraged NOPS
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NOP1)],
             flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP1)), interpreter::Error::DiscourageUpgradableNOPs)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP1)), interpreter::Error::DiscourageUpgradableNOPs)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NOP3)],
             flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP3)), interpreter::Error::DiscourageUpgradableNOPs)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP3)), interpreter::Error::DiscourageUpgradableNOPs)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NOP4)],
             flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP4)), interpreter::Error::DiscourageUpgradableNOPs)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP4)), interpreter::Error::DiscourageUpgradableNOPs)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NOP5)],
             flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP5)), interpreter::Error::DiscourageUpgradableNOPs)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP5)), interpreter::Error::DiscourageUpgradableNOPs)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NOP6)],
             flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP6)), interpreter::Error::DiscourageUpgradableNOPs)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP6)), interpreter::Error::DiscourageUpgradableNOPs)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NOP7)],
             flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP7)), interpreter::Error::DiscourageUpgradableNOPs)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP7)), interpreter::Error::DiscourageUpgradableNOPs)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NOP8)],
             flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP8)), interpreter::Error::DiscourageUpgradableNOPs)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP8)), interpreter::Error::DiscourageUpgradableNOPs)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NOP9)],
             flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP9)), interpreter::Error::DiscourageUpgradableNOPs)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP9)), interpreter::Error::DiscourageUpgradableNOPs)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NOP10)],
             flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP10)), interpreter::Error::DiscourageUpgradableNOPs)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP10)), interpreter::Error::DiscourageUpgradableNOPs)),
         },
         // Discouraged NOP10 in scriptSig
         TestVector {
             script_sig: &[O(NOP10)],
             script_pubkey: &[N(1)],
             flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP10)), interpreter::Error::DiscourageUpgradableNOPs)),
+            result: err(script::ComponentType::Sig, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP10)), interpreter::Error::DiscourageUpgradableNOPs)),
         },
         // Discouraged NOP10 in redeemScript
         TestVector {
@@ -8274,472 +8283,472 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP10)), interpreter::Error::DiscourageUpgradableNOPs)),
+            result: err(script::ComponentType::Redeem, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP10)), interpreter::Error::DiscourageUpgradableNOPs)),
         },
         // opcode 0x50 is reserved
         TestVector {
             script_sig: &[H("50")],
             script_pubkey: &[N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_RESERVED)), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::Sig, script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_RESERVED)), interpreter::Error::BadOpcode)),
         },
         // opcodes above MAX_OPCODE invalid if executed
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("ba"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xba))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xba))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("bb"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xbb))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xbb))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("bc"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xbc))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xbc))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("bd"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xbd))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xbd))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("be"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xbe))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xbe))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("bf"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xbf))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xbf))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("c0"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xc0))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xc0))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("c1"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xc1))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xc1))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("c2"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xc2))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xc2))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("c3"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xc3))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xc3))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("c4"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xc4))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xc4))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("c5"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xc5))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xc5))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("c6"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xc6))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xc6))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("c7"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xc7))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xc7))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("c8"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xc8))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xc8))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("c9"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xc9))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xc9))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("ca"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xca))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xca))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("cb"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xcb))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xcb))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("cc"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xcc))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xcc))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("cd"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xcd))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xcd))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("ce"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xce))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xce))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("cf"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xcf))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xcf))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("d0"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xd0))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xd0))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("d1"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xd1))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xd1))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("d2"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xd2))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xd2))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("d3"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xd3))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xd3))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("d4"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xd4))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xd4))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("d5"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xd5))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xd5))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("d6"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xd6))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xd6))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("d7"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xd7))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xd7))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("d8"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xd8))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xd8))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("d9"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xd9))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xd9))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("da"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xda))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xda))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("db"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xdb))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xdb))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("dc"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xdc))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xdc))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("dd"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xdd))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xdd))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("de"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xde))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xde))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("df"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xdf))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xdf))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("e0"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xe0))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xe0))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("e1"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xe1))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xe1))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("e2"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xe2))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xe2))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("e3"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xe3))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xe3))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("e4"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xe4))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xe4))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("e5"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xe5))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xe5))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("e6"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xe6))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xe6))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("e7"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xe7))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xe7))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("e8"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xe8))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xe8))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("e9"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xe9))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xe9))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("ea"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xea))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xea))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("eb"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xeb))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xeb))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("ec"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xec))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xec))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("ed"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xed))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xed))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("ee"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xee))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xee))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("ef"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xef))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xef))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("f0"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xf0))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xf0))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("f1"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xf1))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xf1))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("f2"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xf2))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xf2))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("f3"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xf3))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xf3))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("f4"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xf4))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xf4))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("f5"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xf5))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xf5))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("f6"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xf6))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xf6))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("f7"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xf7))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xf7))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("f8"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xf8))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xf8))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("f9"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xf9))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xf9))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("fa"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xfa))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xfa))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("fb"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xfb))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xfb))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("fc"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xfc))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xfc))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("fd"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xfd))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xfd))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("fe"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xfe))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xfe))), interpreter::Error::BadOpcode)),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), H("ff"), O(ELSE), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xff))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xff))), interpreter::Error::BadOpcode)),
         },
         // invalid because scriptSig and scriptPubKey are processed separately
         TestVector {
             script_sig: &[N(1), O(IF), N(1), O(ELSE)],
             script_pubkey: &[H("ff"), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::UnclosedConditional(1)),
+            result: err(script::ComponentType::Sig, script::Error::UnclosedConditional(1)),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(RIPEMD160)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(RIPEMD160)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(RIPEMD160)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(SHA1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(SHA1)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(SHA1)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(SHA256)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(SHA256)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(SHA256)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(HASH160)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(HASH160)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(HASH160)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(HASH256)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(HASH256)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(HASH256)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         // >520 byte push
         TestVector {
@@ -8771,7 +8780,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 "61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161",
             )],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP)), interpreter::Error::OpCount)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP)), interpreter::Error::OpCount)),
         },
         // >201 opcodes including non-executed IF branch. 0x61 is NOP
         TestVector {
@@ -8785,7 +8794,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 N(1),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ENDIF)), interpreter::Error::OpCount)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ENDIF)), interpreter::Error::OpCount)),
         },
         // >1,000 stack size (0x6f is 3DUP)
         TestVector {
@@ -8811,7 +8820,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 ),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_3DUP)), interpreter::Error::StackSize(None))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_3DUP)), interpreter::Error::StackSize(None))),
         },
         // >1,000 stack+altstack size
         TestVector {
@@ -8839,7 +8848,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 ),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_3DUP)), interpreter::Error::StackSize(None))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_3DUP)), interpreter::Error::StackSize(None))),
         },
         // 10,001-byte scriptPubKey
         TestVector {
@@ -8912,442 +8921,442 @@ pub fn test_vectors() -> Vec<TestVector> {
                 ),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::ScriptSize(Some(10001))),
+            result: err(script::ComponentType::PubKey, script::Error::ScriptSize(Some(10001))),
         },
         TestVector {
             script_sig: &[O(NOP1)],
             script_pubkey: &[O(NOP10)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // OP_VER is reserved
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[B(OP_VER)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_VER)), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_VER)), interpreter::Error::BadOpcode)),
         },
         // OP_VERIF is reserved
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[B(OP_VERIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_VERIF)), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_VERIF)), interpreter::Error::BadOpcode)),
         },
         // OP_VERNOTIF is reserved
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[B(OP_VERNOTIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_VERNOTIF)), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_VERNOTIF)), interpreter::Error::BadOpcode)),
         },
         // OP_RESERVED is reserved
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[B(OP_RESERVED)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_RESERVED)), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_RESERVED)), interpreter::Error::BadOpcode)),
         },
         // OP_RESERVED1 is reserved
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[B(OP_RESERVED1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_RESERVED1)), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_RESERVED1)), interpreter::Error::BadOpcode)),
         },
         // OP_RESERVED2 is reserved
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[B(OP_RESERVED2)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_RESERVED2)), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_RESERVED2)), interpreter::Error::BadOpcode)),
         },
         // 0xba == MAX_OPCODE + 1
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[H("ba")],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xba))), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(Unknown(0xba))), interpreter::Error::BadOpcode)),
         },
         // We cannot do math on 5-byte integers
         TestVector {
             script_sig: &[N(2147483648)],
             script_pubkey: &[O(_1ADD), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_1ADD)), interpreter::Error::Num(num::Error::Overflow { max_size: 4, actual: 5 }))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_1ADD)), interpreter::Error::Num(num::Error::Overflow { max_size: 4, actual: 5 }))),
         },
         // We cannot do math on 5-byte integers
         TestVector {
             script_sig: &[N(2147483648)],
             script_pubkey: &[O(NEGATE), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NEGATE)), interpreter::Error::Num(num::Error::Overflow { max_size: 4, actual: 5 }))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NEGATE)), interpreter::Error::Num(num::Error::Overflow { max_size: 4, actual: 5 }))),
         },
         // Because we use a sign bit, -2147483648 is also 5 bytes
         TestVector {
             script_sig: &[N(-2147483648)],
             script_pubkey: &[O(_1ADD), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_1ADD)), interpreter::Error::Num(num::Error::Overflow { max_size: 4, actual: 5 }))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_1ADD)), interpreter::Error::Num(num::Error::Overflow { max_size: 4, actual: 5 }))),
         },
         // We cannot do math on 5-byte integers, even if the result is 4-bytes
         TestVector {
             script_sig: &[N(2147483647)],
             script_pubkey: &[O(_1ADD), O(_1SUB), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_1SUB)), interpreter::Error::Num(num::Error::Overflow { max_size: 4, actual: 5 }))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_1SUB)), interpreter::Error::Num(num::Error::Overflow { max_size: 4, actual: 5 }))),
         },
         // We cannot do math on 5-byte integers, even if the result is 4-bytes
         TestVector {
             script_sig: &[N(2147483648)],
             script_pubkey: &[O(_1SUB), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_1SUB)), interpreter::Error::Num(num::Error::Overflow { max_size: 4, actual: 5 }))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_1SUB)), interpreter::Error::Num(num::Error::Overflow { max_size: 4, actual: 5 }))),
         },
         // We cannot do BOOLOR on 5-byte integers (but we can still do IF etc)
         TestVector {
             script_sig: &[N(2147483648), N(1)],
             script_pubkey: &[O(BOOLOR), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(BOOLOR)), interpreter::Error::Num(num::Error::Overflow { max_size: 4, actual: 5 }))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(BOOLOR)), interpreter::Error::Num(num::Error::Overflow { max_size: 4, actual: 5 }))),
         },
         // We cannot do BOOLAND on 5-byte integers
         TestVector {
             script_sig: &[N(2147483648), N(1)],
             script_pubkey: &[O(BOOLAND), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(BOOLAND)), interpreter::Error::Num(num::Error::Overflow { max_size: 4, actual: 5 }))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(BOOLAND)), interpreter::Error::Num(num::Error::Overflow { max_size: 4, actual: 5 }))),
         },
         // ENDIF without IF
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ENDIF)), interpreter::Error::UnbalancedConditional)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ENDIF)), interpreter::Error::UnbalancedConditional)),
         },
         // IF without ENDIF
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(IF), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::UnclosedConditional(1)),
+            result: err(script::ComponentType::PubKey, script::Error::UnclosedConditional(1)),
         },
         // IFs don’t carry over
         TestVector {
             script_sig: &[N(1), O(IF), N(1)],
             script_pubkey: &[O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::UnclosedConditional(1)),
+            result: err(script::ComponentType::Sig, script::Error::UnclosedConditional(1)),
         },
         // The following tests check the if(stack.size() < N) tests in each opcode
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(IF), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(IF)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(IF)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         // They are here to catch copy-and-paste errors
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(NOTIF), N(1), O(ENDIF)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOTIF)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOTIF)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         // Most of them are duplicated elsewhere,
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(VERIFY), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(VERIFY)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(VERIFY)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         // but, hey, more is always better, right?
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(TOALTSTACK), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(TOALTSTACK)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(TOALTSTACK)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(FROMALTSTACK)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(FROMALTSTACK)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(FROMALTSTACK)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(_2DROP), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_2DROP)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_2DROP)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(_2DUP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_2DUP)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_2DUP)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
         },
         TestVector {
             script_sig: &[N(1), N(1)],
             script_pubkey: &[O(_3DUP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_3DUP)), interpreter::Error::InvalidStackOperation(Some((2, 2))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_3DUP)), interpreter::Error::InvalidStackOperation(Some((2, 2))))),
         },
         TestVector {
             script_sig: &[N(1), N(1), N(1)],
             script_pubkey: &[O(_2OVER)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_2OVER)), interpreter::Error::InvalidStackOperation(Some((3, 3))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_2OVER)), interpreter::Error::InvalidStackOperation(Some((3, 3))))),
         },
         TestVector {
             script_sig: &[N(1), N(1), N(1), N(1), N(1)],
             script_pubkey: &[O(_2ROT)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_2ROT)), interpreter::Error::InvalidStackOperation(Some((5, 5))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_2ROT)), interpreter::Error::InvalidStackOperation(Some((5, 5))))),
         },
         TestVector {
             script_sig: &[N(1), N(1), N(1)],
             script_pubkey: &[O(_2SWAP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_2SWAP)), interpreter::Error::InvalidStackOperation(Some((3, 3))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_2SWAP)), interpreter::Error::InvalidStackOperation(Some((3, 3))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(IFDUP), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(IFDUP)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(IFDUP)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(DROP), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(DROP)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(DROP)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(DUP), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(DUP)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(DUP)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NIP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NIP)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NIP)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(OVER)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(OVER)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(OVER)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
         },
         TestVector {
             script_sig: &[N(1), N(1), N(1), N(3)],
             script_pubkey: &[O(PICK)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(PICK)), interpreter::Error::InvalidStackOperation(Some((3, 3))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(PICK)), interpreter::Error::InvalidStackOperation(Some((3, 3))))),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(PICK), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(PICK)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(PICK)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
         },
         TestVector {
             script_sig: &[N(1), N(1), N(1), N(3)],
             script_pubkey: &[O(ROLL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ROLL)), interpreter::Error::InvalidStackOperation(Some((3, 3))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ROLL)), interpreter::Error::InvalidStackOperation(Some((3, 3))))),
         },
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(ROLL), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ROLL)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ROLL)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
         },
         TestVector {
             script_sig: &[N(1), N(1)],
             script_pubkey: &[O(ROT)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ROT)), interpreter::Error::InvalidStackOperation(Some((2, 2))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ROT)), interpreter::Error::InvalidStackOperation(Some((2, 2))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(SWAP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(SWAP)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(SWAP)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(TUCK)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(TUCK)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(TUCK)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(SIZE), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(SIZE)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(SIZE)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(EQUAL), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUAL)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUAL)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(EQUALVERIFY), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(_1ADD), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_1ADD)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_1ADD)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(_1SUB), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_1SUB)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_1SUB)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(NEGATE), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NEGATE)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NEGATE)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(ABS), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ABS)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ABS)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(NOT), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(_0NOTEQUAL), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_0NOTEQUAL)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_0NOTEQUAL)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(ADD)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ADD)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ADD)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(SUB)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(SUB)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(SUB)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(BOOLAND)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(BOOLAND)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(BOOLAND)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(BOOLOR)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(BOOLOR)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(BOOLOR)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NUMEQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMEQUAL)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMEQUAL)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NUMEQUALVERIFY), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMEQUALVERIFY)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMEQUALVERIFY)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NUMNOTEQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMNOTEQUAL)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMNOTEQUAL)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(LESSTHAN)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(LESSTHAN)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(LESSTHAN)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(GREATERTHAN)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(GREATERTHAN)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(GREATERTHAN)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(LESSTHANOREQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(LESSTHANOREQUAL)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(LESSTHANOREQUAL)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(GREATERTHANOREQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(GREATERTHANOREQUAL)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(GREATERTHANOREQUAL)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(MIN)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(MIN)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(MIN)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(MAX)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(MAX)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(MAX)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[N(1), N(1)],
             script_pubkey: &[O(WITHIN)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(WITHIN)), interpreter::Error::InvalidStackOperation(Some((2, 2))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(WITHIN)), interpreter::Error::InvalidStackOperation(Some((2, 2))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(RIPEMD160), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(RIPEMD160)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(RIPEMD160)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(SHA1), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(SHA1)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(SHA1)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(SHA256), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(SHA256)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(SHA256)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(HASH160), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(HASH160)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(HASH160)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[O(NOP)],
             script_pubkey: &[O(HASH256), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(HASH256)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(HASH256)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         // Increase CHECKSIG and CHECKMULTISIG negative test coverage
 
@@ -9356,21 +9365,21 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[],
             script_pubkey: &[O(CHECKSIG), O(NOT)],
             flags: VerificationFlags::StrictEnc,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::InvalidStackOperation(Some((1, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::InvalidStackOperation(Some((1, 0))))),
         },
         // CHECKSIG must error when there are not 2 stack items
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(CHECKSIG), O(NOT)],
             flags: VerificationFlags::StrictEnc,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
         },
         // CHECKMULTISIG must error when there are no stack items
         TestVector {
             script_sig: &[],
             script_pubkey: &[O(CHECKMULTISIG), O(NOT)],
             flags: VerificationFlags::StrictEnc,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         // CHECKMULTISIG must error when the specified number of pubkeys is negative
         TestVector {
@@ -9384,7 +9393,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[],
             script_pubkey: &[N(1), O(CHECKMULTISIG), O(NOT)],
             flags: VerificationFlags::StrictEnc,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::InvalidStackOperation(Some((2, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::InvalidStackOperation(Some((2, 1))))),
         },
         // CHECKMULTISIG must error when the specified number of signatures is negative
         TestVector {
@@ -9398,7 +9407,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[],
             script_pubkey: &[N(1), A("pk1"), N(1), O(CHECKMULTISIG), O(NOT)],
             flags: VerificationFlags::StrictEnc,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::InvalidStackOperation(Some((4, 3))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::InvalidStackOperation(Some((4, 3))))),
         },
         // CHECKMULTISIG must push false to stack when signature is invalid when NOT in strict enc mode
         TestVector {
@@ -9415,7 +9424,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(ENDIF),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::WrongType)))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::WrongType)))),
         },
         // 202 CHECKMULTISIGS, fails due to 201 op limit
         TestVector {
@@ -10030,7 +10039,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKMULTISIG),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::OpCount)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::OpCount)),
         },
         TestVector {
             script_sig: &[N(1)],
@@ -10644,7 +10653,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKMULTISIGVERIFY),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIGVERIFY)), interpreter::Error::InvalidStackOperation(Some((2, 2))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIGVERIFY)), interpreter::Error::InvalidStackOperation(Some((2, 2))))),
         },
         // Fails due to 201 script operation limit
         TestVector {
@@ -10881,7 +10890,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKMULTISIG),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::OpCount)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::OpCount)),
         },
         TestVector {
             script_sig: &[N(1)],
@@ -11117,7 +11126,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKMULTISIGVERIFY),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIGVERIFY)), interpreter::Error::OpCount)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIGVERIFY)), interpreter::Error::OpCount)),
         },
         // nPubKeys > 20
         TestVector {
@@ -11148,14 +11157,14 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             script_pubkey: &[N(21), O(CHECKMULTISIG), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::PubKeyCount(None))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::PubKeyCount(None))),
         },
         // nSigs > nPubKeys
         TestVector {
             script_sig: &[N(0), A("sig"), N(1), N(0)],
             script_pubkey: &[O(CHECKMULTISIG), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::SigCount(None))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::SigCount(None))),
         },
         // Tests for Script.IsPushOnly()
         TestVector {
@@ -11167,7 +11176,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::SigPushOnly),
+            result: err(script::ComponentType::Sig, script::Error::SigPushOnly),
         },
         TestVector {
             script_sig: &[O(NOP1), H("01"), N(1)],
@@ -11178,7 +11187,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::SigPushOnly),
+            result: err(script::ComponentType::Sig, script::Error::SigPushOnly),
         },
         // OP_RESERVED in P2SH should fail
         TestVector {
@@ -11190,7 +11199,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_RESERVED)), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::Redeem, script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_RESERVED)), interpreter::Error::BadOpcode)),
         },
         // OP_VER in P2SH should fail
         TestVector {
@@ -11202,14 +11211,14 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_VER)), interpreter::Error::BadOpcode)),
+            result: err(script::ComponentType::Redeem, script::Error::Interpreter(Some(opcode::PossiblyBad::from(OP_VER)), interpreter::Error::BadOpcode)),
         },
         // Basic OP_0 execution
         TestVector {
             script_sig: &[H("00")],
             script_pubkey: &[A("00"), O(EQUAL)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // MINIMALDATA enforcement for PUSHDATAs
 
@@ -11370,337 +11379,337 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[H("01"), H("00")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0]))))),
         },
         // numequals 0
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         // 0x80 (negative zero) numequals 0
         TestVector {
             script_sig: &[H("01"), H("80")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![128]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![128]))))),
         },
         // numequals 0
         TestVector {
             script_sig: &[H("02"), H("0080")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 128]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 128]))))),
         },
         // numequals 5
         TestVector {
             script_sig: &[H("02"), H("0500")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![5, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![5, 0]))))),
         },
         // numequals 5
         TestVector {
             script_sig: &[H("03"), H("050000")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![5, 0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![5, 0, 0]))))),
         },
         // numequals -5
         TestVector {
             script_sig: &[H("02"), H("0580")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![5, 128]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![5, 128]))))),
         },
         // numequals -5
         TestVector {
             script_sig: &[H("03"), H("050080")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![5, 0, 128]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![5, 0, 128]))))),
         },
         // Minimal encoding is 0xffff
         TestVector {
             script_sig: &[H("03"), H("ff7f80")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![255, 127, 128]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![255, 127, 128]))))),
         },
         // Minimal encoding is 0xff7f
         TestVector {
             script_sig: &[H("03"), H("ff7f00")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![255, 127, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![255, 127, 0]))))),
         },
         // Minimal encoding is 0xffffff
         TestVector {
             script_sig: &[H("04"), H("ffff7f80")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![255, 255, 127, 128]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![255, 255, 127, 128]))))),
         },
         // Minimal encoding is 0xffff7f
         TestVector {
             script_sig: &[H("04"), H("ffff7f00")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![255, 255, 127, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![255, 255, 127, 0]))))),
         },
         // Test every numeric-accepting opcode for correct handling of the numeric minimal encoding rule
         TestVector {
             script_sig: &[N(1), H("02"), H("0000")],
             script_pubkey: &[O(PICK), O(DROP)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(PICK)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(PICK)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[N(1), H("02"), H("0000")],
             script_pubkey: &[O(ROLL), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ROLL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ROLL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(_1ADD), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_1ADD)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_1ADD)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(_1SUB), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_1SUB)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_1SUB)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(NEGATE), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NEGATE)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NEGATE)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(ABS), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ABS)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ABS)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(_0NOTEQUAL), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(_0NOTEQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_0NOTEQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(ADD), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ADD)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ADD)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(ADD), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(ADD)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ADD)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(SUB), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(SUB)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(SUB)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(SUB), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(SUB)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(SUB)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(BOOLAND), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(BOOLAND)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(BOOLAND)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(BOOLAND), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(BOOLAND)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(BOOLAND)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(BOOLOR), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(BOOLOR)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(BOOLOR)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(BOOLOR), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(BOOLOR)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(BOOLOR)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(NUMEQUAL), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMEQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMEQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(1)],
             script_pubkey: &[O(NUMEQUAL), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMEQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMEQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(NUMEQUALVERIFY), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMEQUALVERIFY)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMEQUALVERIFY)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(NUMEQUALVERIFY), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMEQUALVERIFY)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMEQUALVERIFY)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(NUMNOTEQUAL), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMNOTEQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMNOTEQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(NUMNOTEQUAL), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMNOTEQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMNOTEQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(LESSTHAN), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(LESSTHAN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(LESSTHAN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(LESSTHAN), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(LESSTHAN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(LESSTHAN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(GREATERTHAN), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(GREATERTHAN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(GREATERTHAN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(GREATERTHAN), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(GREATERTHAN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(GREATERTHAN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(LESSTHANOREQUAL), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(LESSTHANOREQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(LESSTHANOREQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(LESSTHANOREQUAL), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(LESSTHANOREQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(LESSTHANOREQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(GREATERTHANOREQUAL), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(GREATERTHANOREQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(GREATERTHANOREQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(GREATERTHANOREQUAL), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(GREATERTHANOREQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(GREATERTHANOREQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(MIN), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(MIN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(MIN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(MIN), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(MIN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(MIN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(MAX), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(MAX)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(MAX)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(MAX), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(MAX)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(MAX)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0), N(0)],
             script_pubkey: &[O(WITHIN), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(WITHIN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(WITHIN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000"), N(0)],
             script_pubkey: &[O(WITHIN), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(WITHIN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(WITHIN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[N(0), N(0), H("02"), H("0000")],
             script_pubkey: &[O(WITHIN), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(WITHIN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(WITHIN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[N(0), N(0), H("02"), H("0000")],
             script_pubkey: &[O(CHECKMULTISIG), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000"), N(0)],
             script_pubkey: &[O(CHECKMULTISIG), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000"), N(0), N(1)],
             script_pubkey: &[O(CHECKMULTISIG), O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[N(0), N(0), H("02"), H("0000")],
             script_pubkey: &[O(CHECKMULTISIGVERIFY), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIGVERIFY)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIGVERIFY)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000"), N(0)],
             script_pubkey: &[O(CHECKMULTISIGVERIFY), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIGVERIFY)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIGVERIFY)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
         },
         // Order of CHECKMULTISIG evaluation tests, inverted by swapping the order of
         // pubkeys/signatures so they fail due to the STRICTENC rules on validly encoded
@@ -11729,7 +11738,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(NOT),
             ],
             flags: VerificationFlags::StrictEnc,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::PubKeyType)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::PubKeyType)),
         },
         // 2-of-2 CHECKMULTISIG NOT with both pubkeys valid, but first signature invalid.
         TestVector {
@@ -11752,7 +11761,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(NOT),
             ],
             flags: VerificationFlags::StrictEnc,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::WrongType)))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::WrongType)))),
         },
         // 2-of-3 with one valid and one invalid signature due to parse error, nSigs > validSigs
         TestVector {
@@ -11779,7 +11788,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKMULTISIG),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::IncorrectLength {actual: 67, expected: 68})))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::IncorrectLength {actual: 67, expected: 68})))),
         },
         // Increase DERSIG test coverage
 
@@ -11793,7 +11802,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             script_pubkey: &[N(0), O(CHECKSIG), O(NOT)],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::WrongType)))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::WrongType)))),
         },
         // Missing S is incorrectly encoded
         TestVector {
@@ -11803,7 +11812,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             script_pubkey: &[N(0), O(CHECKSIG), O(NOT)],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "s",
                 value: None,
                 error: signature::InvalidDerInteger::NotAnInteger
@@ -11817,7 +11826,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             script_pubkey: &[N(0), O(CHECKSIG), O(NOT)],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "s",
                 value: Some(vec![119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119]),
                 error: signature::InvalidDerInteger::IncorrectLength { actual: 16, expected: 10 }
@@ -11831,7 +11840,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             script_pubkey: &[N(0), O(CHECKSIG), O(NOT)],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "r",
                 value: None,
                 error: signature::InvalidDerInteger::NotAnInteger
@@ -11845,7 +11854,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             script_pubkey: &[N(0), O(CHECKSIG), O(NOT)],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "s",
                 value: None,
                 error: signature::InvalidDerInteger::NotAnInteger
@@ -11856,7 +11865,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[H("17"), H("3014020002107777777777777777777777777777777701")],
             script_pubkey: &[N(0), O(CHECKSIG), O(NOT)],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "r",
                 value: Some(Vec::new()),
                 error: signature::InvalidDerInteger::ZeroLength
@@ -11867,7 +11876,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[H("17"), H("3014021077777777777777777777777777777777020001")],
             script_pubkey: &[N(0), O(CHECKSIG), O(NOT)],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "s",
                 value: Some(Vec::new()),
                 error: signature::InvalidDerInteger::ZeroLength
@@ -11881,7 +11890,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             script_pubkey: &[N(0), O(CHECKSIG), O(NOT)],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "s",
                 value: Some(vec![135, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119]),
                 error: signature::InvalidDerInteger::Negative
@@ -11906,7 +11915,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // P2PK, bad sig
         TestVector {
@@ -11924,7 +11933,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKSIG),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // P2PKH
         TestVector {
@@ -11946,7 +11955,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // P2PKH, bad pubkey
         TestVector {
@@ -11967,7 +11976,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKSIG),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
         },
         // P2PK anyonecanpay
         TestVector {
@@ -11986,7 +11995,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // P2PK anyonecanpay marked with normal hashtype
         TestVector {
@@ -12004,7 +12013,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKSIG),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // P2SH(P2PK)
         TestVector {
@@ -12024,7 +12033,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: VerificationFlags::P2SH,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::Redeem, script::Error::EvalFalse),
         },
         // P2SH(P2PK), bad redeemscript
         TestVector {
@@ -12043,7 +12052,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: VerificationFlags::P2SH,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // P2SH(P2PKH)
         TestVector {
@@ -12067,7 +12076,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: VerificationFlags::P2SH,
             // FIXME: This should return `Ok(())`
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::Redeem, script::Error::EvalFalse),
         },
         // P2SH(P2PKH), bad sig but no VERIFY_P2SH
         TestVector {
@@ -12105,7 +12114,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: VerificationFlags::P2SH,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
+            result: err(script::ComponentType::Redeem, script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
         },
         // 3-of-3
         TestVector {
@@ -12137,7 +12146,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // 3-of-3, 2 sigs
         TestVector {
@@ -12165,7 +12174,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKMULTISIG),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // P2SH(2-of-3)
         TestVector {
@@ -12192,7 +12201,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: VerificationFlags::P2SH,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::Redeem, script::Error::EvalFalse),
         },
         // P2SH(2-of-3), 1 sig
         TestVector {
@@ -12215,7 +12224,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: VerificationFlags::P2SH,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::Redeem, script::Error::EvalFalse),
         },
         // P2PK with too much R padding
         TestVector {
@@ -12231,7 +12240,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKSIG),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "r",
                 value: Some(vec![0, 96, 85, 132, 119, 51, 123, 144, 34, 231, 5, 52, 241, 254, 167, 26, 49, 140, 175, 131, 104, 18, 70, 90, 37, 9, 147, 28, 94, 124, 73, 135]),
                 error: signature::InvalidDerInteger::LeadingNullByte
@@ -12251,7 +12260,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKSIG),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "s",
                 value: Some(vec![0, 70, 19, 11, 242, 186, 247, 207, 192, 101, 6, 124, 139, 158, 51, 160, 102, 217, 193, 94, 220, 234, 159, 235, 12, 162, 210, 51, 227, 89, 121, 37, 180]),
                 error: signature::InvalidDerInteger::LeadingNullByte
@@ -12271,7 +12280,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKSIG),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "r",
                 value: Some(vec![215, 160, 65, 124, 63, 109, 26, 21, 9, 77, 28, 242, 163, 55, 140, 160, 80, 62, 184, 165, 118, 48, 149, 58, 158, 41, 135, 226, 29, 221, 10, 101]),
                 error: signature::InvalidDerInteger::Negative
@@ -12292,7 +12301,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(NOT),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "r",
                 value: Some(vec![0, 94, 206, 19, 53, 231, 247, 87, 161, 161, 244, 118, 167, 251, 91, 217, 9, 100, 232, 160, 34, 72, 159, 137, 6, 20, 160, 74, 207, 183, 52, 192]),
                 error: signature::InvalidDerInteger::LeadingNullByte,
@@ -12313,7 +12322,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(NOT),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "r",
                 value: Some(vec![0, 94, 206, 19, 53, 231, 246, 87, 161, 161, 244, 118, 167, 251, 91, 217, 9, 100, 232, 160, 34, 72, 159, 137, 6, 20, 160, 74, 207, 183, 52, 192]),
                 error: signature::InvalidDerInteger::LeadingNullByte
@@ -12333,7 +12342,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKSIG),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "r",
                 value: Some(vec![215, 160, 65, 124, 63, 109, 26, 21, 9, 77, 28, 242, 163, 55, 140, 160, 80, 62, 184, 165, 118, 48, 149, 58, 158, 41, 135, 226, 29, 221, 10, 101]),
                 error: signature::InvalidDerInteger::Negative
@@ -12354,7 +12363,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(NOT),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "r",
                 value: Some(vec![142, 67, 192, 185, 31, 124, 30, 91, 197, 142, 65, 200, 24, 95, 138, 96, 134, 225, 17, 176, 9, 1, 135, 150, 138, 134, 242, 130, 36, 98, 211, 201]),
                 error: signature::InvalidDerInteger::Negative
@@ -12369,7 +12378,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKSIG),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // BIP66 example 4
         TestVector {
@@ -12404,7 +12413,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKSIG),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::WrongType)))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::WrongType)))),
         },
         // BIP66 example 6
         TestVector {
@@ -12416,7 +12425,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(NOT),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::WrongType)))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::WrongType)))),
         },
         // BIP66 example 7
         TestVector {
@@ -12442,7 +12451,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should this be returning `SigDER(None)`?
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // BIP66 example 8
         TestVector {
@@ -12491,7 +12500,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKMULTISIG),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "r",
                 value: Some(vec![129, 170, 157, 67, 111, 33, 84, 232, 182, 214, 0, 81, 109, 176, 61, 120, 222, 113, 223, 104, 91, 88, 90, 152, 7, 234, 212, 33, 11, 216, 131, 73]),
                 error: signature::InvalidDerInteger::Negative
@@ -12518,7 +12527,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(NOT),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "r",
                 value: Some(vec![218, 111, 68, 29, 195, 180, 178, 200, 76, 250, 141, 176, 205, 91, 52, 237, 146, 201, 224, 22, 134, 222, 90, 128, 13, 64, 73, 139, 112, 192, 220, 172]),
                 error: signature::InvalidDerInteger::Negative
@@ -12544,7 +12553,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKMULTISIG),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // BIP66 example 12
         TestVector {
@@ -12583,7 +12592,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKSIG),
             ],
             flags: EMPTY_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::IncorrectLength { actual: 69, expected: 68 })))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::IncorrectLength { actual: 69, expected: 68 })))),
         },
         // P2PK with high S but no LOW_S
         TestVector {
@@ -12600,7 +12609,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // P2PK with high S
         TestVector {
@@ -12616,7 +12625,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKSIG),
             ],
             flags: VerificationFlags::LowS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::SigHighS))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::SigHighS))),
         },
         // P2PK with hybrid pubkey but no STRICTENC
         TestVector {
@@ -12635,7 +12644,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // P2PK with hybrid pubkey
         TestVector {
@@ -12653,7 +12662,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKSIG),
             ],
             flags: VerificationFlags::StrictEnc,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::PubKeyType)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::PubKeyType)),
         },
         // P2PK NOT with hybrid pubkey but no STRICTENC
         TestVector {
@@ -12692,7 +12701,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(NOT),
             ],
             flags: VerificationFlags::StrictEnc,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::PubKeyType)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::PubKeyType)),
         },
         // P2PK NOT with invalid hybrid pubkey but no STRICTENC
         TestVector {
@@ -12730,7 +12739,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(NOT),
             ],
             flags: VerificationFlags::StrictEnc,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::PubKeyType)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::PubKeyType)),
         },
         // 1-of-2 with the second 1 hybrid pubkey and no STRICTENC
         TestVector {
@@ -12754,7 +12763,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // 1-of-2 with the second 1 hybrid pubkey
         TestVector {
@@ -12778,7 +12787,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: VerificationFlags::StrictEnc,
             // FIXME: This should return `Ok(())`
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::PubKeyType)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::PubKeyType)),
         },
         // 1-of-2 with the first 1 hybrid pubkey
         TestVector {
@@ -12801,7 +12810,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKMULTISIG),
             ],
             flags: VerificationFlags::StrictEnc,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::PubKeyType)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::PubKeyType)),
         },
         // P2PK with undefined hashtype but no STRICTENC
         TestVector {
@@ -12820,7 +12829,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // P2PK with undefined hashtype
         TestVector {
@@ -12838,7 +12847,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKSIG),
             ],
             flags: VerificationFlags::StrictEnc,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidHashType::ExtraBitsSet(4))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidHashType::ExtraBitsSet(4))))),
         },
         // P2PK NOT with invalid sig and undefined hashtype but no STRICTENC
         TestVector {
@@ -12876,7 +12885,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(NOT),
             ],
             flags: VerificationFlags::StrictEnc,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidHashType::ExtraBitsSet(4))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidHashType::ExtraBitsSet(4))))),
         },
         // 3-of-3 with nonzero dummy but no NULLDUMMY
         TestVector {
@@ -12908,7 +12917,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // 3-of-3 with nonzero dummy
         TestVector {
@@ -12939,7 +12948,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKMULTISIG),
             ],
             flags: VerificationFlags::NullDummy,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::SigNullDummy)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::SigNullDummy)),
         },
         // 3-of-3 NOT with invalid sig and nonzero dummy but no NULLDUMMY
         TestVector {
@@ -13003,7 +13012,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(NOT),
             ],
             flags: VerificationFlags::NullDummy,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::SigNullDummy)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::SigNullDummy)),
         },
         // 2-of-2 with two identical keys and sigs pushed using OP_DUP but no SIGPUSHONLY
         TestVector {
@@ -13026,7 +13035,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // 2-of-2 with two identical keys and sigs pushed using OP_DUP
         TestVector {
@@ -13048,7 +13057,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKMULTISIG),
             ],
             flags: VerificationFlags::SigPushOnly,
-            result: err(script::Error::SigPushOnly),
+            result: err(script::ComponentType::Sig, script::Error::SigPushOnly),
         },
         // P2SH(P2PK) with non-push scriptSig but no P2SH or SIGPUSHONLY
         TestVector {
@@ -13067,7 +13076,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // P2PK NOT with invalid hybrid pubkey but no STRICTENC
         TestVector {
@@ -13110,7 +13119,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // 1-of-2 with the second 1 hybrid pubkey
         TestVector {
@@ -13134,7 +13143,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: VerificationFlags::StrictEnc,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::PubKeyType)),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::PubKeyType)),
         },
         // P2PK with undefined hashtype but no STRICTENC
         TestVector {
@@ -13153,7 +13162,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // P2PK NOT with invalid sig and undefined hashtype but no STRICTENC
         TestVector {
@@ -13204,7 +13213,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // 3-of-3 NOT with invalid sig and nonzero dummy but no NULLDUMMY
         TestVector {
@@ -13259,7 +13268,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // P2SH(P2PK) with non-push scriptSig but no P2SH or SIGPUSHONLY
         TestVector {
@@ -13297,7 +13306,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: EMPTY_FLAGS,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // P2SH(P2PK) with non-push scriptSig but no SIGPUSHONLY
         TestVector {
@@ -13317,7 +13326,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: VerificationFlags::P2SH,
-            result: err(script::Error::SigPushOnly),
+            result: err(script::ComponentType::Sig, script::Error::SigPushOnly),
         },
         // P2SH(P2PK) with non-push scriptSig but not P2SH
         TestVector {
@@ -13337,7 +13346,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: VerificationFlags::SigPushOnly,
-            result: err(script::Error::SigPushOnly),
+            result: err(script::ComponentType::Sig, script::Error::SigPushOnly),
         },
         // 2-of-2 with two identical keys and sigs pushed
         TestVector {
@@ -13363,7 +13372,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: VerificationFlags::SigPushOnly,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // P2PK with unnecessary input but no CLEANSTACK
         TestVector {
@@ -13383,7 +13392,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: VerificationFlags::P2SH,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // P2PK with unnecessary input
         TestVector {
@@ -13402,7 +13411,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKSIG),
             ],
             flags: VerificationFlags::CleanStack.union(VerificationFlags::P2SH),
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::PubKey, script::Error::EvalFalse),
         },
         // P2SH with unnecessary input but no CLEANSTACK
         TestVector {
@@ -13425,7 +13434,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: VerificationFlags::P2SH,
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::Redeem, script::Error::EvalFalse),
         },
         // P2SH with unnecessary input
         TestVector {
@@ -13447,7 +13456,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(EQUAL),
             ],
             flags: VerificationFlags::CleanStack.union(VerificationFlags::P2SH),
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::Redeem, script::Error::EvalFalse),
         },
         // P2SH with CLEANSTACK
         TestVector {
@@ -13469,7 +13478,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             flags: VerificationFlags::CleanStack.union(VerificationFlags::P2SH),
             // FIXME: Should return `Ok(())` (see #240).
-            result: err(script::Error::EvalFalse),
+            result: err(script::ComponentType::Redeem, script::Error::EvalFalse),
         },
 
         // Zcash-specific tests
@@ -13486,7 +13495,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 D(OP_CAT),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::from(opcode::Error::Disabled(Some(OP_CAT)))),
+            result: err(script::ComponentType::PubKey, script::Error::from(opcode::Error::Disabled(Some(OP_CAT)))),
         },
     ]
 }

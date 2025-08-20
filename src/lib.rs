@@ -33,7 +33,8 @@ use interpreter::{
 };
 use signature::HashType;
 pub use zcash_script::{
-    rust_interpreter, ComparisonStepEvaluator, Error, StepResults, StepwiseInterpreter, ZcashScript,
+    rust_interpreter, AnnError, ComparisonStepEvaluator, Error, StepResults, StepwiseInterpreter,
+    ZcashScript,
 };
 
 /// Script opcodes
@@ -273,7 +274,7 @@ impl<'a> ZcashScript for CxxInterpreter<'a> {
         script_pub_key: &[u8],
         signature_script: &[u8],
         flags: VerificationFlags,
-    ) -> Result<(), Error> {
+    ) -> Result<(), AnnError> {
         let mut err = 0;
 
         // SAFETY: The `script` fields are created from a valid Rust `slice`.
@@ -284,15 +285,19 @@ impl<'a> ZcashScript for CxxInterpreter<'a> {
                 self.lock_time.into(),
                 if self.is_final { 1 } else { 0 },
                 script_pub_key.as_ptr(),
-                script_pub_key
-                    .len()
-                    .try_into()
-                    .map_err(|_| script::Error::ScriptSize(Some(script_pub_key.len())))?,
+                script_pub_key.len().try_into().map_err(|_| {
+                    (
+                        Some(script::ComponentType::PubKey),
+                        Error::from(script::Error::ScriptSize(Some(script_pub_key.len()))),
+                    )
+                })?,
                 signature_script.as_ptr(),
-                signature_script
-                    .len()
-                    .try_into()
-                    .map_err(|_| script::Error::ScriptSize(Some(signature_script.len())))?,
+                signature_script.len().try_into().map_err(|_| {
+                    (
+                        Some(script::ComponentType::Sig),
+                        Error::from(script::Error::ScriptSize(Some(signature_script.len()))),
+                    )
+                })?,
                 flags.bits(),
                 &mut err,
             )
@@ -301,7 +306,7 @@ impl<'a> ZcashScript for CxxInterpreter<'a> {
         if ret == 1 {
             Ok(())
         } else {
-            Err(Error::from(err))
+            Err((None, Error::from(err)))
         }
     }
 
@@ -344,7 +349,7 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
     script_pub_key: &[u8],
     script_sig: &[u8],
     flags: VerificationFlags,
-) -> (Result<(), Error>, Result<(), Error>) {
+) -> (Result<(), AnnError>, Result<(), AnnError>) {
     (
         first.verify_callback(script_pub_key, script_sig, flags),
         second.verify_callback(script_pub_key, script_sig, flags),
@@ -387,6 +392,11 @@ pub fn cxx_rust_comparison_interpreter(
     }
 }
 
+/// Convert errors that don’t exist in the C++ code into the cases that do.
+pub fn normalize_err(err: AnnError) -> Error {
+    err.1.normalize()
+}
+
 /// This implementation is functionally equivalent to the `T` impl, but it also runs a second (`U`)
 /// impl and logs a warning if they disagree.
 impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U> {
@@ -406,10 +416,10 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U>
         script_pub_key: &[u8],
         script_sig: &[u8],
         flags: VerificationFlags,
-    ) -> Result<(), Error> {
+    ) -> Result<(), AnnError> {
         let (cxx, rust) =
             check_verify_callback(&self.first, &self.second, script_pub_key, script_sig, flags);
-        if rust.clone().map_err(|e| e.normalize()) != cxx.clone().map_err(|e| e.normalize()) {
+        if rust.clone().map_err(normalize_err) != cxx.clone().map_err(normalize_err) {
             // probably want to distinguish between
             // - one succeeding when the other fails (bad), and
             // - differing error codes (maybe not bad).
@@ -432,7 +442,7 @@ pub mod testing {
         pv, script,
         signature::HashType,
         test_vectors::TestVector,
-        zcash_script::Error,
+        zcash_script::{AnnError, Error},
         Opcode,
     };
     use hex::FromHex;
@@ -526,17 +536,18 @@ pub mod testing {
     pub fn run_test_vector(
         tv: &TestVector,
         try_normalized_error: bool,
-        f: &dyn Fn(&[u8], &[u8], VerificationFlags) -> Result<(), Error>,
+        f: &dyn Fn(&[u8], &[u8], VerificationFlags) -> Result<(), AnnError>,
     ) -> () {
         match tv.run(&|sig, pubkey, flags| match f(sig, pubkey, flags) {
             Ok(()) => Ok(()),
-            Err(Error::Script(err)) => Err(err),
+            Err((t, Error::Script(e))) => Err((t, e)),
             Err(err) => panic!("failed in a very bad way: {:?}", err),
         }) {
             Ok(()) => (),
             Err(actual) => {
                 if try_normalized_error
-                    && tv.result.clone().normalized() == actual.clone().map_err(|e| e.normalize())
+                    && tv.result.clone().normalized()
+                        == actual.clone().map_err(|(_, e)| e.normalize())
                 {
                     ()
                 } else {
@@ -558,7 +569,7 @@ mod tests {
     use proptest::prelude::{prop, prop_assert_eq, proptest, ProptestConfig};
 
     use super::{
-        check_verify_callback, rust_interpreter, script,
+        check_verify_callback, normalize_err, rust_interpreter, script,
         test_vectors::test_vectors,
         testing::{
             invalid_sighash, missing_sighash, repair_flags, run_test_vector, sighash,
@@ -596,8 +607,8 @@ mod tests {
         );
 
         assert_eq!(
-            ret.0.clone().map_err(|e| e.normalize()),
-            ret.1.map_err(|e| e.normalize())
+            ret.0.clone().map_err(normalize_err),
+            ret.1.map_err(normalize_err)
         );
         assert!(ret.0.is_ok());
     }
@@ -629,10 +640,16 @@ mod tests {
         );
 
         assert_eq!(
-            ret.0.clone().map_err(|e| e.normalize()),
-            ret.1.map_err(|e| e.normalize())
+            ret.0.map_err(normalize_err),
+            ret.1.clone().map_err(normalize_err)
         );
-        assert_eq!(ret.0, Err(Error::from(script::Error::EvalFalse)));
+        assert_eq!(
+            ret.1,
+            Err((
+                Some(script::ComponentType::Redeem),
+                Error::from(script::Error::EvalFalse)
+            ))
+        );
     }
 
     #[test]
@@ -663,10 +680,16 @@ mod tests {
         );
 
         assert_eq!(
-            ret.0.clone().map_err(|e| e.normalize()),
-            ret.1.map_err(|e| e.normalize())
+            ret.0.map_err(normalize_err),
+            ret.1.clone().map_err(normalize_err)
         );
-        assert_eq!(ret.0, Err(Error::from(script::Error::EvalFalse)));
+        assert_eq!(
+            ret.1,
+            Err((
+                Some(script::ComponentType::Redeem),
+                Error::from(script::Error::EvalFalse)
+            ))
+        );
     }
 
     #[test]
@@ -732,7 +755,7 @@ mod tests {
                 &sig[..],
                 flags,
             );
-            prop_assert_eq!(ret.0.map_err(|e| e.normalize()), ret.1.clone().map_err(|e| e.normalize()),
+            prop_assert_eq!(ret.0.map_err(normalize_err), ret.1.clone().map_err(normalize_err),
                             "original Rust result: {:?}", ret.1);
         }
 
@@ -767,7 +790,7 @@ mod tests {
                 &sig[..],
                 flags,
             );
-            prop_assert_eq!(ret.0.map_err(|e| e.normalize()), ret.1.clone().map_err(|e| e.normalize()),
+            prop_assert_eq!(ret.0.map_err(normalize_err), ret.1.clone().map_err(normalize_err),
                             "original Rust result: {:?}", ret.1);
         }
     }
