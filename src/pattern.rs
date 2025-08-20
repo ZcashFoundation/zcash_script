@@ -42,6 +42,7 @@
 
 use ripemd::Ripemd160;
 use sha2::{Digest, Sha256};
+use thiserror::Error;
 
 use crate::{
     op, pv,
@@ -100,23 +101,39 @@ pub fn if_else(cond: &[Opcode], thn: &[Opcode], els: &[Opcode]) -> Vec<Opcode> {
     vec
 }
 
+/// Errors that can happen when creating scripts containing `CHECK*SIG*` operations.
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Error)]
+pub enum Error {
+    #[error("CHECKMULTISIG only supports 20 keys, but you provided {0}")]
+    TooManyPubKeys(usize),
+    #[error("PubKeys shouldn’t be longer than 65 bytes")]
+    OverlongPubKey,
+}
+
+/// Generate an [`Opcode`] that would push the provided pubkey onto the stack.
+pub fn push_pubkey(pubkey: &[u8]) -> Result<Opcode, Error> {
+    pv::push_value(pubkey)
+        .map(PushValue)
+        .ok_or(Error::OverlongPubKey)
+}
+
 /// Performs a `sig_count`-of-`pks.len()` multisig.
 ///
 /// if `verify`
 ///   type: `sig_count*Signature -> 💥?`
 /// else
 ///   type: `sig_count*Signature -> [Bool]`
-pub fn check_multisig(sig_count: u8, pks: &[&[u8]], verify: bool) -> Vec<Opcode> {
-    [
+pub fn check_multisig(sig_count: u8, pks: &[&[u8]], verify: bool) -> Result<Vec<Opcode>, Error> {
+    Ok([
         &[PushValue(push_num(sig_count.into()))],
         &pks.iter()
-            .map(|pk| PushValue(pv::push_value(pk).expect("each pubkey is no more than 65 bytes")))
-            .collect::<Vec<Opcode>>()[..],
+            .map(|pk| push_pubkey(pk))
+            .collect::<Result<Vec<_>, _>>()?[..],
         &[
             PushValue(push_num(
                 pks.len()
                     .try_into()
-                    .expect("Should not be more than 20 pubkeys"),
+                    .map_err(|_| Error::TooManyPubKeys(pks.len()))?,
             )),
             if verify {
                 op::CHECKMULTISIGVERIFY
@@ -125,7 +142,7 @@ pub fn check_multisig(sig_count: u8, pks: &[&[u8]], verify: bool) -> Vec<Opcode>
             },
         ],
     ]
-    .concat()
+    .concat())
 }
 
 /// Checks equality against some constant value.
@@ -147,15 +164,15 @@ pub fn equals(expected: script::PushValue, verify: bool) -> [Opcode; 2] {
 ///   type: `[Signature] -> 💥?`
 /// else
 ///   type: `[Signature] -> [Bool]`
-pub fn check_sig(pubkey: &[u8], verify: bool) -> [Opcode; 2] {
-    [
-        PushValue(pv::push_value(pubkey).expect("each pubkey is no more than 65 bytes")),
+pub fn check_sig(pubkey: &[u8], verify: bool) -> Result<[Opcode; 2], Error> {
+    Ok([
+        push_pubkey(pubkey)?,
         if verify {
             op::CHECKSIGVERIFY
         } else {
             op::CHECKSIG
         },
-    ]
+    ])
 }
 
 /// Checks that the top of the stack has exactly the expected size.
@@ -208,7 +225,7 @@ pub fn push_256b_hash(hash: &[u8; 32]) -> script::PushValue {
 /// label: Pay-to-(compressed-)pubkey inside P2SH
 ///
 /// type: `[Signature] -> [Bool]`
-pub fn pay_to_pubkey(pubkey: &[u8]) -> [Opcode; 2] {
+pub fn pay_to_pubkey(pubkey: &[u8]) -> Result<[Opcode; 2], Error> {
     check_sig(pubkey, false)
 }
 
@@ -249,13 +266,17 @@ pub fn pay_to_script_hash(redeem_script: &[Opcode]) -> Vec<Opcode> {
 ///   check
 ///
 /// type: `n*Signature -> [Bool] ∪  💥`
-pub fn check_multisig_empty(n: u8, x: &[&[u8]], ignored: script::PushValue) -> Vec<Opcode> {
-    [
-        &check_multisig(n, x, true),
+pub fn check_multisig_empty(
+    n: u8,
+    x: &[&[u8]],
+    ignored: script::PushValue,
+) -> Result<Vec<Opcode>, Error> {
+    Ok([
+        &check_multisig(n, x, true)?,
         &ignored_value(ignored)[..],
         &EMPTY_STACK_CHECK,
     ]
-    .concat()
+    .concat())
 }
 
 /// Combined multisig
@@ -263,12 +284,12 @@ pub fn check_multisig_empty(n: u8, x: &[&[u8]], ignored: script::PushValue) -> V
 /// 1-of-3 and 2-of-2 combined multisig with compressed pubkeys
 ///
 /// type: `m*Signature + n*Signature -> (m*Signature + 💥) ∪ [Bool]`
-pub fn combined_multisig(m: u8, x: &[&[u8]], n: u8, y: &[&[u8]]) -> Vec<Opcode> {
-    [
-        &check_multisig(m, x, true)[..],
-        &check_multisig(n, y, false)[..],
+pub fn combined_multisig(m: u8, x: &[&[u8]], n: u8, y: &[&[u8]]) -> Result<Vec<Opcode>, Error> {
+    Ok([
+        &check_multisig(m, x, true)?[..],
+        &check_multisig(n, y, false)?[..],
     ]
-    .concat()
+    .concat())
 }
 
 /// P2PKH with an ignored value
@@ -287,13 +308,13 @@ pub fn p2pkh_ignored(ignored: script::PushValue, pk: &[u8]) -> Vec<Opcode> {
 /// label: Pay-to-(compressed-)pubkey inside P2SH with an empty stack check
 ///
 /// type: `Signature -> [Bool] ∪  💥`
-pub fn p2pk_empty(recipient_pk: &[u8], ignored: script::PushValue) -> Vec<Opcode> {
-    [
-        &check_sig(recipient_pk, true)[..],
+pub fn p2pk_empty(recipient_pk: &[u8], ignored: script::PushValue) -> Result<Vec<Opcode>, Error> {
+    Ok([
+        &check_sig(recipient_pk, true)?[..],
         &ignored_value(ignored)[..],
         &EMPTY_STACK_CHECK,
     ]
-    .concat()
+    .concat())
 }
 
 /// Hash160 HTLC
@@ -308,20 +329,20 @@ pub fn hash160_htlc(
     sender_pk: &[u8],
     recipient_hash: &[u8; 20],
     recipient_pk: &[u8],
-) -> Vec<Opcode> {
-    branch(
+) -> Result<Vec<Opcode>, Error> {
+    Ok(branch(
         &[
             &check_lock_time_verify(lt)[..],
-            &check_sig(sender_pk, false)[..],
+            &check_sig(sender_pk, false)?[..],
         ]
         .concat(),
         &[
             &[op::HASH160],
             &equals(push_160b_hash(recipient_hash), true)[..],
-            &check_sig(recipient_pk, false)[..],
+            &check_sig(recipient_pk, false)?[..],
         ]
         .concat(),
-    )
+    ))
 }
 
 /// Hash160 HTLC with size check
@@ -335,21 +356,21 @@ pub fn hash160_htlc_size_check(
     sender_pk: &[u8],
     recipient_hash: &[u8; 20],
     recipient_pk: &[u8],
-) -> Vec<Opcode> {
-    branch(
+) -> Result<Vec<Opcode>, Error> {
+    Ok(branch(
         &[
             &check_lock_time_verify(lt)[..],
-            &check_sig(sender_pk, false)[..],
+            &check_sig(sender_pk, false)?[..],
         ]
         .concat(),
         &[
             &size_check(20)[..],
             &[op::HASH160],
             &equals(push_160b_hash(recipient_hash), true)[..],
-            &check_sig(recipient_pk, false)[..],
+            &check_sig(recipient_pk, false)?[..],
         ]
         .concat(),
-    )
+    ))
 }
 
 /// Hash160 HTLC
@@ -392,20 +413,20 @@ pub fn sha256_htlc(
     sender_pk: &[u8],
     recipient_sha: &[u8; 32],
     recipient_pk: &[u8],
-) -> Vec<Opcode> {
-    branch(
+) -> Result<Vec<Opcode>, Error> {
+    Ok(branch(
         &[
             &check_lock_time_verify(lt)[..],
-            &check_sig(sender_pk, false)[..],
+            &check_sig(sender_pk, false)?[..],
         ]
         .concat(),
         &[
             &[op::SHA256],
             &equals(push_256b_hash(recipient_sha), true)[..],
-            &check_sig(recipient_pk, false)[..],
+            &check_sig(recipient_pk, false)?[..],
         ]
         .concat(),
-    )
+    ))
 }
 
 /// SHA-256 HTLC
@@ -510,23 +531,23 @@ pub fn dual_hash160_htlc_size_check(
     sender_pk: &[u8],
     recipient_hash: &[u8; 20],
     recipient_pk: &[u8],
-) -> Vec<Opcode> {
+) -> Result<Vec<Opcode>, Error> {
     // type: `[Signature, _] -> ([Signature, _?] + 💥) ∪ [Bool]`
     let verify = |hash, pk| {
-        [
+        Ok([
             &size_check(20)[..],
             &[op::HASH160],
             &equals(push_160b_hash(hash), true)[..],
-            &check_sig(pk, false)[..],
+            &check_sig(pk, false)?[..],
         ]
-        .concat()
+        .concat())
     };
-    branch(
+    Ok(branch(
         &[
             &check_lock_time_verify(lt)[..],
-            &verify(sender_hash, sender_pk)[..],
+            &verify(sender_hash, sender_pk)?[..],
         ]
         .concat(),
-        &verify(recipient_hash, recipient_pk),
-    )
+        &verify(recipient_hash, recipient_pk)?,
+    ))
 }

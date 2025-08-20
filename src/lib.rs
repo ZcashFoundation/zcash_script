@@ -374,7 +374,7 @@ pub mod testing {
                 &<[u8; 0x21]>::from_hex("029d1e9a9354c0d2aee9ffd0f0cea6c39bbf98c4066cf143115ba2279d0ba7dabe").expect("valid key"),
                 &<[u8; 0x21]>::from_hex("03e32096b63fd57f3308149d238dcbb24d8d28aad95c0e4e74e3e5e6a11b61bcc4").expect("valid key")
             ],
-            false);
+            false).expect("all keys are valid and there’s not more than 20 of them");
         /// The scriptPubkey used for the static test case.
         pub static ref SCRIPT_PUBKEY: Vec<u8> = Script::serialize(&pay_to_script_hash(&REDEEM_SCRIPT));
         /// The scriptSig used for the static test case.
