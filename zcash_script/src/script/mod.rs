@@ -1,6 +1,9 @@
 //! Managing sequences of opcodes.
 
-use alloc::vec::Vec;
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 
 use thiserror::Error;
 
@@ -144,6 +147,14 @@ pub trait Evaluable {
 
     /// Called by `IsStandardTx` and P2SH/BIP62 VerifyScript (which makes it consensus-critical).
     fn is_push_only(&self) -> bool;
+}
+
+/// Type that has a "asm" representation.
+pub trait Asm {
+    /// Return the "asm" representation of this type. The
+    /// `attempt_sighash_decode` flag indicates whether to try to decode
+    /// signature hash types in signatures.
+    fn to_asm(&self, attempt_sighash_decode: bool) -> String;
 }
 
 /// A script component is used as either the script sig or script pubkey in a script. Depending on
@@ -364,6 +375,17 @@ impl Code {
     pub fn sig_op_count(&self, accurate: bool) -> u32 {
         iter::sig_op_count(self.parse(), accurate)
     }
+
+    /// Returns whether the script is guaranteed to fail at execution,
+    /// regardless of the initial stack.
+    fn is_unspendable(&self) -> bool {
+        const MAX_SCRIPT_SIZE: usize = 10000;
+        self.parse().next()
+            == Some(Ok(opcode::PossiblyBad::Good(Opcode::Operation(
+                opcode::Operation::OP_RETURN,
+            ))))
+            || self.0.len() > MAX_SCRIPT_SIZE
+    }
 }
 
 impl Evaluable for Code {
@@ -417,6 +439,30 @@ impl Evaluable for Code {
     }
 }
 
+impl Asm for Code {
+    fn to_asm(&self, attempt_sighash_decode: bool) -> String {
+        let mut v = Vec::new();
+        let is_unspendable = self.is_unspendable();
+        for r in self.parse_strict(&interpreter::Flags::StrictEnc) {
+            match r {
+                Ok(op) => v.push(op.to_asm(attempt_sighash_decode && !is_unspendable)),
+                Err(_) => {
+                    v.push("[error]".to_string());
+                    break;
+                }
+            }
+        }
+        v.join(" ")
+    }
+}
+
+/// Implement Display for any type that implements Asm
+impl core::fmt::Display for Code {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_asm(false))
+    }
+}
+
 /// A script represented by two byte sequences – one is the sig, the other is the pubkey.
 pub struct Raw {
     /// The script signature from the spending transaction.
@@ -446,5 +492,17 @@ impl Raw {
         checker: &dyn interpreter::SignatureChecker,
     ) -> Result<bool, (ComponentType, Error)> {
         iter::eval_script(&self.sig, &self.pub_key, flags, checker)
+    }
+}
+
+impl Asm for Raw {
+    fn to_asm(&self, attempt_sighash_decode: bool) -> String {
+        self.sig.to_asm(attempt_sighash_decode) + " " + &self.pub_key.to_asm(false)
+    }
+}
+
+impl core::fmt::Display for Raw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_asm(true))
     }
 }
