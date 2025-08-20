@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{interpreter::*, script};
@@ -91,5 +93,14 @@ impl script::Parsable for Opcode {
                 }
                 _ => Err(err),
             })
+    }
+}
+
+impl Display for Opcode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Opcode::PushValue(pv) => write!(f, "{}", pv),
+            Opcode::Operation(op) => write!(f, "{}", op),
+        }
     }
 }

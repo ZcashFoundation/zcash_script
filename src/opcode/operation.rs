@@ -1,6 +1,6 @@
 #![allow(non_camel_case_types)]
 
-use std::collections::VecDeque;
+use std::{collections::VecDeque, fmt::Display};
 
 use enum_primitive::FromPrimitive;
 use ripemd::Ripemd160;
@@ -35,7 +35,7 @@ fn decode_signature(
     }
 }
 
-fn check_signature_encoding(
+pub(crate) fn check_signature_encoding(
     vch_sig: &[u8],
     flags: VerificationFlags,
 ) -> Result<Option<Signature>, script::Error> {
@@ -211,6 +211,16 @@ impl From<Operation> for u8 {
     }
 }
 
+impl Display for Operation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Operation::Control(control) => write!(f, "{}", control),
+            Operation::Normal(normal) => write!(f, "{}", normal),
+            Operation::Unknown(byte) => write!(f, "{:02x}", byte),
+        }
+    }
+}
+
 // Are we in an executing branch of the script?
 pub fn should_exec(vexec: &Stack<bool>) -> bool {
     vexec.iter().all(|value| *value)
@@ -327,6 +337,35 @@ impl From<Control> for u8 {
     fn from(value: Control) -> Self {
         // This is how you get the discriminant, but using `as` everywhere is too much code smell
         value as u8
+    }
+}
+
+impl Display for Control {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OP_IF => write!(f, "OP_IF"),
+            OP_NOTIF => write!(f, "OP_NOTIF"),
+            OP_VERIF => write!(f, "OP_VERIF"),
+            OP_VERNOTIF => write!(f, "OP_VERNOTIF"),
+            OP_ELSE => write!(f, "OP_ELSE"),
+            OP_ENDIF => write!(f, "OP_ENDIF"),
+            OP_CAT => write!(f, "OP_CAT"),
+            OP_SUBSTR => write!(f, "OP_SUBSTR"),
+            OP_LEFT => write!(f, "OP_LEFT"),
+            OP_RIGHT => write!(f, "OP_RIGHT"),
+            OP_INVERT => write!(f, "OP_INVERT"),
+            OP_AND => write!(f, "OP_AND"),
+            OP_OR => write!(f, "OP_OR"),
+            OP_XOR => write!(f, "OP_XOR"),
+            OP_2MUL => write!(f, "OP_2MUL"),
+            OP_2DIV => write!(f, "OP_2DIV"),
+            OP_MUL => write!(f, "OP_MUL"),
+            OP_DIV => write!(f, "OP_DIV"),
+            OP_MOD => write!(f, "OP_MOD"),
+            OP_LSHIFT => write!(f, "OP_LSHIFT"),
+            OP_RSHIFT => write!(f, "OP_RSHIFT"),
+            OP_CODESEPARATOR => write!(f, "OP_CODESEPARATOR"),
+        }
     }
 }
 
@@ -884,5 +923,80 @@ impl From<Normal> for u8 {
     fn from(value: Normal) -> Self {
         // This is how you get the discriminant, but using `as` everywhere is too much code smell
         value as u8
+    }
+}
+
+impl Display for Normal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OP_NOP => write!(f, "OP_NOP"),
+            OP_VER => write!(f, "OP_VER"),
+            OP_VERIFY => write!(f, "OP_VERIFY"),
+            OP_RETURN => write!(f, "OP_RETURN"),
+            OP_TOALTSTACK => write!(f, "OP_TOALTSTACK"),
+            OP_FROMALTSTACK => write!(f, "OP_FROMALTSTACK"),
+            OP_2DROP => write!(f, "OP_2DROP"),
+            OP_2DUP => write!(f, "OP_2DUP"),
+            OP_3DUP => write!(f, "OP_3DUP"),
+            OP_2OVER => write!(f, "OP_2OVER"),
+            OP_2ROT => write!(f, "OP_2ROT"),
+            OP_2SWAP => write!(f, "OP_2SWAP"),
+            OP_IFDUP => write!(f, "OP_IFDUP"),
+            OP_DEPTH => write!(f, "OP_DEPTH"),
+            OP_DROP => write!(f, "OP_DROP"),
+            OP_DUP => write!(f, "OP_DUP"),
+            OP_NIP => write!(f, "OP_NIP"),
+            OP_OVER => write!(f, "OP_OVER"),
+            OP_PICK => write!(f, "OP_PICK"),
+            OP_ROLL => write!(f, "OP_ROLL"),
+            OP_ROT => write!(f, "OP_ROT"),
+            OP_SWAP => write!(f, "OP_SWAP"),
+            OP_TUCK => write!(f, "OP_TUCK"),
+            OP_SIZE => write!(f, "OP_SIZE"),
+            OP_EQUAL => write!(f, "OP_EQUAL"),
+            OP_EQUALVERIFY => write!(f, "OP_EQUALVERIFY"),
+            OP_RESERVED1 => write!(f, "OP_RESERVED1"),
+            OP_RESERVED2 => write!(f, "OP_RESERVED2"),
+            OP_1ADD => write!(f, "OP_1ADD"),
+            OP_1SUB => write!(f, "OP_1SUB"),
+            OP_NEGATE => write!(f, "OP_NEGATE"),
+            OP_ABS => write!(f, "OP_ABS"),
+            OP_NOT => write!(f, "OP_NOT"),
+            OP_0NOTEQUAL => write!(f, "OP_0NOTEQUAL"),
+            OP_ADD => write!(f, "OP_ADD"),
+            OP_SUB => write!(f, "OP_SUB"),
+            OP_BOOLAND => write!(f, "OP_BOOLAND"),
+            OP_BOOLOR => write!(f, "OP_BOOLOR"),
+            OP_NUMEQUAL => write!(f, "OP_NUMEQUAL"),
+            OP_NUMEQUALVERIFY => write!(f, "OP_NUMEQUALVERIFY"),
+            OP_NUMNOTEQUAL => write!(f, "OP_NUMNOTEQUAL"),
+            OP_LESSTHAN => write!(f, "OP_LESSTHAN"),
+            OP_GREATERTHAN => write!(f, "OP_GREATERTHAN"),
+            OP_LESSTHANOREQUAL => write!(f, "OP_LESSTHANOREQUAL"),
+            OP_GREATERTHANOREQUAL => write!(f, "OP_GREATERTHANOREQUAL"),
+            OP_MIN => write!(f, "OP_MIN"),
+            OP_MAX => write!(f, "OP_MAX"),
+            OP_WITHIN => write!(f, "OP_WITHIN"),
+            OP_RIPEMD160 => write!(f, "OP_RIPEMD160"),
+            OP_SHA1 => write!(f, "OP_SHA1"),
+            OP_SHA256 => write!(f, "OP_SHA256"),
+            OP_HASH160 => write!(f, "OP_HASH160"),
+            OP_HASH256 => write!(f, "OP_HASH256"),
+            OP_CHECKSIG => write!(f, "OP_CHECKSIG"),
+            OP_CHECKSIGVERIFY => write!(f, "OP_CHECKSIGVERIFY"),
+            OP_CHECKMULTISIG => write!(f, "OP_CHECKMULTISIG"),
+            OP_CHECKMULTISIGVERIFY => write!(f, "OP_CHECKMULTISIGVERIFY"),
+            OP_NOP1 => write!(f, "OP_NOP1"),
+            // exception for retrocompatibility
+            OP_CHECKLOCKTIMEVERIFY => write!(f, "OP_NOP2"),
+            OP_NOP3 => write!(f, "OP_NOP3"),
+            OP_NOP4 => write!(f, "OP_NOP4"),
+            OP_NOP5 => write!(f, "OP_NOP5"),
+            OP_NOP6 => write!(f, "OP_NOP6"),
+            OP_NOP7 => write!(f, "OP_NOP7"),
+            OP_NOP8 => write!(f, "OP_NOP8"),
+            OP_NOP9 => write!(f, "OP_NOP9"),
+            OP_NOP10 => write!(f, "OP_NOP10"),
+        }
     }
 }

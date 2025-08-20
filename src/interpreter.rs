@@ -1,4 +1,4 @@
-use std::slice::Iter;
+use std::{fmt::Display, hash::Hash, slice::Iter};
 
 use secp256k1::ecdsa;
 
@@ -62,6 +62,22 @@ impl HashType {
                 anyone_can_pay: bits & 0x80 != 0,
             })
         }
+    }
+}
+
+impl Display for HashType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let signed_outputs = match self.signed_outputs {
+            SignedOutputs::All => "ALL",
+            SignedOutputs::Single => "SINGLE",
+            SignedOutputs::None => "NONE",
+        };
+        let anyone_can_pay = if self.anyone_can_pay {
+            "|ANYONECANPAY"
+        } else {
+            ""
+        };
+        write!(f, "{}{}", signed_outputs, anyone_can_pay)
     }
 }
 

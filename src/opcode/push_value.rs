@@ -1,9 +1,11 @@
 #![allow(non_camel_case_types)]
 
+use std::fmt::Display;
+
 use enum_primitive::FromPrimitive;
 use serde::{Deserialize, Serialize};
 
-use crate::{interpreter::*, script, scriptnum::*};
+use crate::{interpreter::*, opcode::check_signature_encoding, script, scriptnum::*};
 
 pub const MAX_SIZE: usize = 520; // bytes
 
@@ -261,6 +263,25 @@ impl From<&PushValue> for Vec<u8> {
         match value {
             PushValue::SmallValue(v) => vec![(*v).into()],
             PushValue::LargeValue(v) => v.into(),
+        }
+    }
+}
+
+impl Display for PushValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.value() {
+            Some(mut value) => {
+                let mut hash_type = "".to_string();
+                if let Ok(Some(signature)) =
+                    check_signature_encoding(&value, VerificationFlags::StrictEnc)
+                {
+                    value = signature.sig.serialize_der().to_vec();
+                    hash_type = format!("[{}]", signature.sighash);
+                }
+                write!(f, "{}{}", hex::encode(value), hash_type)
+            }
+            // This is the only instance where None is returned.
+            None => write!(f, "OP_RESERVED"),
         }
     }
 }

@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use serde::{Deserialize, Serialize};
 
 pub mod error;
@@ -60,6 +62,23 @@ pub fn sigs_from_bytes(bytes: &[u8]) -> Result<AndMaybe<Sig<Opcode>, Sig<PushVal
             |us| Sig(us.iter().cloned().cloned().collect()),
         )
     })
+}
+
+impl<T> Display for Sig<T>
+where
+    T: Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.0
+                .iter()
+                .map(|op| op.to_string())
+                .collect::<Vec<_>>()
+                .join(" ")
+        )
+    }
 }
 
 /// A few `pub` types with similar (if not identical) implementations are backed by [`Vec`]s, so we
@@ -314,6 +333,20 @@ impl Parsable for PubKey {
 
     fn from_bytes(bytes: &[u8]) -> Result<(Self, &[u8]), Error> {
         vec::from_bytes(bytes).map(|(r, t)| (PubKey(r), t))
+    }
+}
+
+impl Display for PubKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.0
+                .iter()
+                .map(|op| op.to_string())
+                .collect::<Vec<_>>()
+                .join(" ")
+        )
     }
 }
 
