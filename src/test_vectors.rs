@@ -14,7 +14,7 @@ use crate::{
         serialize_num,
         Bad::{self, *},
         Disabled::{self, *},
-        Opcode,
+        Opcode, PushValue,
     },
     script_error::{ScriptError, ScriptNumError},
     signature,
@@ -36,42 +36,10 @@ enum Entry {
 }
 
 impl Entry {
+    /// Encodes a byte slice as a the snippet of Zcash script code (a push value opcode possibly
+    /// followed by additional data) that would push those bytes onto the stack.
     fn val_to_pv(v: &[u8]) -> Vec<u8> {
-        match v {
-            [] => vec![0],
-            [v] => {
-                if *v <= 16 {
-                    vec![*v + 0x50]
-                } else {
-                    vec![1, *v]
-                }
-            }
-            v => {
-                let mut vv = v.to_vec().clone();
-                let l = v.len();
-                if l < 0x4c {
-                    let mut nv = vec![u8::try_from(l).unwrap()];
-                    nv.append(&mut vv);
-                    nv
-                } else if l <= 0xff {
-                    let mut nv = vec![0x4c];
-                    nv.append(&mut serialize_num(v.len().try_into().unwrap()));
-                    nv.append(&mut vv);
-                    nv
-                } else if l <= 0xffff {
-                    let mut nv = vec![0x4d];
-                    nv.append(&mut serialize_num(v.len().try_into().unwrap()));
-                    nv.append(&mut vv);
-                    nv
-                } else {
-                    // FIXME: Need to pad 3-byte lengths.
-                    let mut nv = vec![0x4e];
-                    nv.append(&mut serialize_num(v.len().try_into().unwrap()));
-                    nv.append(&mut vv);
-                    nv
-                }
-            }
-        }
+        (&PushValue::from_slice(v).expect("slice fits into push value")).into()
     }
 
     fn serialize(&self) -> Result<Vec<u8>, FromHexError> {
