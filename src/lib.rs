@@ -181,8 +181,8 @@ impl From<cxx::ScriptError> for Error {
             ),
             cxx::ScriptError_t_SCRIPT_ERR_INVALID_ALTSTACK_OPERATION => {
                 Self::from(script::Error::Interpreter(
-                    None,
-                    interpreter::Error::InvalidAltstackOperation(None),
+                    Some(opcode::PossiblyBad::from(op::FROMALTSTACK)),
+                    interpreter::Error::InvalidStackOperation(None),
                 ))
             }
             cxx::ScriptError_t_SCRIPT_ERR_UNBALANCED_CONDITIONAL => Self::from(
