@@ -77,8 +77,8 @@ pub enum Error {
     NumEqualVerify,
 
     // Logical/Format/Canonical errors
-    #[error("bad opcode encountered: {}", .0.map_or("unknown".to_owned(), |op| format!("{:?}", op)))]
-    BadOpcode(Option<opcode::Bad>),
+    #[error("bad opcode encountered")]
+    BadOpcode,
 
     #[error("{}", .0.map_or("invalid stack operation encountered", |(elem, max)| "tried to retrieve element {elem} from a stack with {max} elements"))]
     InvalidStackOperation(Option<(usize, usize)>),
@@ -116,6 +116,28 @@ pub enum Error {
     /// Corresponds to the `scriptnum_error` exception in C++.
     #[error("script number error: {0}")]
     Num(num::Error),
+}
+
+impl Error {
+    /// Convert errors that don’t exist in the C++ code into the cases that do.
+    pub fn normalize(&self) -> Self {
+        match self {
+            Self::InvalidStackOperation(Some(_)) => Self::InvalidStackOperation(None),
+            Self::InvalidAltstackOperation(Some(_)) => Self::InvalidAltstackOperation(None),
+            Self::SignatureEncoding(sig_err) => match sig_err {
+                signature::Error::SigHashType(Some(_)) => {
+                    Self::from(signature::Error::SigHashType(None))
+                }
+                signature::Error::SigDER(Some(_)) => Self::from(signature::Error::SigDER(None)),
+                _ => self.clone(),
+            },
+            Self::PushSize(Some(_)) => Self::PushSize(None),
+            Self::StackSize(Some(_)) => Self::StackSize(None),
+            Self::SigCount(Some(_)) => Self::SigCount(None),
+            Self::PubKeyCount(Some(_)) => Self::PubKeyCount(None),
+            _ => self.clone(),
+        }
+    }
 }
 
 impl From<num::Error> for Error {
@@ -540,43 +562,63 @@ fn eval_step<'a>(
              opcode,
              remaining_code,
          }| {
-            match opcode {
-                // See the documentation of `Bad` for an explanation of this logic.
-                opcode::PossiblyBad::Bad(bad) => {
-                    if opcode::Bad::OP_RESERVED != bad {
-                        state.increment_op_count()?;
-                    }
-                    if matches!(bad, opcode::Bad::OP_VERIF | opcode::Bad::OP_VERNOTIF)
-                        || should_exec(&state.vexec)
-                    {
-                        Err(Error::BadOpcode(Some(bad)))
-                    } else {
-                        Ok(remaining_code)
-                    }
-                }
-                opcode::PossiblyBad::Good(opcode) => {
-                    eval_opcode(flags, opcode, script, &checker, state).map(|()| remaining_code)
-                }
-            }
-            .map_err(script::Error::Interpreter)
+            eval_possibly_bad(&opcode, script, flags, checker, state)
+                .map_err(|ierr| script::Error::Interpreter(Some(opcode), ierr))
+                .map(|()| remaining_code)
         },
     )
 }
 
+/// Bad opcodes are a bit complicated.
+///
+/// - They only fail if they are evaluated, so we can’t statically fail scripts that contain them
+///   (unlike [Disabled]).
+/// - [Bad::OP_RESERVED] counts as a push value for the purposes of
+///   [interpreter::VerificationFlags::SigPushOnly] (but push-only sigs must necessarily evaluate
+///   all of their opcodes, so what we’re preserving here is that we get
+///   [script::Error::SigPushOnly] in this case instead of [script::Error::BadOpcode]).
+/// - [Bad::OP_VERIF] and [Bad::OP_VERNOTIF] both _always_ get evaluated, so we need to special case
+///   them when checking whether to throw [script::Error::BadOpcode]
+fn eval_bad(bad: &opcode::Bad, state: &mut State) -> Result<(), Error> {
+    // Note how OP_RESERVED does not count towards the opcode limit.
+    if &opcode::Bad::OP_RESERVED != bad {
+        state.increment_op_count()?;
+    }
+    if matches!(bad, opcode::Bad::OP_VERIF | opcode::Bad::OP_VERNOTIF) || should_exec(&state.vexec)
+    {
+        Err(Error::BadOpcode)
+    } else {
+        Ok(())
+    }
+}
+
+fn eval_possibly_bad(
+    opcode: &opcode::PossiblyBad,
+    script: &script::Code,
+    flags: VerificationFlags,
+    checker: impl SignatureChecker,
+    state: &mut State,
+) -> Result<(), Error> {
+    match opcode {
+        opcode::PossiblyBad::Bad(bad) => eval_bad(bad, state),
+        opcode::PossiblyBad::Good(opcode) => eval_opcode(flags, opcode, script, &checker, state),
+    }
+}
+
 fn eval_opcode(
     flags: VerificationFlags,
-    opcode: Opcode,
+    opcode: &Opcode,
     script: &script::Code,
     checker: &dyn SignatureChecker,
     state: &mut State,
 ) -> Result<(), Error> {
-    (match opcode {
+    match opcode {
         Opcode::PushValue(pv) => {
             let len = pv.value().len();
             if len <= opcode::push_value::LargeValue::MAX_SIZE {
                 if should_exec(&state.vexec) {
                     eval_push_value(
-                        &pv,
+                        pv,
                         flags.contains(VerificationFlags::MinimalData),
                         &mut state.stack,
                     )
@@ -588,12 +630,10 @@ fn eval_opcode(
             }
         }
         Opcode::Control(control) => {
-            // Note how OP_RESERVED does not count towards the opcode limit.
             state.increment_op_count()?;
             eval_control(control, &mut state.stack, &mut state.vexec)
         }
         Opcode::Operation(normal) => {
-            // Note how OP_RESERVED does not count towards the opcode limit.
             state.increment_op_count()?;
             if should_exec(&state.vexec) {
                 eval_operation(
@@ -609,7 +649,7 @@ fn eval_opcode(
                 Ok(())
             }
         }
-    })
+    }
     .and_then(|()| {
         // Size limits
         if state.stack.len() + state.altstack.len() > MAX_STACK_DEPTH {
@@ -640,7 +680,7 @@ fn should_exec(vexec: &Stack<bool>) -> bool {
 
 /// <expression> if [statements] [else [statements]] endif
 fn eval_control(
-    op: opcode::Control,
+    op: &opcode::Control,
     stack: &mut Stack<Vec<u8>>,
     vexec: &mut Stack<bool>,
 ) -> Result<(), Error> {
@@ -648,8 +688,8 @@ fn eval_control(
         // <expression> if [statements] [else [statements]] endif
         OP_IF | OP_NOTIF => vexec.push(
             should_exec(vexec) && {
-                let value = cast_to_bool(&stack.pop().map_err(|_| Error::UnbalancedConditional)?);
-                if op == OP_NOTIF {
+                let value = cast_to_bool(&stack.pop()?);
+                if op == &OP_NOTIF {
                     !value
                 } else {
                     value
@@ -670,7 +710,7 @@ fn eval_control(
 }
 
 fn eval_operation(
-    op: opcode::Operation,
+    op: &opcode::Operation,
     flags: VerificationFlags,
     script: &script::Code,
     checker: &dyn SignatureChecker,
@@ -869,7 +909,7 @@ fn eval_operation(
             stack.pop()?;
             stack.check_len(n + 1)?;
             let vch: ValType = stack.rget(n)?.clone();
-            if op == OP_ROLL {
+            if op == &OP_ROLL {
                 stack.rremove(n)?;
             }
             stack.push(vch)
@@ -958,17 +998,17 @@ fn eval_operation(
             // (in -- hash)
             let vch = stack.pop()?;
             let mut vch_hash = vec![];
-            if op == OP_RIPEMD160 {
+            if op == &OP_RIPEMD160 {
                 vch_hash = Ripemd160::digest(vch).to_vec();
-            } else if op == OP_SHA1 {
+            } else if op == &OP_SHA1 {
                 let mut hasher = Sha1::new();
                 hasher.update(vch);
                 vch_hash = hasher.finalize().to_vec();
-            } else if op == OP_SHA256 {
+            } else if op == &OP_SHA256 {
                 vch_hash = Sha256::digest(vch).to_vec();
-            } else if op == OP_HASH160 {
+            } else if op == &OP_HASH160 {
                 vch_hash = Ripemd160::digest(Sha256::digest(vch)).to_vec();
-            } else if op == OP_HASH256 {
+            } else if op == &OP_HASH256 {
                 vch_hash = Sha256::digest(Sha256::digest(vch)).to_vec();
             }
             stack.push(vch_hash)
@@ -984,7 +1024,7 @@ fn eval_operation(
             stack.pop()?;
             stack.pop()?;
             stack.push(cast_from_bool(success));
-            if op == OP_CHECKSIGVERIFY {
+            if op == &OP_CHECKSIGVERIFY {
                 if success {
                     stack.pop()?;
                 } else {
@@ -1069,7 +1109,7 @@ fn eval_operation(
 
             stack.push(cast_from_bool(success));
 
-            if op == OP_CHECKMULTISIGVERIFY {
+            if op == &OP_CHECKMULTISIGVERIFY {
                 if success {
                     stack.pop()?;
                 } else {
@@ -1142,7 +1182,7 @@ where
     }
 
     if !state.vexec.is_empty() {
-        return Err(Error::UnbalancedConditional.into());
+        return Err(script::Error::UnclosedConditional(state.vexec.len()));
     }
 
     Ok(state.stack)
@@ -1226,7 +1266,7 @@ where
         assert!(!data_stack.is_empty());
         data_stack
             .split_last()
-            .map_err(script::Error::Interpreter)
+            .map_err(|e| script::Error::Interpreter(None, e))
             .and_then(|(pub_key_2, remaining_stack)| {
                 eval_script(remaining_stack, &script::Code(pub_key_2), payload, stepper)
             })

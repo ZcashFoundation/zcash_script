@@ -4,7 +4,7 @@ use itertools::{Either, Itertools};
 use thiserror::Error;
 
 use crate::{
-    interpreter,
+    interpreter, op,
     opcode::{
         self,
         push_value::{LargeValue::*, SmallValue::*},
@@ -32,8 +32,9 @@ pub enum Error {
     #[error("non-push opcode encountered in script sig when push-only required")]
     SigPushOnly,
 
-    #[error("during interpretation: {0}")]
-    Interpreter(interpreter::Error),
+    /// __TODO__: Remove the [`Option`] around [`opcode::PossiblyBad`] when C++ support is removed.
+    #[error("during interpretation: {1}")]
+    Interpreter(Option<opcode::PossiblyBad>, interpreter::Error),
 
     /// A error external to the script validation code. This can come from the stepper.
     ///
@@ -41,6 +42,9 @@ pub enum Error {
     /// but can be different in the steppers.
     #[error("external error: {0}")]
     ExternalError(&'static str),
+
+    #[error("{} closed before the end of the script", match .0 { 1 => "1 conditional opcode wasn’t", n => "{n} conditional opcodes weren’t"})]
+    UnclosedConditional(usize),
 
     #[error("clean stack requirement not met")]
     CleanStack,
@@ -70,47 +74,29 @@ impl Error {
     /// Convert errors that don’t exist in the C++ code into the cases that do.
     pub fn normalize(&self) -> Self {
         match self {
+            Self::ScriptSize(Some(_)) => Self::ScriptSize(None),
             Self::Opcode(oerr) => match oerr {
-                opcode::Error::ReadError { .. } => Self::from(interpreter::Error::BadOpcode(None)),
+                opcode::Error::ReadError { .. } => {
+                    Self::Interpreter(None, interpreter::Error::BadOpcode)
+                }
                 opcode::Error::Disabled(_) => Self::AMBIGUOUS_COUNT_DISABLED,
             },
-            Self::Interpreter(ierr) => match ierr {
+            Self::Interpreter(
+                Some(opcode::PossiblyBad::Good(op::IF | op::NOTIF)),
+                interpreter::Error::InvalidStackOperation(_),
+            ) => Self::Interpreter(None, interpreter::Error::UnbalancedConditional),
+            Self::Interpreter(_, ierr) => match ierr {
                 interpreter::Error::OpCount => Self::AMBIGUOUS_COUNT_DISABLED,
-                interpreter::Error::InvalidStackOperation(Some(_)) => {
-                    Self::from(interpreter::Error::InvalidStackOperation(None))
-                }
-                interpreter::Error::InvalidAltstackOperation(Some(_)) => {
-                    Self::from(interpreter::Error::InvalidAltstackOperation(None))
-                }
-                interpreter::Error::SignatureEncoding(sig_err) => match sig_err {
-                    signature::Error::SigHashType(Some(_)) => Self::from(interpreter::Error::from(
-                        signature::Error::SigHashType(None),
-                    )),
-                    signature::Error::SigDER(Some(_)) => {
-                        Self::from(interpreter::Error::from(signature::Error::SigDER(None)))
-                    }
-                    signature::Error::SigHighS => Self::AMBIGUOUS_UNKNOWN_NUM_HIGHS,
-                    _ => self.clone(),
-                },
-                interpreter::Error::PushSize(Some(_)) => {
-                    Self::from(interpreter::Error::PushSize(None))
-                }
-                interpreter::Error::StackSize(Some(_)) => {
-                    Self::from(interpreter::Error::StackSize(None))
-                }
-                interpreter::Error::SigCount(Some(_)) => {
-                    Self::from(interpreter::Error::SigCount(None))
-                }
-                interpreter::Error::PubKeyCount(Some(_)) => {
-                    Self::from(interpreter::Error::PubKeyCount(None))
-                }
-                interpreter::Error::BadOpcode(Some(_)) => {
-                    Self::from(interpreter::Error::BadOpcode(None))
+                interpreter::Error::SignatureEncoding(signature::Error::SigHighS) => {
+                    Self::AMBIGUOUS_UNKNOWN_NUM_HIGHS
                 }
                 interpreter::Error::Num(_) => Self::AMBIGUOUS_UNKNOWN_NUM_HIGHS,
-                _ => self.clone(),
+                interpreter::Error::Verify => self.clone(),
+                _ => Self::Interpreter(None, ierr.normalize()),
             },
-            Self::ScriptSize(Some(_)) => Self::ScriptSize(None),
+            Self::UnclosedConditional(_) => {
+                Self::Interpreter(None, interpreter::Error::UnbalancedConditional)
+            }
             _ => self.clone(),
         }
     }
@@ -119,12 +105,6 @@ impl Error {
 impl From<opcode::Error> for Error {
     fn from(value: opcode::Error) -> Self {
         Error::Opcode(value)
-    }
-}
-
-impl From<interpreter::Error> for Error {
-    fn from(value: interpreter::Error) -> Self {
-        Error::Interpreter(value)
     }
 }
 
