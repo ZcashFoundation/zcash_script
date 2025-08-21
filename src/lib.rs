@@ -13,7 +13,7 @@ pub mod interpreter;
 pub mod op;
 pub mod pattern;
 pub mod pv;
-mod script;
+pub mod script;
 pub mod script_error;
 pub mod signature;
 mod zcash_script;
