@@ -117,91 +117,114 @@ impl From<cxx::ScriptError> for Error {
                 Self::from(script::Error::AMBIGUOUS_UNKNOWN_NUM_HIGHS)
             }
             cxx::ScriptError_t_SCRIPT_ERR_EVAL_FALSE => Self::from(script::Error::EvalFalse),
-            cxx::ScriptError_t_SCRIPT_ERR_OP_RETURN => {
-                Self::from(script::Error::from(interpreter::Error::OpReturn))
-            }
+            cxx::ScriptError_t_SCRIPT_ERR_OP_RETURN => Self::from(script::Error::Interpreter(
+                None,
+                interpreter::Error::OpReturn,
+            )),
 
             cxx::ScriptError_t_SCRIPT_ERR_SCRIPT_SIZE => {
                 Self::from(script::Error::ScriptSize(None))
             }
-            cxx::ScriptError_t_SCRIPT_ERR_PUSH_SIZE => {
-                Self::from(script::Error::from(interpreter::Error::PushSize(None)))
-            }
-            cxx::ScriptError_t_SCRIPT_ERR_OP_COUNT => {
-                Self::from(script::Error::from(interpreter::Error::OpCount))
-            }
-            cxx::ScriptError_t_SCRIPT_ERR_STACK_SIZE => {
-                Self::from(script::Error::from(interpreter::Error::StackSize(None)))
-            }
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_COUNT => {
-                Self::from(script::Error::from(interpreter::Error::SigCount(None)))
-            }
-            cxx::ScriptError_t_SCRIPT_ERR_PUBKEY_COUNT => {
-                Self::from(script::Error::from(interpreter::Error::PubKeyCount(None)))
-            }
+            cxx::ScriptError_t_SCRIPT_ERR_PUSH_SIZE => Self::from(script::Error::Interpreter(
+                None,
+                interpreter::Error::PushSize(None),
+            )),
+            cxx::ScriptError_t_SCRIPT_ERR_OP_COUNT => Self::from(script::Error::Interpreter(
+                None,
+                interpreter::Error::OpCount,
+            )),
+            cxx::ScriptError_t_SCRIPT_ERR_STACK_SIZE => Self::from(script::Error::Interpreter(
+                None,
+                interpreter::Error::StackSize(None),
+            )),
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_COUNT => Self::from(script::Error::Interpreter(
+                None,
+                interpreter::Error::SigCount(None),
+            )),
+            cxx::ScriptError_t_SCRIPT_ERR_PUBKEY_COUNT => Self::from(script::Error::Interpreter(
+                None,
+                interpreter::Error::PubKeyCount(None),
+            )),
 
-            cxx::ScriptError_t_SCRIPT_ERR_VERIFY => {
-                Self::from(script::Error::from(interpreter::Error::Verify))
-            }
-            cxx::ScriptError_t_SCRIPT_ERR_EQUALVERIFY => {
-                Self::from(script::Error::from(interpreter::Error::EqualVerify))
-            }
+            cxx::ScriptError_t_SCRIPT_ERR_VERIFY => Self::from(script::Error::Interpreter(
+                Some(opcode::PossiblyBad::from(op::VERIFY)),
+                interpreter::Error::Verify,
+            )),
+            cxx::ScriptError_t_SCRIPT_ERR_EQUALVERIFY => Self::from(script::Error::Interpreter(
+                Some(opcode::PossiblyBad::from(op::EQUALVERIFY)),
+                interpreter::Error::EqualVerify,
+            )),
             cxx::ScriptError_t_SCRIPT_ERR_CHECKMULTISIGVERIFY => {
-                Self::from(script::Error::from(interpreter::Error::CheckMultisigVerify))
+                Self::from(script::Error::Interpreter(
+                    Some(opcode::PossiblyBad::from(op::CHECKMULTISIGVERIFY)),
+                    interpreter::Error::CheckMultisigVerify,
+                ))
             }
-            cxx::ScriptError_t_SCRIPT_ERR_CHECKSIGVERIFY => {
-                Self::from(script::Error::from(interpreter::Error::CheckSigVerify))
-            }
-            cxx::ScriptError_t_SCRIPT_ERR_NUMEQUALVERIFY => {
-                Self::from(script::Error::from(interpreter::Error::NumEqualVerify))
-            }
+            cxx::ScriptError_t_SCRIPT_ERR_CHECKSIGVERIFY => Self::from(script::Error::Interpreter(
+                Some(opcode::PossiblyBad::from(op::CHECKSIGVERIFY)),
+                interpreter::Error::CheckSigVerify,
+            )),
+            cxx::ScriptError_t_SCRIPT_ERR_NUMEQUALVERIFY => Self::from(script::Error::Interpreter(
+                Some(opcode::PossiblyBad::from(op::NUMEQUALVERIFY)),
+                interpreter::Error::NumEqualVerify,
+            )),
 
-            cxx::ScriptError_t_SCRIPT_ERR_BAD_OPCODE => {
-                Self::from(script::Error::from(interpreter::Error::BadOpcode(None)))
-            }
+            cxx::ScriptError_t_SCRIPT_ERR_BAD_OPCODE => Self::from(script::Error::Interpreter(
+                None,
+                interpreter::Error::BadOpcode,
+            )),
             cxx::ScriptError_t_SCRIPT_ERR_DISABLED_OPCODE => {
                 Self::from(script::Error::from(opcode::Error::Disabled(None)))
             }
             cxx::ScriptError_t_SCRIPT_ERR_INVALID_STACK_OPERATION => Self::from(
-                script::Error::from(interpreter::Error::InvalidStackOperation(None)),
+                script::Error::Interpreter(None, interpreter::Error::InvalidStackOperation(None)),
             ),
-            cxx::ScriptError_t_SCRIPT_ERR_INVALID_ALTSTACK_OPERATION => Self::from(
-                script::Error::from(interpreter::Error::InvalidAltstackOperation(None)),
-            ),
+            cxx::ScriptError_t_SCRIPT_ERR_INVALID_ALTSTACK_OPERATION => {
+                Self::from(script::Error::Interpreter(
+                    None,
+                    interpreter::Error::InvalidAltstackOperation(None),
+                ))
+            }
             cxx::ScriptError_t_SCRIPT_ERR_UNBALANCED_CONDITIONAL => Self::from(
-                script::Error::from(interpreter::Error::UnbalancedConditional),
+                script::Error::Interpreter(None, interpreter::Error::UnbalancedConditional),
             ),
 
-            cxx::ScriptError_t_SCRIPT_ERR_NEGATIVE_LOCKTIME => {
-                Self::from(script::Error::from(interpreter::Error::NegativeLockTime))
-            }
-            cxx::ScriptError_t_SCRIPT_ERR_UNSATISFIED_LOCKTIME => {
-                Self::from(script::Error::from(interpreter::Error::UnsatisfiedLockTime))
-            }
+            cxx::ScriptError_t_SCRIPT_ERR_NEGATIVE_LOCKTIME => Self::from(
+                script::Error::Interpreter(None, interpreter::Error::NegativeLockTime),
+            ),
+            cxx::ScriptError_t_SCRIPT_ERR_UNSATISFIED_LOCKTIME => Self::from(
+                script::Error::Interpreter(None, interpreter::Error::UnsatisfiedLockTime),
+            ),
 
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_HASHTYPE => Self::from(script::Error::from(
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_HASHTYPE => Self::from(script::Error::Interpreter(
+                None,
                 interpreter::Error::from(signature::Error::SigHashType(None)),
             )),
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_DER => Self::from(script::Error::from(
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_DER => Self::from(script::Error::Interpreter(
+                None,
                 interpreter::Error::from(signature::Error::SigDER(None)),
             )),
-            cxx::ScriptError_t_SCRIPT_ERR_MINIMALDATA => {
-                Self::from(script::Error::from(interpreter::Error::MinimalData))
-            }
+            cxx::ScriptError_t_SCRIPT_ERR_MINIMALDATA => Self::from(script::Error::Interpreter(
+                None,
+                interpreter::Error::MinimalData,
+            )),
             cxx::ScriptError_t_SCRIPT_ERR_SIG_PUSHONLY => Self::from(script::Error::SigPushOnly),
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_HIGH_S => Self::from(script::Error::from(
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_HIGH_S => Self::from(script::Error::Interpreter(
+                None,
                 interpreter::Error::from(signature::Error::SigHighS),
             )),
-            cxx::ScriptError_t_SCRIPT_ERR_SIG_NULLDUMMY => {
-                Self::from(script::Error::from(interpreter::Error::SigNullDummy))
-            }
-            cxx::ScriptError_t_SCRIPT_ERR_PUBKEYTYPE => {
-                Self::from(script::Error::from(interpreter::Error::PubKeyType))
-            }
+            cxx::ScriptError_t_SCRIPT_ERR_SIG_NULLDUMMY => Self::from(script::Error::Interpreter(
+                None,
+                interpreter::Error::SigNullDummy,
+            )),
+            cxx::ScriptError_t_SCRIPT_ERR_PUBKEYTYPE => Self::from(script::Error::Interpreter(
+                None,
+                interpreter::Error::PubKeyType,
+            )),
             cxx::ScriptError_t_SCRIPT_ERR_CLEANSTACK => Self::from(script::Error::CleanStack),
 
             cxx::ScriptError_t_SCRIPT_ERR_DISCOURAGE_UPGRADABLE_NOPS => Self::from(
-                script::Error::from(interpreter::Error::DiscourageUpgradableNOPs),
+                script::Error::Interpreter(None, interpreter::Error::DiscourageUpgradableNOPs),
             ),
 
             cxx::ScriptError_t_SCRIPT_ERR_VERIFY_SCRIPT => Self::CaughtException,
