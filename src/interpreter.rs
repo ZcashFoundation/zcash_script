@@ -71,9 +71,6 @@ pub enum Error {
     #[error("{}", .0.map_or("invalid stack operation encountered", |(elem, max)| "tried to retrieve element {elem} from a stack with {max} elements"))]
     InvalidStackOperation(Option<(usize, usize)>),
 
-    #[error("{}", .0.map_or("invalid altstack operation encountered", |(elem, max)| "tried to retrieve element {elem} from an altstack with {max} elements"))]
-    InvalidAltstackOperation(Option<(usize, usize)>),
-
     #[error("unbalanced conditional encountered")]
     UnbalancedConditional,
 
@@ -111,7 +108,6 @@ impl Error {
     pub fn normalize(&self) -> Self {
         match self {
             Self::InvalidStackOperation(Some(_)) => Self::InvalidStackOperation(None),
-            Self::InvalidAltstackOperation(Some(_)) => Self::InvalidAltstackOperation(None),
             Self::SignatureEncoding(sig_err) => match sig_err {
                 signature::Error::SigHashType(Some(_)) => {
                     Self::from(signature::Error::SigHashType(None))
@@ -819,10 +815,7 @@ fn eval_operation(
         //
         OP_TOALTSTACK => altstack.push(stack.pop()?),
 
-        OP_FROMALTSTACK => stack.push(altstack.pop().map_err(|e| match e {
-            Error::InvalidStackOperation(v) => Error::InvalidAltstackOperation(v),
-            e => e,
-        })?),
+        OP_FROMALTSTACK => stack.push(altstack.pop()?),
 
         OP_2DROP => {
             stack.rremove(1).and_then(|_| stack.pop())?;

@@ -7497,7 +7497,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[N(1), O(TOALTSTACK)],
             script_pubkey: &[O(FROMALTSTACK), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(FROMALTSTACK)), interpreter::Error::InvalidAltstackOperation(Some((0, 0))))),
+            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(FROMALTSTACK)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[O(IFDUP)],
@@ -9071,7 +9071,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[N(1)],
             script_pubkey: &[O(FROMALTSTACK)],
             flags: DEFAULT_FLAGS,
-            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(FROMALTSTACK)), interpreter::Error::InvalidAltstackOperation(Some((0, 0))))),
+            result: err(script::Error::Interpreter(Some(opcode::PossiblyBad::from(FROMALTSTACK)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
         },
         TestVector {
             script_sig: &[N(1)],

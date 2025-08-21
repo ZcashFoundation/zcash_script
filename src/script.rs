@@ -85,6 +85,13 @@ impl Error {
                 Some(opcode::PossiblyBad::Good(op::IF | op::NOTIF)),
                 interpreter::Error::InvalidStackOperation(_),
             ) => Self::Interpreter(None, interpreter::Error::UnbalancedConditional),
+            Self::Interpreter(
+                Some(opcode::PossiblyBad::Good(op::FROMALTSTACK)),
+                interpreter::Error::InvalidStackOperation(_),
+            ) => Self::Interpreter(
+                Some(opcode::PossiblyBad::Good(op::FROMALTSTACK)),
+                interpreter::Error::InvalidStackOperation(None),
+            ),
             Self::Interpreter(_, ierr) => match ierr {
                 interpreter::Error::OpCount => Self::AMBIGUOUS_COUNT_DISABLED,
                 interpreter::Error::SignatureEncoding(signature::Error::SigHighS) => {
