@@ -222,7 +222,7 @@ impl<T> Stack<T> {
     }
 
     /// Removes an element from the stack, counting from the right.
-    pub fn rremove(&mut self, start: usize) -> Result<T, ScriptError> {
+    fn rremove(&mut self, start: usize) -> Result<T, ScriptError> {
         self.rindex(start).map(|rstart| self.0.remove(rstart))
     }
 
@@ -236,7 +236,7 @@ impl<T> Stack<T> {
 
 impl<T: Clone> Stack<T> {
     /// Returns the last element of the stack as well as the remainder of the stack.
-    pub fn split_last(&self) -> Result<(&T, Stack<T>), ScriptError> {
+    fn split_last(&self) -> Result<(&T, Stack<T>), ScriptError> {
         self.0
             .split_last()
             .ok_or(ScriptError::InvalidStackOperation(Some((0, self.0.len()))))

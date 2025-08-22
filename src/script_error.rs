@@ -51,12 +51,18 @@ pub enum ScriptError {
     )]
     StackSize(Option<TryFromIntError>),
 
-    #[error("signature count wasn’t in the range [1, {}]{}",
-            interpreter::MAX_PUBKEY_COUNT,
-            .0.map_or("", |e| ": {e}"),    )]
+    #[error(
+        "signature count wasn’t in the range 1..={}{}",
+        interpreter::MAX_PUBKEY_COUNT,
+        .0.map_or("", |e| ": {e}")
+    )]
     SigCount(Option<TryFromIntError>),
 
-    #[error("public key count wasn’t in the range [1, {}]{}", interpreter::MAX_PUBKEY_COUNT, .0.map_or("", |e| ": {e}"))]
+    #[error(
+        "public key count wasn’t in the range 1..={}{}",
+        interpreter::MAX_PUBKEY_COUNT,
+        .0.map_or("", |e| ": {e}")
+    )]
     PubKeyCount(Option<TryFromIntError>),
 
     // Failed verify operations
