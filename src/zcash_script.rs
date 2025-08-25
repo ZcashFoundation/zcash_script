@@ -1,14 +1,10 @@
-use std::num::TryFromIntError;
-
 use thiserror::Error;
 
 use crate::{
     interpreter::{
         verify_script, DefaultStepEvaluator, SignatureChecker, State, StepFn, VerificationFlags,
     },
-    script::Script,
-    script_error::ScriptError,
-    signature,
+    script,
 };
 
 /// This extends `ScriptError` with cases that can only occur when using the C++ implementation.
@@ -16,15 +12,11 @@ use crate::{
 pub enum Error {
     /// An error that could occur in any implementation has occurred.
     #[error("{0}")]
-    Script(ScriptError),
+    Script(script::Error),
 
     /// An exception was caught during C++ verification.
     #[error("caught exception during verification")]
     CaughtException,
-
-    /// The script size can’t fit in a `u32`, as required by the C++ code.
-    #[error("invalid script size: {0}")]
-    InvalidScriptSize(TryFromIntError),
 
     /// Some other failure value recovered from C++.
     ///
@@ -34,14 +26,32 @@ pub enum Error {
     Unknown(i64),
 }
 
+impl Error {
+    /// Convert errors that don’t exist in the C++ code into the cases that do.
+    pub fn normalize(&self) -> Self {
+        match self {
+            Error::Script(serr) => Error::Script(serr.normalize()),
+            _ => self.clone(),
+        }
+    }
+}
+
+impl From<script::Error> for Error {
+    fn from(value: script::Error) -> Self {
+        Error::Script(value)
+    }
+}
+
+/// A verification error annotated with the script component it occurred in.
+pub type AnnError = (Option<script::ComponentType>, Error);
+
 /// The external API of zcash_script. This is defined to make it possible to compare the C++ and
 /// Rust implementations.
 pub trait ZcashScript {
-    /// Returns `Ok(())` if the a transparent input correctly spends the matching output
-    ///  under the additional constraints specified by `flags`. This function
-    ///  receives only the required information to validate the spend and not
-    ///  the transaction itself. In particular, the sighash for the spend
-    ///  is obtained using a callback function.
+    /// Returns `Ok(true)` if the a transparent input correctly spends the matching output under the
+    /// additional constraints specified by `flags`. This function receives only the required
+    /// information to validate the spend and not the transaction itself. In particular, the sighash
+    /// for the spend is obtained using a callback function.
     ///
     ///  - sighash: a callback function which is called to obtain the sighash.
     ///  - lock_time: the lock time of the transaction being validated.
@@ -54,36 +64,13 @@ pub trait ZcashScript {
     ///  Note that script verification failure is indicated by `Err(Error::Script)`.
     fn verify_callback(
         &self,
-        script_pub_key: &[u8],
-        script_sig: &[u8],
+        script: &script::Raw,
         flags: VerificationFlags,
-    ) -> Result<(), Error>;
+    ) -> Result<bool, AnnError>;
 
     /// Returns the number of transparent signature operations in the input or
     /// output script pointed to by script.
-    fn legacy_sigop_count_script(&self, script: &[u8]) -> Result<u32, Error>;
-}
-
-// NB: This is extracted from [StepwiseInterpreter::verify_callback] to be used in tests. The public
-//     API gives no access to the payload.
-fn stepwise_verify<F>(
-    script_pub_key: &[u8],
-    script_sig: &[u8],
-    flags: VerificationFlags,
-    payload: &mut F::Payload,
-    stepper: &F,
-) -> Result<(), Error>
-where
-    F: StepFn,
-{
-    verify_script(
-        &Script(script_sig),
-        &Script(script_pub_key),
-        flags,
-        payload,
-        stepper,
-    )
-    .map_err(Error::Script)
+    fn legacy_sigop_count_script(&self, script: &script::Code) -> Result<u32, Error>;
 }
 
 /// A payload for comparing the results of two steppers.
@@ -96,7 +83,7 @@ pub struct StepResults<T, U> {
     /// If the execution matched the entire way, then this contains `None`. If there was a
     /// divergence, then this contains `Some` with a pair of `Result`s – one representing each
     /// stepper’s outcome at the point at which they diverged.
-    diverging_result: Option<(Result<State, ScriptError>, Result<State, ScriptError>)>,
+    diverging_result: Option<(Result<State, script::Error>, Result<State, script::Error>)>,
     /// The final payload of the first stepper.
     payload_l: T,
     /// The final payload of the second stepper.
@@ -104,6 +91,8 @@ pub struct StepResults<T, U> {
 }
 
 impl<T, U> StepResults<T, U> {
+    /// Creates an empty `StepResults` given an initial payload for each of the `StepFn`s that will
+    /// be compared.
     pub fn initial(payload_l: T, payload_r: U) -> Self {
         StepResults {
             identical_states: vec![],
@@ -111,41 +100,6 @@ impl<T, U> StepResults<T, U> {
             payload_l,
             payload_r,
         }
-    }
-}
-
-/// This case is only generated in comparisons. It merges the `interpreter::Error::OpCount` case
-/// with the `opcode::Error::DisabledOpcode` case. This is because there is an edge case when there
-/// is a disabled opcode as the `MAX_OP_COUNT + 1` operation (not opcode) in a script. In this case,
-/// the C++ implementation checks the op_count first, while the Rust implementation fails on
-/// disabled opcodes as soon as they’re read (since the script is guaranteed to fail if they occur,
-/// even in an inactive branch). To allow comparison tests to pass (especially property & fuzz
-/// tests), we need these two failure cases to be seen as identical.
-pub const AMBIGUOUS_COUNT_DISABLED_ERROR: ScriptError =
-    ScriptError::ExternalError("ambiguous OpCount or DisabledOpcode error");
-
-/// This case is only generated in comparisons. It merges `ScriptError::ScriptNumError` and
-/// `ScriptError::SigHighS`, which can only come from the Rust implementation, with
-/// `ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR`, which can only come from the C++ implementation, but
-/// in at least all of the cases that either of the Rust error cases would happen.
-pub const AMBIGUOUS_UNKNOWN_NUM_HIGHS_ERROR: ScriptError =
-    ScriptError::ExternalError("ambiguous Unknown, or ScriptNum, or HighS error");
-
-/// Convert errors that don’t exist in the C++ code into the cases that do.
-pub fn normalize_error(err: ScriptError) -> ScriptError {
-    match err {
-        ScriptError::OpCount => AMBIGUOUS_COUNT_DISABLED_ERROR,
-        ScriptError::BadOpcode(Some(_)) => ScriptError::BadOpcode(None),
-        ScriptError::DisabledOpcode(_) => AMBIGUOUS_COUNT_DISABLED_ERROR,
-        ScriptError::SignatureEncoding(sig_err) => match sig_err {
-            signature::Error::SigHashType(Some(_)) => signature::Error::SigHashType(None).into(),
-            signature::Error::SigDER(Some(_)) => signature::Error::SigDER(None).into(),
-            signature::Error::SigHighS => AMBIGUOUS_UNKNOWN_NUM_HIGHS_ERROR,
-            _ => sig_err.into(),
-        },
-        ScriptError::ReadError { .. } => ScriptError::BadOpcode(None),
-        ScriptError::ScriptNumError(_) => AMBIGUOUS_UNKNOWN_NUM_HIGHS_ERROR,
-        _ => err,
     }
 }
 
@@ -157,19 +111,24 @@ pub fn normalize_error(err: ScriptError) -> ScriptError {
 ///
 /// This returns a very debuggable result. See `StepResults` for details.
 pub struct ComparisonStepEvaluator<'a, T, U> {
+    /// One of the two `StepFn`s to be compared. The one difference is that in the case where both
+    /// `StepFn`s fail, but with different errors, _this_ is the error that will be returned for the
+    /// script.
     pub eval_step_l: &'a dyn StepFn<Payload = T>,
+    /// One of the two `StepFn`s to be compared. The one difference is that in the case where both
+    /// `StepFn`s fail, but with different errors, _this_ error will be discarded.
     pub eval_step_r: &'a dyn StepFn<Payload = U>,
 }
 
-impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
+impl<T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'_, T, U> {
     type Payload = StepResults<T, U>;
     fn call<'b>(
         &self,
         pc: &'b [u8],
-        script: &Script,
+        script: &script::Code,
         state: &mut State,
         payload: &mut StepResults<T, U>,
-    ) -> Result<&'b [u8], ScriptError> {
+    ) -> Result<&'b [u8], script::Error> {
         let mut right_state = (*state).clone();
         let left = self
             .eval_step_l
@@ -188,7 +147,7 @@ impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
                     // anything
                     payload.diverging_result =
                         Some((l.map(|_| state.clone()), r.map(|_| right_state.clone())));
-                    Err(ScriptError::ExternalError("mismatched step results"))
+                    Err(script::Error::ExternalError("mismatched step results"))
                 }
             }
             // at least one is `Err`
@@ -205,6 +164,9 @@ impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
     }
 }
 
+/// This is used for any interpreter that is based on a `StepFn`.
+///
+/// The original C++ interpreter is _not_ a `StepwiseInterpreter`, but the pure Rust one is.
 pub struct StepwiseInterpreter<F>
 where
     F: StepFn,
@@ -214,6 +176,7 @@ where
 }
 
 impl<F: StepFn> StepwiseInterpreter<F> {
+    /// Creates a new interpreter from a `StepFn` and an initial payload.
     pub fn new(initial_payload: F::Payload, stepper: F) -> Self {
         StepwiseInterpreter {
             initial_payload,
@@ -222,6 +185,7 @@ impl<F: StepFn> StepwiseInterpreter<F> {
     }
 }
 
+/// This is the pure Rust interpreter, which doesn’t use the FFI.
 pub fn rust_interpreter<C: SignatureChecker + Copy>(
     flags: VerificationFlags,
     checker: C,
@@ -232,25 +196,18 @@ pub fn rust_interpreter<C: SignatureChecker + Copy>(
 impl<F: StepFn> ZcashScript for StepwiseInterpreter<F> {
     /// Returns the number of transparent signature operations in the
     /// transparent inputs and outputs of this transaction.
-    fn legacy_sigop_count_script(&self, script: &[u8]) -> Result<u32, Error> {
-        let cscript = Script(script);
-        Ok(cscript.get_sig_op_count(false))
+    fn legacy_sigop_count_script(&self, script: &script::Code) -> Result<u32, Error> {
+        Ok(script.get_sig_op_count(false))
     }
 
     fn verify_callback(
         &self,
-        script_pub_key: &[u8],
-        script_sig: &[u8],
+        script: &script::Raw,
         flags: VerificationFlags,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, AnnError> {
         let mut payload = self.initial_payload.clone();
-        stepwise_verify(
-            script_pub_key,
-            script_sig,
-            flags,
-            &mut payload,
-            &self.stepper,
-        )
+        verify_script(script, flags, &mut payload, &self.stepper)
+            .map_err(|(t, e)| (Some(t), Error::Script(e)))
     }
 }
 
@@ -258,15 +215,16 @@ impl<F: StepFn> ZcashScript for StepwiseInterpreter<F> {
 mod tests {
     use proptest::prelude::{prop, proptest, ProptestConfig};
 
-    use super::{stepwise_verify, ComparisonStepEvaluator, Error, StepResults};
+    use super::{ComparisonStepEvaluator, StepResults};
     use crate::{
         interpreter::{
-            CallbackTransactionSignatureChecker, DefaultStepEvaluator, VerificationFlags,
+            verify_script, CallbackTransactionSignatureChecker, DefaultStepEvaluator,
+            VerificationFlags,
         },
-        script_error::ScriptError,
+        opcode, script,
         testing::{
             invalid_sighash, missing_sighash, repair_flags, sighash, BrokenStepEvaluator,
-            OVERFLOW_SCRIPT_SIZE, SCRIPT_PUBKEY, SCRIPT_SIG,
+            OVERFLOW_SCRIPT_SIZE, SCRIPT,
         },
     };
 
@@ -274,8 +232,6 @@ mod tests {
     fn it_works() {
         let n_lock_time: u32 = 2410374;
         let is_final: bool = true;
-        let script_pub_key = &SCRIPT_PUBKEY;
-        let script_sig = &SCRIPT_SIG;
         let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
 
         let checker = CallbackTransactionSignatureChecker {
@@ -289,20 +245,18 @@ mod tests {
             eval_step_r: &rust_stepper,
         };
         let mut res = StepResults::initial((), ());
-        let ret = stepwise_verify(script_pub_key, script_sig, flags, &mut res, &stepper);
+        let ret = verify_script(&SCRIPT, flags, &mut res, &stepper);
 
         if res.diverging_result.is_some() {
             panic!("invalid result: {res:?}");
         }
-        assert_eq!(ret, Ok(()));
+        assert_eq!(ret, Ok(true));
     }
 
     #[test]
     fn broken_stepper_causes_divergence() {
         let n_lock_time: u32 = 2410374;
         let is_final: bool = true;
-        let script_pub_key = &SCRIPT_PUBKEY;
-        let script_sig = &SCRIPT_SIG;
         let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
 
         let checker = CallbackTransactionSignatureChecker {
@@ -317,15 +271,18 @@ mod tests {
             eval_step_r: &broken_stepper,
         };
         let mut res = StepResults::initial((), ());
-        let ret = stepwise_verify(script_pub_key, script_sig, flags, &mut res, &stepper);
+        let ret = verify_script(&SCRIPT, flags, &mut res, &stepper);
 
         // The final return value is from whichever stepper failed.
         assert_eq!(
             ret,
-            Err(Error::Script(ScriptError::ReadError {
-                expected_bytes: 1,
-                available_bytes: 0,
-            }))
+            Err((
+                script::ComponentType::PubKey,
+                script::Error::from(opcode::Error::ReadError {
+                    expected_bytes: 1,
+                    available_bytes: 0,
+                })
+            ))
         );
 
         // `State`s are large, so we just check that there was some progress in lock step, and a
@@ -336,10 +293,10 @@ mod tests {
                 diverging_result:
                     Some((
                         Ok(state),
-                        Err(ScriptError::ReadError {
+                        Err(script::Error::Opcode(opcode::Error::ReadError {
                             expected_bytes: 1,
                             available_bytes: 0,
-                        }),
+                        })),
                     )),
                 payload_l: (),
                 payload_r: (),
@@ -360,8 +317,6 @@ mod tests {
     fn it_fails_on_invalid_sighash() {
         let n_lock_time: u32 = 2410374;
         let is_final: bool = true;
-        let script_pub_key = &SCRIPT_PUBKEY;
-        let script_sig = &SCRIPT_SIG;
         let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
 
         let checker = CallbackTransactionSignatureChecker {
@@ -375,20 +330,18 @@ mod tests {
             eval_step_r: &rust_stepper,
         };
         let mut res = StepResults::initial((), ());
-        let ret = stepwise_verify(script_pub_key, script_sig, flags, &mut res, &stepper);
+        let ret = verify_script(&SCRIPT, flags, &mut res, &stepper);
 
         if res.diverging_result.is_some() {
             panic!("mismatched result: {res:?}");
         }
-        assert_eq!(ret, Err(Error::Script(ScriptError::EvalFalse)));
+        assert_eq!(ret, Ok(false));
     }
 
     #[test]
     fn it_fails_on_missing_sighash() {
         let n_lock_time: u32 = 2410374;
         let is_final: bool = true;
-        let script_pub_key = &SCRIPT_PUBKEY;
-        let script_sig = &SCRIPT_SIG;
         let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
 
         let checker = CallbackTransactionSignatureChecker {
@@ -402,12 +355,12 @@ mod tests {
             eval_step_r: &rust_stepper,
         };
         let mut res = StepResults::initial((), ());
-        let ret = stepwise_verify(script_pub_key, script_sig, flags, &mut res, &stepper);
+        let ret = verify_script(&SCRIPT, flags, &mut res, &stepper);
 
         if res.diverging_result.is_some() {
             panic!("mismatched result: {res:?}");
         }
-        assert_eq!(ret, Err(Error::Script(ScriptError::EvalFalse)));
+        assert_eq!(ret, Ok(false));
     }
 
     proptest! {
@@ -437,7 +390,12 @@ mod tests {
             eval_step_r: &rust_stepper,
         };
             let mut res = StepResults::initial((), ());
-            let _ = stepwise_verify(&pub_key[..], &sig[..], flags, &mut res, &stepper);
+            let _ = verify_script(
+                &script::Raw::from_raw_parts(&sig, &pub_key),
+                flags,
+                &mut res,
+                &stepper
+            );
 
             if res.diverging_result.is_some() {
                 panic!("mismatched result: {res:?}");
@@ -467,7 +425,12 @@ mod tests {
             eval_step_r: &rust_stepper,
         };
             let mut res = StepResults::initial((), ());
-            let _ = stepwise_verify(&pub_key[..], &sig[..], flags, &mut res, &stepper);
+            let _ = verify_script(
+                &script::Raw::from_raw_parts(&sig, &pub_key),
+                flags,
+                &mut res,
+                &stepper
+            );
 
             if res.diverging_result.is_some() {
                 panic!("mismatched result: {res:?}");

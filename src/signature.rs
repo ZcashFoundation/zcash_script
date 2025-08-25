@@ -20,6 +20,8 @@ pub enum InvalidHashType {
     ExtraBitsSet(i32),
 }
 
+/// Any error that can happen during signature decoding.
+#[allow(missing_docs)]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Error)]
 pub enum InvalidDerInteger {
     #[error("missing the 0x02 integer encoding byte")]
@@ -34,6 +36,8 @@ pub enum InvalidDerInteger {
     Negative,
 }
 
+/// Errors that occur during decoding of a DER signature.
+#[allow(missing_docs)]
 #[derive(Clone, PartialEq, Eq, Debug, Error)]
 pub enum InvalidDerEncoding {
     #[error("didn’t start with 0x30, or was missing the length")]
@@ -53,6 +57,8 @@ pub enum InvalidDerEncoding {
     },
 }
 
+/// Errors that occur when parsing signatures.
+#[allow(missing_docs)]
 #[derive(Clone, PartialEq, Eq, Debug, Error)]
 pub enum Error {
     // BIP62
@@ -79,6 +85,18 @@ pub enum Error {
 
     #[error("signature s value is too high")]
     SigHighS,
+}
+
+impl From<InvalidHashType> for Error {
+    fn from(value: InvalidHashType) -> Self {
+        Self::SigHashType(Some(value))
+    }
+}
+
+impl From<InvalidDerEncoding> for Error {
+    fn from(value: InvalidDerEncoding) -> Self {
+        Self::SigDER(Some(value))
+    }
 }
 
 /// The ways in which a transparent input may commit to the transparent outputs of its
@@ -144,6 +162,7 @@ impl HashType {
         }
     }
 
+    /// See [SignedOutputs].
     pub fn signed_outputs(&self) -> SignedOutputs {
         self.signed_outputs
     }
@@ -324,10 +343,12 @@ impl Decoded {
         }
     }
 
+    /// The ECDSA signature.
     pub fn sig(&self) -> &ecdsa::Signature {
         &self.sig
     }
 
+    /// The hash type used to inform signature validation.
     pub fn sighash_type(&self) -> &HashType {
         &self.hash_type
     }
