@@ -54,13 +54,19 @@ impl Entry {
     }
 }
 
+/// This holds an expected result, because some results are difficult to construct manually.
 #[derive(Clone, Debug)]
 pub enum ResultCmp {
+    /// The exact result that should be returned.
     Original(Result<(), ScriptError>),
+    /// The normalized form of an error result, for errors that are difficult to construct manually.
+    /// This discards the info that the C++ implementation can’t contain, which includes any
+    /// complicated error context.
     Normalized(ScriptError),
 }
 
 impl ResultCmp {
+    /// Return the normalized form of the expected result.
     pub fn normalized(self) -> Result<(), ScriptError> {
         match self {
             ResultCmp::Original(res) => res.map_err(|e| e.normalize()),
@@ -69,11 +75,13 @@ impl ResultCmp {
     }
 }
 
+/// A single test case.
 #[derive(Debug)]
 pub struct TestVector {
     script_sig: &'static [Entry],
     script_pubkey: &'static [Entry],
-    pub flags: VerificationFlags,
+    flags: VerificationFlags,
+    /// The expected result of the test.
     pub result: ResultCmp,
 }
 
@@ -133,10 +141,12 @@ const EMPTY_FLAGS: VerificationFlags = VerificationFlags::empty();
 
 use Entry::*;
 
-// It is evaluated as if there was a crediting coinbase transaction with two 0 pushes as scriptSig,
-// and one output of 0 satoshi and given scriptPubKey, followed by a spending transaction which
-// spends this output as only input (and correct prevout hash), using the given scriptSig. All
-// nLockTimes are 0, all nSequences are max.
+/// The entire test suite.
+///
+/// Each case is evaluated as if there was a crediting coinbase transaction with two 0 pushes as
+/// scriptSig, and one output of 0 satoshi and given scriptPubKey, followed by a spending
+/// transaction which spends this output as only input (and correct prevout hash), using the given
+/// scriptSig. All nLockTimes are 0, all nSequences are max.
 pub fn test_vectors() -> Vec<TestVector> {
     vec![
         // Test the test: we should have an empty stack after scriptSig evaluation

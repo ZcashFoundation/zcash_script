@@ -475,6 +475,12 @@ pub mod testing {
         None
     }
 
+    /// Run a single test case against some function.
+    ///
+    /// `try_normalized_error` indicates whether the results should be normalized before being
+    /// compared. In particular, the C++ implementation doesn’t carry much failure information, so
+    /// the results need to be normalized to discard the corresponding information from the expected
+    /// results.
     pub fn run_test_vector(
         tv: &TestVector,
         try_normalized_error: bool,
