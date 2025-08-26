@@ -196,19 +196,18 @@ impl Code<'_> {
     ) -> Result<interpreter::Stack<Vec<u8>>, Error> {
         // There's a limit on how large scripts can be.
         if self.0.len() <= Code::MAX_SIZE {
-            let mut state = interpreter::State::initial(stack);
             self.parse()
-                .try_for_each(|mpb| {
+                .try_fold(interpreter::State::initial(stack), |state, mpb| {
                     mpb.map_err(Error::Opcode).and_then(|opcode| {
-                        interpreter::eval_possibly_bad(&opcode, self, flags, checker, &mut state)
+                        interpreter::eval_possibly_bad(&opcode, self, flags, checker, state)
                             .map_err(|e| Error::Interpreter(Some(opcode), e))
                     })
                 })
-                .and_then(|()| {
-                    if !state.vexec().is_empty() {
-                        Err(Error::UnclosedConditional(state.vexec().len()))
+                .and_then(|final_state| {
+                    if !final_state.vexec().is_empty() {
+                        Err(Error::UnclosedConditional(final_state.vexec().len()))
                     } else {
-                        Ok(state.stack().clone())
+                        Ok(final_state.stack)
                     }
                 })
         } else {
