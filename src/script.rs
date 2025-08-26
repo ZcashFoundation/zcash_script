@@ -161,7 +161,7 @@ impl Code<'_> {
     /// but not for scripts that are read from the chain, because it may fail on valid scripts.
     pub fn parse_strict<'a>(
         &'a self,
-        flags: &'a interpreter::VerificationFlags,
+        flags: &'a interpreter::Flags,
     ) -> impl Iterator<Item = Result<Opcode, Vec<Error>>> + 'a {
         self.parse().map(|mpb| {
             mpb.map_err(|e| vec![Error::Opcode(e)]).and_then(|pb| {
@@ -190,7 +190,7 @@ impl Code<'_> {
     /// This should behave the same as `interpreter::eval_script`.
     pub fn eval(
         &self,
-        flags: interpreter::VerificationFlags,
+        flags: interpreter::Flags,
         checker: &dyn interpreter::SignatureChecker,
         stack: interpreter::Stack<Vec<u8>>,
     ) -> Result<interpreter::Stack<Vec<u8>>, Error> {
@@ -259,7 +259,7 @@ impl Code<'_> {
 
     /// Returns true iff this script is P2SH.
     pub fn is_pay_to_script_hash(&self) -> bool {
-        self.parse_strict(&interpreter::VerificationFlags::all())
+        self.parse_strict(&interpreter::Flags::all())
             .collect::<Result<Vec<_>, _>>()
             .map_or(false, |ops| match &ops[..] {
                 [ Opcode::Operation(OP_HASH160),
@@ -310,10 +310,10 @@ impl<'a> Raw<'a> {
     /// Validate a [`Raw`] script.
     pub fn eval(
         &self,
-        flags: interpreter::VerificationFlags,
+        flags: interpreter::Flags,
         checker: &dyn interpreter::SignatureChecker,
     ) -> Result<bool, (ComponentType, Error)> {
-        if flags.contains(interpreter::VerificationFlags::SigPushOnly) && !self.sig.is_push_only() {
+        if flags.contains(interpreter::Flags::SigPushOnly) && !self.sig.is_push_only() {
             Err((ComponentType::Sig, Error::SigPushOnly))
         } else {
             let data_stack = self
@@ -325,8 +325,7 @@ impl<'a> Raw<'a> {
                 .eval(flags, checker, data_stack.clone())
                 .map_err(|e| (ComponentType::PubKey, e))?;
             if pub_key_stack.last().is_ok_and(interpreter::cast_to_bool) {
-                if flags.contains(interpreter::VerificationFlags::P2SH)
-                    && self.pub_key.is_pay_to_script_hash()
+                if flags.contains(interpreter::Flags::P2SH) && self.pub_key.is_pay_to_script_hash()
                 {
                     // script_sig must be literals-only or validation fails
                     if self.sig.is_push_only() {
@@ -357,9 +356,9 @@ impl<'a> Raw<'a> {
                             // The CLEANSTACK check is only performed after potential P2SH evaluation, as the
                             // non-P2SH evaluation of a P2SH script will obviously not result in a clean stack
                             // (the P2SH inputs remain).
-                            if flags.contains(interpreter::VerificationFlags::CleanStack) {
+                            if flags.contains(interpreter::Flags::CleanStack) {
                                 // Disallow CLEANSTACK without P2SH, because Bitcoin did.
-                                assert!(flags.contains(interpreter::VerificationFlags::P2SH));
+                                assert!(flags.contains(interpreter::Flags::P2SH));
                                 if result_stack.len() == 1 {
                                     Ok(true)
                                 } else {

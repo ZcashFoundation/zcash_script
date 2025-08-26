@@ -11,8 +11,7 @@ use bounded_vec::EmptyBoundedVec;
 use hex::{FromHex, FromHexError};
 
 use crate::{
-    interpreter::{self, VerificationFlags},
-    num,
+    interpreter, num,
     op::*,
     opcode::{self, Bad::*, Disabled::*, PushValue},
     script, signature, Opcode,
@@ -109,7 +108,7 @@ impl ResultCmp {
 pub struct TestVector {
     script_sig: &'static [Entry],
     script_pubkey: &'static [Entry],
-    flags: VerificationFlags,
+    flags: interpreter::Flags,
     /// The expected result of the test.
     pub result: ResultCmp,
     /// The sigop count for the pubkey of this script. This doesn’t use `accurate` counting, because
@@ -147,7 +146,7 @@ impl TestVector {
         &self,
         interpreter_fn: &dyn Fn(
             &script::Raw,
-            VerificationFlags,
+            interpreter::Flags,
         )
             -> Result<bool, (Option<script::ComponentType>, script::Error)>,
         sigop_count_fn: &dyn Fn(&script::Code) -> u32,
@@ -184,9 +183,9 @@ impl TestVector {
     }
 }
 
-const DEFAULT_FLAGS: VerificationFlags =
-    VerificationFlags::P2SH.union(VerificationFlags::StrictEnc);
-const EMPTY_FLAGS: VerificationFlags = VerificationFlags::empty();
+const DEFAULT_FLAGS: interpreter::Flags =
+    interpreter::Flags::P2SH.union(interpreter::Flags::StrictEnc);
+const EMPTY_FLAGS: interpreter::Flags = interpreter::Flags::empty();
 
 use Entry::*;
 
@@ -1619,7 +1618,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("01"), H("80"), N(0)],
             script_pubkey: &[O(NUMEQUAL)],
-            flags: VerificationFlags::P2SH,
+            flags: interpreter::Flags::P2SH,
             result: ok(true),
             sigop_count: 0,
         },
@@ -1627,7 +1626,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("01"), H("00"), N(0)],
             script_pubkey: &[O(NUMEQUAL)],
-            flags: VerificationFlags::P2SH,
+            flags: interpreter::Flags::P2SH,
             result: ok(true),
             sigop_count: 0,
         },
@@ -1635,7 +1634,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("02"), H("00"), H("00"), N(0)],
             script_pubkey: &[O(NUMEQUAL)],
-            flags: VerificationFlags::P2SH,
+            flags: interpreter::Flags::P2SH,
             result: ok(true),
             sigop_count: 0,
         },
@@ -2189,9 +2188,9 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NOP)],
-            flags: VerificationFlags::P2SH
-                .union(VerificationFlags::StrictEnc)
-                .union(VerificationFlags::DiscourageUpgradableNOPs),
+            flags: interpreter::Flags::P2SH
+                .union(interpreter::Flags::StrictEnc)
+                .union(interpreter::Flags::DiscourageUpgradableNOPs),
             result: ok(true),
             sigop_count: 0,
         },
@@ -2199,9 +2198,9 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(IF), O(NOP10), O(ENDIF), N(1)],
-            flags: VerificationFlags::P2SH
-                .union(VerificationFlags::StrictEnc)
-                .union(VerificationFlags::DiscourageUpgradableNOPs),
+            flags: interpreter::Flags::P2SH
+                .union(interpreter::Flags::StrictEnc)
+                .union(interpreter::Flags::DiscourageUpgradableNOPs),
             result: ok(true),
             sigop_count: 0,
         },
@@ -7032,7 +7031,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(0), O(IF), H("4c"), H("00"), O(ENDIF), N(1)],
             script_pubkey: &[],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
@@ -7040,7 +7039,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(0), O(IF), H("4d"), H("0000"), O(ENDIF), N(1)],
             script_pubkey: &[],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
@@ -7048,7 +7047,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(0), O(IF), H("4c"), H("00000000"), O(ENDIF), N(1)],
             script_pubkey: &[],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
@@ -7056,7 +7055,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("81"), O(ENDIF), N(1)],
             script_pubkey: &[],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
@@ -7064,7 +7063,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("01"), O(ENDIF), N(1)],
             script_pubkey: &[],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
@@ -7072,7 +7071,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("02"), O(ENDIF), N(1)],
             script_pubkey: &[],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
@@ -7080,7 +7079,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("03"), O(ENDIF), N(1)],
             script_pubkey: &[],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
@@ -7088,7 +7087,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("04"), O(ENDIF), N(1)],
             script_pubkey: &[],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
@@ -7096,7 +7095,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("05"), O(ENDIF), N(1)],
             script_pubkey: &[],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
@@ -7104,7 +7103,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("06"), O(ENDIF), N(1)],
             script_pubkey: &[],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
@@ -7112,7 +7111,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("07"), O(ENDIF), N(1)],
             script_pubkey: &[],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
@@ -7120,7 +7119,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("08"), O(ENDIF), N(1)],
             script_pubkey: &[],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
@@ -7128,7 +7127,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("09"), O(ENDIF), N(1)],
             script_pubkey: &[],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
@@ -7136,7 +7135,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("0a"), O(ENDIF), N(1)],
             script_pubkey: &[],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
@@ -7144,7 +7143,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("0b"), O(ENDIF), N(1)],
             script_pubkey: &[],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
@@ -7152,7 +7151,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("0c"), O(ENDIF), N(1)],
             script_pubkey: &[],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
@@ -7160,7 +7159,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("0d"), O(ENDIF), N(1)],
             script_pubkey: &[],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
@@ -7168,7 +7167,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("0e"), O(ENDIF), N(1)],
             script_pubkey: &[],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
@@ -7176,7 +7175,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("0f"), O(ENDIF), N(1)],
             script_pubkey: &[],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
@@ -7184,7 +7183,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(0), O(IF), H("01"), H("10"), O(ENDIF), N(1)],
             script_pubkey: &[],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
@@ -7193,133 +7192,133 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("01"), H("00")],
             script_pubkey: &[N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("01"), H("80")],
             script_pubkey: &[N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0180")],
             script_pubkey: &[N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0100")],
             script_pubkey: &[N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0200")],
             script_pubkey: &[N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0300")],
             script_pubkey: &[N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0400")],
             script_pubkey: &[N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0500")],
             script_pubkey: &[N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0600")],
             script_pubkey: &[N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0700")],
             script_pubkey: &[N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0800")],
             script_pubkey: &[N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0900")],
             script_pubkey: &[N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0a00")],
             script_pubkey: &[N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0b00")],
             script_pubkey: &[N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0c00")],
             script_pubkey: &[N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0d00")],
             script_pubkey: &[N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0e00")],
             script_pubkey: &[N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0f00")],
             script_pubkey: &[N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("1000")],
             script_pubkey: &[N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: ok(true),
             sigop_count: 0,
         },
@@ -7629,7 +7628,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKSIG),
                 O(NOT),
             ],
-            flags: VerificationFlags::StrictEnc,
+            flags: interpreter::Flags::StrictEnc,
             result: ok(true),
             sigop_count: 1,
         },
@@ -7643,7 +7642,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKMULTISIG),
                 O(NOT),
             ],
-            flags: VerificationFlags::StrictEnc,
+            flags: interpreter::Flags::StrictEnc,
             result: ok(true),
             sigop_count: 20,
         },
@@ -7681,7 +7680,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKMULTISIG),
                 O(NOT),
             ],
-            flags: VerificationFlags::StrictEnc,
+            flags: interpreter::Flags::StrictEnc,
             result: ok(true),
             sigop_count: 20,
         },
@@ -7706,7 +7705,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKMULTISIG),
                 O(NOT),
             ],
-            flags: VerificationFlags::StrictEnc,
+            flags: interpreter::Flags::StrictEnc,
             result: ok(true),
             sigop_count: 20,
         },
@@ -8960,63 +8959,63 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NOP1)],
-            flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
+            flags: interpreter::Flags::P2SH.union(interpreter::Flags::DiscourageUpgradableNOPs),
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP1)), interpreter::Error::DiscourageUpgradableNOPs)),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NOP3)],
-            flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
+            flags: interpreter::Flags::P2SH.union(interpreter::Flags::DiscourageUpgradableNOPs),
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP3)), interpreter::Error::DiscourageUpgradableNOPs)),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NOP4)],
-            flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
+            flags: interpreter::Flags::P2SH.union(interpreter::Flags::DiscourageUpgradableNOPs),
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP4)), interpreter::Error::DiscourageUpgradableNOPs)),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NOP5)],
-            flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
+            flags: interpreter::Flags::P2SH.union(interpreter::Flags::DiscourageUpgradableNOPs),
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP5)), interpreter::Error::DiscourageUpgradableNOPs)),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NOP6)],
-            flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
+            flags: interpreter::Flags::P2SH.union(interpreter::Flags::DiscourageUpgradableNOPs),
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP6)), interpreter::Error::DiscourageUpgradableNOPs)),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NOP7)],
-            flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
+            flags: interpreter::Flags::P2SH.union(interpreter::Flags::DiscourageUpgradableNOPs),
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP7)), interpreter::Error::DiscourageUpgradableNOPs)),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NOP8)],
-            flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
+            flags: interpreter::Flags::P2SH.union(interpreter::Flags::DiscourageUpgradableNOPs),
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP8)), interpreter::Error::DiscourageUpgradableNOPs)),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NOP9)],
-            flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
+            flags: interpreter::Flags::P2SH.union(interpreter::Flags::DiscourageUpgradableNOPs),
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP9)), interpreter::Error::DiscourageUpgradableNOPs)),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(1)],
             script_pubkey: &[O(NOP10)],
-            flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
+            flags: interpreter::Flags::P2SH.union(interpreter::Flags::DiscourageUpgradableNOPs),
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP10)), interpreter::Error::DiscourageUpgradableNOPs)),
             sigop_count: 0,
         },
@@ -9024,7 +9023,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[O(NOP10)],
             script_pubkey: &[N(1)],
-            flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
+            flags: interpreter::Flags::P2SH.union(interpreter::Flags::DiscourageUpgradableNOPs),
             result: err(script::ComponentType::Sig, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP10)), interpreter::Error::DiscourageUpgradableNOPs)),
             sigop_count: 0,
         },
@@ -9037,7 +9036,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 H("15727299b05b45fdaf9ac9ecf7565cfe27c3e567"),
                 O(EQUAL),
             ],
-            flags: VerificationFlags::P2SH.union(VerificationFlags::DiscourageUpgradableNOPs),
+            flags: interpreter::Flags::P2SH.union(interpreter::Flags::DiscourageUpgradableNOPs),
             result: err(script::ComponentType::Redeem, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOP10)), interpreter::Error::DiscourageUpgradableNOPs)),
             sigop_count: 0,
         },
@@ -10273,7 +10272,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[],
             script_pubkey: &[O(CHECKSIG), O(NOT)],
-            flags: VerificationFlags::StrictEnc,
+            flags: interpreter::Flags::StrictEnc,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::InvalidStackOperation(Some((1, 0))))),
             sigop_count: 1,
         },
@@ -10281,7 +10280,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(0)],
             script_pubkey: &[O(CHECKSIG), O(NOT)],
-            flags: VerificationFlags::StrictEnc,
+            flags: interpreter::Flags::StrictEnc,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
             sigop_count: 1,
         },
@@ -10289,7 +10288,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[],
             script_pubkey: &[O(CHECKMULTISIG), O(NOT)],
-            flags: VerificationFlags::StrictEnc,
+            flags: interpreter::Flags::StrictEnc,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
             sigop_count: 20,
         },
@@ -10297,7 +10296,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[],
             script_pubkey: &[N(-1), O(CHECKMULTISIG), O(NOT)],
-            flags: VerificationFlags::StrictEnc,
+            flags: interpreter::Flags::StrictEnc,
             result: normalized_err(script::Error::Interpreter(None, interpreter::Error::PubKeyCount(None))),
             sigop_count: 20,
         },
@@ -10305,7 +10304,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[],
             script_pubkey: &[N(1), O(CHECKMULTISIG), O(NOT)],
-            flags: VerificationFlags::StrictEnc,
+            flags: interpreter::Flags::StrictEnc,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::InvalidStackOperation(Some((2, 1))))),
             sigop_count: 20,
         },
@@ -10313,7 +10312,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[],
             script_pubkey: &[N(-1), N(0), O(CHECKMULTISIG), O(NOT)],
-            flags: VerificationFlags::StrictEnc,
+            flags: interpreter::Flags::StrictEnc,
             result: normalized_err(script::Error::Interpreter(None, interpreter::Error::SigCount(None))),
             sigop_count: 20,
         },
@@ -10321,7 +10320,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[],
             script_pubkey: &[N(1), A("pk1"), N(1), O(CHECKMULTISIG), O(NOT)],
-            flags: VerificationFlags::StrictEnc,
+            flags: interpreter::Flags::StrictEnc,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::InvalidStackOperation(Some((4, 3))))),
             sigop_count: 20,
         },
@@ -12154,7 +12153,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("4c"), H("00")],
             script_pubkey: &[O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(
                 script::ComponentType::Sig,
                 script::Error::Interpreter(
@@ -12166,7 +12165,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("01"), H("81")],
             script_pubkey: &[O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(
                 script::ComponentType::Sig,
                 script::Error::Interpreter(
@@ -12178,7 +12177,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("01"), H("01")],
             script_pubkey: &[O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(
                 script::ComponentType::Sig,
                 script::Error::Interpreter(
@@ -12189,7 +12188,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("01"), H("02")],
             script_pubkey: &[O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(
                 script::ComponentType::Sig,
                 script::Error::Interpreter(
@@ -12200,7 +12199,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("01"), H("03")],
             script_pubkey: &[O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(
                 script::ComponentType::Sig,
                 script::Error::Interpreter(
@@ -12211,7 +12210,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("01"), H("04")],
             script_pubkey: &[O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(
                 script::ComponentType::Sig,
                 script::Error::Interpreter(
@@ -12222,7 +12221,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("01"), H("05")],
             script_pubkey: &[O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(
                 script::ComponentType::Sig,
                 script::Error::Interpreter(
@@ -12233,7 +12232,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("01"), H("06")],
             script_pubkey: &[O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(
                 script::ComponentType::Sig,
                 script::Error::Interpreter(
@@ -12244,7 +12243,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("01"), H("07")],
             script_pubkey: &[O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(
                 script::ComponentType::Sig,
                 script::Error::Interpreter(
@@ -12255,7 +12254,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("01"), H("08")],
             script_pubkey: &[O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(
                 script::ComponentType::Sig,
                 script::Error::Interpreter(
@@ -12266,7 +12265,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("01"), H("09")],
             script_pubkey: &[O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(
                 script::ComponentType::Sig,
                 script::Error::Interpreter(
@@ -12277,7 +12276,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("01"), H("0a")],
             script_pubkey: &[O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(
                 script::ComponentType::Sig,
                 script::Error::Interpreter(
@@ -12288,7 +12287,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("01"), H("0b")],
             script_pubkey: &[O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(
                 script::ComponentType::Sig,
                 script::Error::Interpreter(
@@ -12299,7 +12298,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("01"), H("0c")],
             script_pubkey: &[O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(
                 script::ComponentType::Sig,
                 script::Error::Interpreter(
@@ -12310,7 +12309,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("01"), H("0d")],
             script_pubkey: &[O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(
                 script::ComponentType::Sig,
                 script::Error::Interpreter(
@@ -12321,7 +12320,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("01"), H("0e")],
             script_pubkey: &[O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(
                 script::ComponentType::Sig,
                 script::Error::Interpreter(
@@ -12332,7 +12331,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("01"), H("0f")],
             script_pubkey: &[O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(
                 script::ComponentType::Sig,
                 script::Error::Interpreter(
@@ -12343,7 +12342,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("01"), H("10")],
             script_pubkey: &[O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(
                 script::ComponentType::Sig,
                 script::Error::Interpreter(
@@ -12361,7 +12360,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 ),
             ],
             script_pubkey: &[O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(
                 script::ComponentType::Sig,
                 script::Error::Interpreter(
@@ -12379,7 +12378,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 ),
             ],
             script_pubkey: &[O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(
                 script::ComponentType::Sig,
                 script::Error::Interpreter(
@@ -12397,7 +12396,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 ),
             ],
             script_pubkey: &[O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(
                 script::ComponentType::Sig,
                 script::Error::Interpreter(
@@ -12411,7 +12410,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("01"), H("00")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0]))))),
             sigop_count: 0,
         },
@@ -12419,7 +12418,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
@@ -12427,7 +12426,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("01"), H("80")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![128]))))),
             sigop_count: 0,
         },
@@ -12435,7 +12434,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("02"), H("0080")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 128]))))),
             sigop_count: 0,
         },
@@ -12443,7 +12442,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("02"), H("0500")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![5, 0]))))),
             sigop_count: 0,
         },
@@ -12451,7 +12450,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("03"), H("050000")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![5, 0, 0]))))),
             sigop_count: 0,
         },
@@ -12459,7 +12458,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("02"), H("0580")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![5, 128]))))),
             sigop_count: 0,
         },
@@ -12467,7 +12466,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("03"), H("050080")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![5, 0, 128]))))),
             sigop_count: 0,
         },
@@ -12475,7 +12474,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("03"), H("ff7f80")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![255, 127, 128]))))),
             sigop_count: 0,
         },
@@ -12483,7 +12482,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("03"), H("ff7f00")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![255, 127, 0]))))),
             sigop_count: 0,
         },
@@ -12491,7 +12490,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("04"), H("ffff7f80")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![255, 255, 127, 128]))))),
             sigop_count: 0,
         },
@@ -12499,7 +12498,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[H("04"), H("ffff7f00")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![255, 255, 127, 0]))))),
             sigop_count: 0,
         },
@@ -12507,294 +12506,294 @@ pub fn test_vectors() -> Vec<TestVector> {
         TestVector {
             script_sig: &[N(1), H("02"), H("0000")],
             script_pubkey: &[O(PICK), O(DROP)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(PICK)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(1), H("02"), H("0000")],
             script_pubkey: &[O(ROLL), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ROLL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(_1ADD), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_1ADD)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(_1SUB), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_1SUB)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(NEGATE), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NEGATE)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(ABS), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ABS)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(NOT), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NOT)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0000")],
             script_pubkey: &[O(_0NOTEQUAL), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_0NOTEQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(ADD), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ADD)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(ADD), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(ADD)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(SUB), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(SUB)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(SUB), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(SUB)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(BOOLAND), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(BOOLAND)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(BOOLAND), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(BOOLAND)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(BOOLOR), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(BOOLOR)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(BOOLOR), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(BOOLOR)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(NUMEQUAL), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMEQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(1)],
             script_pubkey: &[O(NUMEQUAL), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMEQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(NUMEQUALVERIFY), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMEQUALVERIFY)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(NUMEQUALVERIFY), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMEQUALVERIFY)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(NUMNOTEQUAL), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMNOTEQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(NUMNOTEQUAL), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(NUMNOTEQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(LESSTHAN), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(LESSTHAN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(LESSTHAN), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(LESSTHAN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(GREATERTHAN), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(GREATERTHAN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(GREATERTHAN), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(GREATERTHAN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(LESSTHANOREQUAL), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(LESSTHANOREQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(LESSTHANOREQUAL), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(LESSTHANOREQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(GREATERTHANOREQUAL), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(GREATERTHANOREQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(GREATERTHANOREQUAL), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(GREATERTHANOREQUAL)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(MIN), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(MIN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(MIN), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(MIN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000")],
             script_pubkey: &[O(MAX), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(MAX)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0)],
             script_pubkey: &[O(MAX), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(MAX)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[H("02"), H("0000"), N(0), N(0)],
             script_pubkey: &[O(WITHIN), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(WITHIN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000"), N(0)],
             script_pubkey: &[O(WITHIN), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(WITHIN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(0), N(0), H("02"), H("0000")],
             script_pubkey: &[O(WITHIN), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(WITHIN)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 0,
         },
         TestVector {
             script_sig: &[N(0), N(0), H("02"), H("0000")],
             script_pubkey: &[O(CHECKMULTISIG), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 20,
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000"), N(0)],
             script_pubkey: &[O(CHECKMULTISIG), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 20,
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000"), N(0), N(1)],
             script_pubkey: &[O(CHECKMULTISIG), O(DROP), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 20,
         },
         TestVector {
             script_sig: &[N(0), N(0), H("02"), H("0000")],
             script_pubkey: &[O(CHECKMULTISIGVERIFY), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIGVERIFY)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 20,
         },
         TestVector {
             script_sig: &[N(0), H("02"), H("0000"), N(0)],
             script_pubkey: &[O(CHECKMULTISIGVERIFY), N(1)],
-            flags: VerificationFlags::MinimalData,
+            flags: interpreter::Flags::MinimalData,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIGVERIFY)), interpreter::Error::Num(num::Error::NonMinimalEncoding(Some(vec![0, 0]))))),
             sigop_count: 20,
         },
@@ -12824,7 +12823,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKMULTISIG),
                 O(NOT),
             ],
-            flags: VerificationFlags::StrictEnc,
+            flags: interpreter::Flags::StrictEnc,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::PubKeyType)),
             sigop_count: 20,
         },
@@ -12848,7 +12847,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKMULTISIG),
                 O(NOT),
             ],
-            flags: VerificationFlags::StrictEnc,
+            flags: interpreter::Flags::StrictEnc,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::WrongType)))),
             sigop_count: 20,
         },
@@ -13155,7 +13154,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 H("23b0ad3477f2178bc0b3eed26e4e6316f4e83aa1"),
                 O(EQUAL),
             ],
-            flags: VerificationFlags::P2SH,
+            flags: interpreter::Flags::P2SH,
             // FIXME: Should return `Ok(())` (see #240).
             result: ok(false),
             sigop_count: 0,
@@ -13176,7 +13175,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 H("23b0ad3477f2178bc0b3eed26e4e6316f4e83aa1"),
                 O(EQUAL),
             ],
-            flags: VerificationFlags::P2SH,
+            flags: interpreter::Flags::P2SH,
             result: ok(false),
             sigop_count: 0,
         },
@@ -13200,7 +13199,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 H("7f67f0521934a57d3039f77f9f32cf313f3ac74b"),
                 O(EQUAL),
             ],
-            flags: VerificationFlags::P2SH,
+            flags: interpreter::Flags::P2SH,
             // FIXME: This should return `Ok(())`
             result: ok(false),
             sigop_count: 0,
@@ -13241,7 +13240,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 H("2df519943d5acc0ef5222091f9dfe3543f489a82"),
                 O(EQUAL),
             ],
-            flags: VerificationFlags::P2SH,
+            flags: interpreter::Flags::P2SH,
             result: err(script::ComponentType::Redeem, script::Error::Interpreter(Some(opcode::PossiblyBad::from(EQUALVERIFY)), interpreter::Error::Verify)),
             sigop_count: 0,
         },
@@ -13330,7 +13329,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 H("c9e4a896d149702d0d1695434feddd52e24ad78d"),
                 O(EQUAL),
             ],
-            flags: VerificationFlags::P2SH,
+            flags: interpreter::Flags::P2SH,
             // FIXME: Should return `Ok(())` (see #240).
             result: ok(false),
             sigop_count: 0,
@@ -13355,7 +13354,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 H("c9e4a896d149702d0d1695434feddd52e24ad78d"),
                 O(EQUAL),
             ],
-            flags: VerificationFlags::P2SH,
+            flags: interpreter::Flags::P2SH,
             result: ok(false),
             sigop_count: 0,
         },
@@ -13777,7 +13776,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 H("03363d90d447b00c9c99ceac05b6262ee053441c7e55552ffe526bad8f83ff4640"),
                 O(CHECKSIG),
             ],
-            flags: VerificationFlags::LowS,
+            flags: interpreter::Flags::LowS,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::SigHighS))),
             sigop_count: 1,
         },
@@ -13816,7 +13815,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 ),
                 O(CHECKSIG),
             ],
-            flags: VerificationFlags::StrictEnc,
+            flags: interpreter::Flags::StrictEnc,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::PubKeyType)),
             sigop_count: 1,
         },
@@ -13857,7 +13856,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKSIG),
                 O(NOT),
             ],
-            flags: VerificationFlags::StrictEnc,
+            flags: interpreter::Flags::StrictEnc,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::PubKeyType)),
             sigop_count: 1,
         },
@@ -13897,7 +13896,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKSIG),
                 O(NOT),
             ],
-            flags: VerificationFlags::StrictEnc,
+            flags: interpreter::Flags::StrictEnc,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::PubKeyType)),
             sigop_count: 1,
         },
@@ -13946,7 +13945,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 N(2),
                 O(CHECKMULTISIG),
             ],
-            flags: VerificationFlags::StrictEnc,
+            flags: interpreter::Flags::StrictEnc,
             // FIXME: This should return `Ok(())`
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::PubKeyType)),
             sigop_count: 20,
@@ -13971,7 +13970,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 N(2),
                 O(CHECKMULTISIG),
             ],
-            flags: VerificationFlags::StrictEnc,
+            flags: interpreter::Flags::StrictEnc,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::PubKeyType)),
             sigop_count: 20,
         },
@@ -14010,7 +14009,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 ),
                 O(CHECKSIG),
             ],
-            flags: VerificationFlags::StrictEnc,
+            flags: interpreter::Flags::StrictEnc,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidHashType::ExtraBitsSet(4))))),
             sigop_count: 1,
         },
@@ -14050,7 +14049,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKSIG),
                 O(NOT),
             ],
-            flags: VerificationFlags::StrictEnc,
+            flags: interpreter::Flags::StrictEnc,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidHashType::ExtraBitsSet(4))))),
             sigop_count: 1,
         },
@@ -14115,7 +14114,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 N(3),
                 O(CHECKMULTISIG),
             ],
-            flags: VerificationFlags::NullDummy,
+            flags: interpreter::Flags::NullDummy,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::SigNullDummy)),
             sigop_count: 20,
         },
@@ -14181,7 +14180,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKMULTISIG),
                 O(NOT),
             ],
-            flags: VerificationFlags::NullDummy,
+            flags: interpreter::Flags::NullDummy,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::SigNullDummy)),
             sigop_count: 20,
         },
@@ -14228,7 +14227,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 N(2),
                 O(CHECKMULTISIG),
             ],
-            flags: VerificationFlags::SigPushOnly,
+            flags: interpreter::Flags::SigPushOnly,
             result: err(script::ComponentType::Sig, script::Error::SigPushOnly),
             sigop_count: 20,
         },
@@ -14317,7 +14316,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 N(2),
                 O(CHECKMULTISIG),
             ],
-            flags: VerificationFlags::StrictEnc,
+            flags: interpreter::Flags::StrictEnc,
             // FIXME: Should return `Ok(())` (see #240).
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::PubKeyType)),
             sigop_count: 20,
@@ -14509,7 +14508,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 H("215640c2f72f0d16b4eced26762035a42ffed39a"),
                 O(EQUAL),
             ],
-            flags: VerificationFlags::P2SH,
+            flags: interpreter::Flags::P2SH,
             result: err(script::ComponentType::Sig, script::Error::SigPushOnly),
             sigop_count: 0,
         },
@@ -14530,7 +14529,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 H("215640c2f72f0d16b4eced26762035a42ffed39a"),
                 O(EQUAL),
             ],
-            flags: VerificationFlags::SigPushOnly,
+            flags: interpreter::Flags::SigPushOnly,
             result: err(script::ComponentType::Sig, script::Error::SigPushOnly),
             sigop_count: 0,
         },
@@ -14556,7 +14555,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 N(2),
                 O(CHECKMULTISIG),
             ],
-            flags: VerificationFlags::SigPushOnly,
+            flags: interpreter::Flags::SigPushOnly,
             // FIXME: Should return `Ok(())` (see #240).
             result: ok(false),
             sigop_count: 20,
@@ -14577,7 +14576,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 ),
                 O(CHECKSIG),
             ],
-            flags: VerificationFlags::P2SH,
+            flags: interpreter::Flags::P2SH,
             // FIXME: Should return `Ok(())` (see #240).
             result: ok(false),
             sigop_count: 1,
@@ -14598,7 +14597,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 ),
                 O(CHECKSIG),
             ],
-            flags: VerificationFlags::CleanStack.union(VerificationFlags::P2SH),
+            flags: interpreter::Flags::CleanStack.union(interpreter::Flags::P2SH),
             result: ok(false),
             sigop_count: 1,
         },
@@ -14621,7 +14620,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 H("31edc23bdafda4639e669f89ad6b2318dd79d032"),
                 O(EQUAL),
             ],
-            flags: VerificationFlags::P2SH,
+            flags: interpreter::Flags::P2SH,
             // FIXME: Should return `Ok(())` (see #240).
             result: ok(false),
             sigop_count: 0,
@@ -14645,7 +14644,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 H("31edc23bdafda4639e669f89ad6b2318dd79d032"),
                 O(EQUAL),
             ],
-            flags: VerificationFlags::CleanStack.union(VerificationFlags::P2SH),
+            flags: interpreter::Flags::CleanStack.union(interpreter::Flags::P2SH),
             result: ok(false),
             sigop_count: 0,
         },
@@ -14667,7 +14666,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 H("31edc23bdafda4639e669f89ad6b2318dd79d032"),
                 O(EQUAL),
             ],
-            flags: VerificationFlags::CleanStack.union(VerificationFlags::P2SH),
+            flags: interpreter::Flags::CleanStack.union(interpreter::Flags::P2SH),
             // FIXME: Should return `Ok(())` (see #240).
             result: ok(false),
             sigop_count: 0,

@@ -140,7 +140,7 @@ pub const MAX_PUBKEY_COUNT: u8 = 20;
 bitflags::bitflags! {
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
     /// Script verification flags
-    pub struct VerificationFlags: u32 {
+    pub struct Flags: u32 {
         /// Evaluate P2SH subscripts (softfork safe,
         /// [BIP16](https://github.com/bitcoin/bips/blob/master/bip-0016.mediawiki).
         const P2SH = 1 << 0;
@@ -379,10 +379,8 @@ fn is_compressed_or_uncompressed_pub_key(vch_pub_key: &[u8]) -> bool {
     }
 }
 
-fn check_pub_key_encoding(vch_sig: &[u8], flags: VerificationFlags) -> Result<(), Error> {
-    if flags.contains(VerificationFlags::StrictEnc)
-        && !is_compressed_or_uncompressed_pub_key(vch_sig)
-    {
+fn check_pub_key_encoding(vch_sig: &[u8], flags: Flags) -> Result<(), Error> {
+    if flags.contains(Flags::StrictEnc) && !is_compressed_or_uncompressed_pub_key(vch_sig) {
         return Err(Error::PubKeyType);
     };
     Ok(())
@@ -391,7 +389,7 @@ fn check_pub_key_encoding(vch_sig: &[u8], flags: VerificationFlags) -> Result<()
 fn is_sig_valid(
     vch_sig: &[u8],
     vch_pub_key: &[u8],
-    flags: VerificationFlags,
+    flags: Flags,
     script: &script::Code,
     checker: &dyn SignatureChecker,
 ) -> Result<bool, Error> {
@@ -399,8 +397,8 @@ fn is_sig_valid(
     // CHECKMULTISIG NOT if the STRICTENC flag is set. See the script_(in)valid tests for details.
     match signature::Decoded::from_bytes(
         vch_sig,
-        flags.contains(VerificationFlags::LowS),
-        flags.contains(VerificationFlags::StrictEnc),
+        flags.contains(Flags::LowS),
+        flags.contains(Flags::StrictEnc),
     ) {
         signature::Validity::InvalidAbort(e) => Err(Error::from(e)),
         signature::Validity::InvalidContinue => {
@@ -534,7 +532,7 @@ impl State {
 /// - They only fail if they are evaluated, so we can’t statically fail scripts that contain them
 ///   (unlike [Disabled]).
 /// - [Bad::OP_RESERVED] counts as a push value for the purposes of
-///   [interpreter::VerificationFlags::SigPushOnly] (but push-only sigs must necessarily evaluate
+///   [interpreter::Flags::SigPushOnly] (but push-only sigs must necessarily evaluate
 ///   all of their opcodes, so what we’re preserving here is that we get
 ///   [script::Error::SigPushOnly] in this case instead of [script::Error::BadOpcode]).
 /// - [Bad::OP_VERIF] and [Bad::OP_VERNOTIF] both _always_ get evaluated, so we need to special case
@@ -556,7 +554,7 @@ fn eval_bad(bad: &opcode::Bad, state: &mut State) -> Result<(), Error> {
 pub fn eval_possibly_bad(
     opcode: &opcode::PossiblyBad,
     script: &script::Code,
-    flags: VerificationFlags,
+    flags: Flags,
     checker: &dyn SignatureChecker,
     state: &mut State,
 ) -> Result<(), Error> {
@@ -567,7 +565,7 @@ pub fn eval_possibly_bad(
 }
 
 fn eval_opcode(
-    flags: VerificationFlags,
+    flags: Flags,
     opcode: &Opcode,
     script: &script::Code,
     checker: &dyn SignatureChecker,
@@ -576,11 +574,7 @@ fn eval_opcode(
     match opcode {
         Opcode::PushValue(pv) => {
             if should_exec(&state.vexec) {
-                eval_push_value(
-                    pv,
-                    flags.contains(VerificationFlags::MinimalData),
-                    &mut state.stack,
-                )
+                eval_push_value(pv, flags.contains(Flags::MinimalData), &mut state.stack)
             } else {
                 Ok(())
             }
@@ -667,14 +661,14 @@ fn eval_control(
 
 fn eval_operation(
     op: &opcode::Operation,
-    flags: VerificationFlags,
+    flags: Flags,
     script: &script::Code,
     checker: &dyn SignatureChecker,
     stack: &mut Stack<Vec<u8>>,
     altstack: &mut Stack<Vec<u8>>,
     op_count: &mut u8,
 ) -> Result<(), Error> {
-    let require_minimal = flags.contains(VerificationFlags::MinimalData);
+    let require_minimal = flags.contains(Flags::MinimalData);
 
     let unfn_num =
         |stackin: &mut Stack<Vec<u8>>, op: &dyn Fn(i64) -> Vec<u8>| -> Result<(), Error> {
@@ -725,8 +719,8 @@ fn eval_operation(
             // So BIP 65, which defines CHECKLOCKTIMEVERIFY, is in practice always
             // enabled, and this `if` branch is dead code. In zcashd see
             // https://github.com/zcash/zcash/blob/a3435336b0c561799ac6805a27993eca3f9656df/src/main.cpp#L3151
-            if !flags.contains(VerificationFlags::CHECKLOCKTIMEVERIFY) {
-                if flags.contains(VerificationFlags::DiscourageUpgradableNOPs) {
+            if !flags.contains(Flags::CHECKLOCKTIMEVERIFY) {
+                if flags.contains(Flags::DiscourageUpgradableNOPs) {
                     return Err(Error::DiscourageUpgradableNOPs);
                 }
             } else {
@@ -765,7 +759,7 @@ fn eval_operation(
             // Do nothing, though if the caller wants to prevent people from using
             // these NOPs (as part of a standard tx rule, for example) they can
             // enable `DiscourageUpgradableNOPs` to turn these opcodes into errors.
-            if flags.contains(VerificationFlags::DiscourageUpgradableNOPs) {
+            if flags.contains(Flags::DiscourageUpgradableNOPs) {
                 return Err(Error::DiscourageUpgradableNOPs);
             }
         }
@@ -1064,7 +1058,7 @@ fn eval_operation(
             // Unfortunately this is a potential source of mutability,
             // so optionally verify it is exactly equal to zero prior
             // to removing it from the stack.
-            if flags.contains(VerificationFlags::NullDummy) && !stack.rget(0)?.is_empty() {
+            if flags.contains(Flags::NullDummy) && !stack.rget(0)?.is_empty() {
                 return Err(Error::SigNullDummy);
             }
             stack.pop()?;

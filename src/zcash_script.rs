@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 use crate::{
-    interpreter::{SignatureChecker, VerificationFlags},
+    interpreter::{self, SignatureChecker},
     script,
 };
 
@@ -63,7 +63,7 @@ pub trait ZcashScript {
     fn verify_callback(
         &self,
         script: &script::Raw,
-        flags: VerificationFlags,
+        flags: interpreter::Flags,
     ) -> Result<bool, AnnError>;
 
     /// Returns the number of transparent signature operations in the input or
@@ -93,7 +93,7 @@ impl<C: SignatureChecker + Copy> ZcashScript for RustInterpreter<C> {
     fn verify_callback(
         &self,
         script: &script::Raw,
-        flags: VerificationFlags,
+        flags: interpreter::Flags,
     ) -> Result<bool, AnnError> {
         script
             .eval(flags, &self.checker)

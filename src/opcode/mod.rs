@@ -69,11 +69,8 @@ impl PushValue {
     }
 
     /// Statically analyze a push value.
-    pub fn analyze(
-        &self,
-        flags: &interpreter::VerificationFlags,
-    ) -> Result<(), Vec<interpreter::Error>> {
-        if flags.contains(interpreter::VerificationFlags::MinimalData) && !self.is_minimal_push() {
+    pub fn analyze(&self, flags: &interpreter::Flags) -> Result<(), Vec<interpreter::Error>> {
+        if flags.contains(interpreter::Flags::MinimalData) && !self.is_minimal_push() {
             Err(vec![interpreter::Error::MinimalData])
         } else {
             Ok(())
@@ -222,14 +219,11 @@ impl Operation {
     ///
     /// __NB__: [`Operation::OP_RETURN`] isn’t tracked by this function. That is functionally
     ///         more like a `break` then an error.
-    pub fn analyze(
-        &self,
-        flags: &interpreter::VerificationFlags,
-    ) -> Result<(), Vec<interpreter::Error>> {
+    pub fn analyze(&self, flags: &interpreter::Flags) -> Result<(), Vec<interpreter::Error>> {
         match self {
             Operation::OP_CHECKLOCKTIMEVERIFY
-                if !flags.contains(interpreter::VerificationFlags::CHECKLOCKTIMEVERIFY)
-                    && flags.contains(interpreter::VerificationFlags::DiscourageUpgradableNOPs) =>
+                if !flags.contains(interpreter::Flags::CHECKLOCKTIMEVERIFY)
+                    && flags.contains(interpreter::Flags::DiscourageUpgradableNOPs) =>
             {
                 Err(vec![interpreter::Error::DiscourageUpgradableNOPs])
             }
@@ -242,7 +236,7 @@ impl Operation {
             | Operation::OP_NOP8
             | Operation::OP_NOP9
             | Operation::OP_NOP10
-                if flags.contains(interpreter::VerificationFlags::DiscourageUpgradableNOPs) =>
+                if flags.contains(interpreter::Flags::DiscourageUpgradableNOPs) =>
             {
                 Err(vec![interpreter::Error::DiscourageUpgradableNOPs])
             }
@@ -365,10 +359,7 @@ impl PossiblyBad {
     }
 
     /// Statically analyze a possibly-bad opcode.
-    pub fn analyze(
-        &self,
-        flags: &interpreter::VerificationFlags,
-    ) -> Result<&Opcode, Vec<interpreter::Error>> {
+    pub fn analyze(&self, flags: &interpreter::Flags) -> Result<&Opcode, Vec<interpreter::Error>> {
         match self {
             PossiblyBad::Good(op) => op.analyze(flags).map(|()| op),
             PossiblyBad::Bad(_) => Err(vec![interpreter::Error::BadOpcode]),

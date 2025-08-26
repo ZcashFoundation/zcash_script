@@ -5,7 +5,7 @@ extern crate zcash_script;
 
 use zcash_script::{
     check_verify_callback,
-    interpreter::{CallbackTransactionSignatureChecker, VerificationFlags},
+    interpreter::{self, CallbackTransactionSignatureChecker},
     normalize_err, rust_interpreter, script,
     signature::HashType,
     testing, CxxInterpreter,
@@ -18,7 +18,7 @@ fn missing_sighash(_script_code: &script::Code, _hash_type: &HashType) -> Option
 fuzz_target!(|tup: (u32, bool, &[u8], &[u8], u32)| {
     // `fuzz_target!` doesn’t support pattern matching in the parameter list.
     let (lock_time, is_final, pub_key, sig, flag_bits) = tup;
-    let flags = testing::repair_flags(VerificationFlags::from_bits_truncate(flag_bits));
+    let flags = testing::repair_flags(interpreter::Flags::from_bits_truncate(flag_bits));
     let script = script::Raw::from_raw_parts(sig, pub_key);
     let ret = check_verify_callback(
         &CxxInterpreter {

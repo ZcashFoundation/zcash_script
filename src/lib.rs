@@ -27,7 +27,7 @@ use std::os::raw::{c_int, c_uint, c_void};
 
 use tracing::warn;
 
-use interpreter::{CallbackTransactionSignatureChecker, SighashCalculator, VerificationFlags};
+use interpreter::{CallbackTransactionSignatureChecker, SighashCalculator};
 use signature::HashType;
 pub use zcash_script::{AnnError, Error, RustInterpreter, ZcashScript};
 
@@ -71,10 +71,7 @@ impl Opcode {
     ///
     /// __NB__: [`opcode::Operation::OP_RETURN`] isn’t tracked by this function because it’s
     ///         functionally more like a `break` then an error.
-    pub fn analyze(
-        &self,
-        flags: &interpreter::VerificationFlags,
-    ) -> Result<(), Vec<interpreter::Error>> {
+    pub fn analyze(&self, flags: &interpreter::Flags) -> Result<(), Vec<interpreter::Error>> {
         match self {
             Opcode::PushValue(pv) => pv.analyze(flags),
             Opcode::Operation(op) => op.analyze(flags),
@@ -289,7 +286,7 @@ impl ZcashScript for CxxInterpreter<'_> {
     fn verify_callback(
         &self,
         script: &script::Raw,
-        flags: VerificationFlags,
+        flags: interpreter::Flags,
     ) -> Result<bool, AnnError> {
         let mut err = 0;
 
@@ -364,7 +361,7 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
     first: &T,
     second: &U,
     script: &script::Raw,
-    flags: VerificationFlags,
+    flags: interpreter::Flags,
 ) -> (Result<bool, AnnError>, Result<bool, AnnError>) {
     (
         first.verify_callback(script, flags),
@@ -423,7 +420,7 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U>
     fn verify_callback(
         &self,
         script: &script::Raw,
-        flags: VerificationFlags,
+        flags: interpreter::Flags,
     ) -> Result<bool, AnnError> {
         let (cxx, rust) = check_verify_callback(&self.first, &self.second, script, flags);
         if rust.clone().map_err(normalize_err) != cxx.clone().map_err(normalize_err) {
@@ -443,7 +440,7 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U>
 #[cfg(any(test, feature = "test-dependencies"))]
 pub mod testing {
     use crate::{
-        interpreter::VerificationFlags,
+        interpreter,
         pattern::*,
         pv, script,
         signature::HashType,
@@ -455,11 +452,11 @@ pub mod testing {
 
     /// Ensures that flags represent a supported state. This avoids crashes in the C++ code, which
     /// break various tests.
-    pub fn repair_flags(flags: VerificationFlags) -> VerificationFlags {
+    pub fn repair_flags(flags: interpreter::Flags) -> interpreter::Flags {
         // TODO: The C++ implementation fails an assert (interpreter.cpp:1097) if `CleanStack` is
         //       set without `P2SH`.
-        if flags.contains(VerificationFlags::CleanStack) {
-            flags & VerificationFlags::P2SH
+        if flags.contains(interpreter::Flags::CleanStack) {
+            flags & interpreter::Flags::P2SH
         } else {
             flags
         }
@@ -512,7 +509,7 @@ pub mod testing {
     /// Returns a script annotated with errors that could occur during evaluation.
     pub fn annotate_script(
         script: &script::Raw,
-        flags: &VerificationFlags,
+        flags: &interpreter::Flags,
     ) -> (
         Vec<Result<Opcode, Vec<script::Error>>>,
         Vec<Result<Opcode, Vec<script::Error>>>,
@@ -529,7 +526,7 @@ pub mod testing {
     pub fn run_test_vector(
         tv: &TestVector,
         try_normalized_error: bool,
-        interpreter_fn: &dyn Fn(&script::Raw, VerificationFlags) -> Result<bool, AnnError>,
+        interpreter_fn: &dyn Fn(&script::Raw, interpreter::Flags) -> Result<bool, AnnError>,
         sigop_count_fn: &dyn Fn(&script::Code) -> Result<u32, Error>,
     ) {
         match tv.run(
@@ -579,7 +576,7 @@ mod tests {
         CxxInterpreter, Error, RustInterpreter, ZcashScript,
     };
     use crate::{
-        interpreter::{CallbackTransactionSignatureChecker, VerificationFlags},
+        interpreter::{self, CallbackTransactionSignatureChecker},
         script,
     };
 
@@ -587,7 +584,7 @@ mod tests {
     fn it_works() {
         let lock_time: u32 = 2410374;
         let is_final: bool = true;
-        let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
+        let flags = interpreter::Flags::P2SH | interpreter::Flags::CHECKLOCKTIMEVERIFY;
 
         let ret = check_verify_callback(
             &CxxInterpreter {
@@ -615,7 +612,7 @@ mod tests {
     fn it_fails_on_invalid_sighash() {
         let lock_time: u32 = 2410374;
         let is_final: bool = true;
-        let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
+        let flags = interpreter::Flags::P2SH | interpreter::Flags::CHECKLOCKTIMEVERIFY;
         let ret = check_verify_callback(
             &CxxInterpreter {
                 sighash: &invalid_sighash,
@@ -642,7 +639,7 @@ mod tests {
     fn it_fails_on_missing_sighash() {
         let lock_time: u32 = 2410374;
         let is_final: bool = true;
-        let flags = VerificationFlags::P2SH | VerificationFlags::CHECKLOCKTIMEVERIFY;
+        let flags = interpreter::Flags::P2SH | interpreter::Flags::CHECKLOCKTIMEVERIFY;
 
         let ret = check_verify_callback(
             &CxxInterpreter {
@@ -744,9 +741,9 @@ mod tests {
             is_final in prop::bool::ANY,
             pub_key in prop::collection::vec(0..=0xffu8, 0..=OVERFLOW_SCRIPT_SIZE),
             sig in prop::collection::vec(0..=0xffu8, 1..=OVERFLOW_SCRIPT_SIZE),
-            flag_bits in prop::bits::u32::masked(VerificationFlags::all().bits()),
+            flag_bits in prop::bits::u32::masked(interpreter::Flags::all().bits()),
         ) {
-            let flags = repair_flags(VerificationFlags::from_bits_truncate(flag_bits));
+            let flags = repair_flags(interpreter::Flags::from_bits_truncate(flag_bits));
             let script = script::Raw::from_raw_parts(&sig, &pub_key);
             let ret = check_verify_callback(
                 &CxxInterpreter {
@@ -782,10 +779,10 @@ mod tests {
             sig in prop::collection::vec(0..=0x60u8, 0..=OVERFLOW_SCRIPT_SIZE),
             flag_bits in prop::bits::u32::masked(
                 // Don’t waste test cases on whether or not `SigPushOnly` is set.
-                (VerificationFlags::all() - VerificationFlags::SigPushOnly).bits()),
+                (interpreter::Flags::all() - interpreter::Flags::SigPushOnly).bits()),
         ) {
-            let flags = repair_flags(VerificationFlags::from_bits_truncate(flag_bits))
-                | VerificationFlags::SigPushOnly;
+            let flags = repair_flags(interpreter::Flags::from_bits_truncate(flag_bits))
+                | interpreter::Flags::SigPushOnly;
             let script = script::Raw::from_raw_parts(&sig, &pub_key);
             let ret = check_verify_callback(
                 &CxxInterpreter {
