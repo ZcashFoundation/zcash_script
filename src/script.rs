@@ -324,7 +324,10 @@ impl<'a> Raw<'a> {
                 .pub_key
                 .eval(flags, checker, data_stack.clone())
                 .map_err(|e| (ComponentType::PubKey, e))?;
-            if pub_key_stack.last().is_ok_and(interpreter::cast_to_bool) {
+            if pub_key_stack
+                .last()
+                .is_ok_and(|v| interpreter::cast_to_bool(v))
+            {
                 if flags.contains(interpreter::Flags::P2SH) && self.pub_key.is_pay_to_script_hash()
                 {
                     // script_sig must be literals-only or validation fails
@@ -336,7 +339,10 @@ impl<'a> Raw<'a> {
                                 Code(pub_key_2).eval(flags, checker, remaining_stack)
                             })
                             .map(|p2sh_stack| {
-                                if p2sh_stack.last().is_ok_and(interpreter::cast_to_bool) {
+                                if p2sh_stack
+                                    .last()
+                                    .is_ok_and(|v| interpreter::cast_to_bool(v))
+                                {
                                     Some(p2sh_stack)
                                 } else {
                                     None

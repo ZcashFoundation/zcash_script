@@ -238,11 +238,9 @@ pub struct CallbackTransactionSignatureChecker<'a> {
     pub is_final: bool,
 }
 
-type ValType = Vec<u8>;
-
 /// Treat a stack entry as a generalized boolean. Anything other than 0 and -0 (minimal encoding not
 /// required) is treated as `true`.
-pub fn cast_to_bool(vch: &ValType) -> bool {
+pub fn cast_to_bool(vch: &[u8]) -> bool {
     for i in 0..vch.len() {
         if vch[i] != 0 {
             // Can be negative zero
@@ -445,7 +443,7 @@ fn binop<T: Clone>(
     binfn(stack, op).map(|res| stack.push(res))
 }
 
-fn cast_from_bool(b: bool) -> ValType {
+fn cast_from_bool(b: bool) -> Vec<u8> {
     static VCH_FALSE: [u8; 0] = [];
     static VCH_TRUE: [u8; 1] = [1];
     if b {
@@ -861,7 +859,7 @@ fn eval_operation(
                 .map_err(|_| Error::InvalidStackOperation(None))?;
             stack.pop()?;
             stack.check_len(n + 1)?;
-            let vch: ValType = stack.rget(n)?.clone();
+            let vch = stack.rget(n)?.clone();
             if op == &OP_ROLL {
                 stack.rremove(n)?;
             }
@@ -1026,8 +1024,8 @@ fn eval_operation(
 
             let mut success = true;
             while success && sigs_count > 0 {
-                let vch_sig: &ValType = stack.rget(isig.into())?;
-                let vch_pub_key: &ValType = stack.rget(ikey.into())?;
+                let vch_sig = stack.rget(isig.into())?;
+                let vch_pub_key = stack.rget(ikey.into())?;
 
                 // Check signature
                 let ok: bool = is_sig_valid(vch_sig, vch_pub_key, flags, script, checker)?;
