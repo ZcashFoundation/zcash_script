@@ -216,15 +216,6 @@ impl Code<'_> {
         }
     }
 
-    /// Encode/decode small integers:
-    pub fn decode_op_n(opcode: opcode::push_value::SmallValue) -> u32 {
-        if opcode == OP_0 {
-            return 0;
-        }
-        assert!(opcode >= OP_1 && opcode <= OP_16);
-        (u8::from(opcode) - (u8::from(OP_1) - 1)).into()
-    }
-
     /// Pre-version-0.6, Bitcoin always counted CHECKMULTISIGs
     /// as 20 sigops. With pay-to-script-hash, that changed:
     /// CHECKMULTISIGs serialized in script_sigs are
@@ -241,11 +232,13 @@ impl Code<'_> {
                         OP_CHECKSIG | OP_CHECKSIGVERIFY => 1,
                         OP_CHECKMULTISIG | OP_CHECKMULTISIGVERIFY => match last_opcode {
                             Some(opcode::PossiblyBad::Good(Opcode::PushValue(
-                                opcode::PushValue::SmallValue(pv),
+                                opcode::PushValue::SmallValue(sv),
                             )))
                                 // Even with an accurate count, 0 keys is counted as 20 for some
                                 // reason.
-                                if accurate && pv >= OP_1 && pv <= OP_16 => Self::decode_op_n(   pv),
+                                if accurate && OP_1 <= sv => {
+                                    u32::try_from(sv.to_num()).expect("`sv` is positive")
+                                }
                             // Apparently it’s too much work to figure out if it’s one of the few
                             // `LargeValue`s that’s valid, so we assume the worst.
                             Some(_) => u32::from(interpreter::MAX_PUBKEY_COUNT),
