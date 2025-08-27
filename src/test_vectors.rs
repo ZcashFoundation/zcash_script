@@ -9948,7 +9948,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[N(1)],
             script_pubkey: &[O(_2DROP), N(1)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_2DROP)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(_2DROP)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
             sigop_count: 0,
         },
         TestVector {
@@ -10273,7 +10273,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[],
             script_pubkey: &[O(CHECKSIG), O(NOT)],
             flags: interpreter::Flags::StrictEnc,
-            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::InvalidStackOperation(Some((1, 0))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
             sigop_count: 1,
         },
         // CHECKSIG must error when there are not 2 stack items
@@ -10281,7 +10281,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[N(0)],
             script_pubkey: &[O(CHECKSIG), O(NOT)],
             flags: interpreter::Flags::StrictEnc,
-            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::InvalidStackOperation(Some((0, 0))))),
             sigop_count: 1,
         },
         // CHECKMULTISIG must error when there are no stack items
@@ -10305,7 +10305,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[],
             script_pubkey: &[N(1), O(CHECKMULTISIG), O(NOT)],
             flags: interpreter::Flags::StrictEnc,
-            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::InvalidStackOperation(Some((2, 1))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::InvalidStackOperation(Some((1, 0))))),
             sigop_count: 20,
         },
         // CHECKMULTISIG must error when the specified number of signatures is negative
@@ -10321,7 +10321,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[],
             script_pubkey: &[N(1), A("pk1"), N(1), O(CHECKMULTISIG), O(NOT)],
             flags: interpreter::Flags::StrictEnc,
-            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::InvalidStackOperation(Some((4, 3))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::InvalidStackOperation(Some((3, 2))))),
             sigop_count: 20,
         },
         // CHECKMULTISIG must push false to stack when signature is invalid when NOT in strict enc mode
@@ -11570,7 +11570,7 @@ pub fn test_vectors() -> Vec<TestVector> {
                 O(CHECKMULTISIGVERIFY),
             ],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIGVERIFY)), interpreter::Error::InvalidStackOperation(Some((2, 2))))),
+            result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIGVERIFY)), interpreter::Error::InvalidStackOperation(Some((1, 1))))),
             sigop_count: 4_040,
         },
         // Fails due to 201 script operation limit

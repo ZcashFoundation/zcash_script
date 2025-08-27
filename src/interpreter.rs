@@ -296,14 +296,6 @@ impl<T> Stack<T> {
         self.0.get(idx).ok_or(Error::InvalidStackOperation(None))
     }
 
-    /// Swaps the elements at two indices in the stack, counting from the right.
-    fn rswap(&mut self, a: usize, b: usize) -> Result<(), Error> {
-        let ra = self.rindex(a)?;
-        let rb = self.rindex(b)?;
-        self.0.swap(ra, rb);
-        Ok(())
-    }
-
     /// Removes and returns the top element from the stack.
     fn pop(&mut self) -> Result<T, Error> {
         self.0
@@ -382,6 +374,16 @@ impl<T: Clone> Stack<T> {
             .split_last()
             .ok_or(Error::InvalidStackOperation(Some((0, self.0.len()))))
             .map(|(last, rem)| (last, Stack(rem.to_vec())))
+    }
+
+    /// Copies the element at `i` (from the right) onto the top of the stack.
+    fn repush(&mut self, i: usize) -> Result<(), Error> {
+        self.rget(i).cloned().map(|v| self.push(v))
+    }
+
+    /// Moves the element at `i` (from the right) onto the top of the stack.
+    fn move_to_top(&mut self, i: usize) -> Result<(), Error> {
+        self.rremove(i).map(|v| self.push(v.clone()))
     }
 }
 
@@ -650,14 +652,17 @@ fn eval_operation(
 ) -> Result<State, Error> {
     let require_minimal = flags.contains(Flags::MinimalData);
 
-    let unfn_num =
-        |stackin: &mut Stack<Vec<u8>>, op: &dyn Fn(i64) -> Vec<u8>| -> Result<(), Error> {
-            stackin.unop(|vch| {
-                num::parse(&vch, require_minimal, None)
-                    .map_err(Error::Num)
-                    .map(op)
-            })
-        };
+    let parse_num = |v: &[u8], size: Option<usize>| -> Result<i64, Error> {
+        num::parse(v, require_minimal, size).map_err(Error::Num)
+    };
+
+    let pop_num = |stack: &mut Stack<Vec<u8>>, size: Option<usize>| -> Result<i64, Error> {
+        stack.pop().and_then(|v| parse_num(&v, size))
+    };
+
+    let unfn_num = |stackin: &mut Stack<Vec<u8>>,
+                    op: &dyn Fn(i64) -> Vec<u8>|
+     -> Result<(), Error> { stackin.unop(|vch| parse_num(&vch, None).map(op)) };
 
     let unop_num = |stack: &mut Stack<Vec<u8>>, op: &dyn Fn(i64) -> i64| -> Result<(), Error> {
         unfn_num(stack, &|bn| num::serialize(op(bn)))
@@ -686,8 +691,9 @@ fn eval_operation(
         //
         // Control
         //
-        OP_NOP => (),
+        OP_NOP => Ok(()),
 
+        // (lt -- lt bool)
         OP_CHECKLOCKTIMEVERIFY => {
             // https://zips.z.cash/protocol/protocol.pdf#bips :
             //
@@ -699,11 +705,7 @@ fn eval_operation(
             // So BIP 65, which defines CHECKLOCKTIMEVERIFY, is in practice always
             // enabled, and this `if` branch is dead code. In zcashd see
             // https://github.com/zcash/zcash/blob/a3435336b0c561799ac6805a27993eca3f9656df/src/main.cpp#L3151
-            if !flags.contains(Flags::CHECKLOCKTIMEVERIFY) {
-                if flags.contains(Flags::DiscourageUpgradableNOPs) {
-                    return Err(Error::DiscourageUpgradableNOPs);
-                }
-            } else {
+            if flags.contains(Flags::CHECKLOCKTIMEVERIFY) {
                 // Note that elsewhere numeric opcodes are limited to
                 // operands in the range -2**31+1 to 2**31-1, however it is
                 // legal for opcodes to produce results exceeding that
@@ -718,19 +720,25 @@ fn eval_operation(
                 // Thus as a special case we tell `ScriptNum` to accept up
                 // to 5-byte bignums, which are good until 2**39-1, well
                 // beyond the 2**32-1 limit of the `lock_time` field itself.
-                let lock_time = num::parse(state.stack.rget(0)?, require_minimal, Some(5))?;
+                let lock_time = state.stack.rget(0).and_then(|v| parse_num(v, Some(5)))?;
 
                 // In the rare event that the argument may be < 0 due to
                 // some arithmetic being done first, you can always use
                 // 0 MAX CHECKLOCKTIMEVERIFY.
-                if lock_time < 0 {
-                    return Err(Error::NegativeLockTime);
+                if 0 <= lock_time {
+                    // Actually compare the specified lock time with the transaction.
+                    if !checker.check_lock_time(lock_time) {
+                        Err(Error::UnsatisfiedLockTime)
+                    } else {
+                        Ok(())
+                    }
+                } else {
+                    Err(Error::NegativeLockTime)
                 }
-
-                // Actually compare the specified lock time with the transaction.
-                if !checker.check_lock_time(lock_time) {
-                    return Err(Error::UnsatisfiedLockTime);
-                }
+            } else if flags.contains(Flags::DiscourageUpgradableNOPs) {
+                Err(Error::DiscourageUpgradableNOPs)
+            } else {
+                Ok(())
             }
         }
 
@@ -740,192 +748,176 @@ fn eval_operation(
             // these NOPs (as part of a standard tx rule, for example) they can
             // enable `DiscourageUpgradableNOPs` to turn these opcodes into errors.
             if flags.contains(Flags::DiscourageUpgradableNOPs) {
-                return Err(Error::DiscourageUpgradableNOPs);
+                Err(Error::DiscourageUpgradableNOPs)
+            } else {
+                Ok(())
             }
         }
 
         OP_VERIFY => {
             // (true -- ) or
             // (false -- false) and return
-            if cast_to_bool(state.stack.rget(0)?) {
-                state.stack.pop()?;
-            } else {
-                return Err(Error::Verify);
-            }
+            state.stack.pop().and_then(|v| {
+                if cast_to_bool(&v) {
+                    Ok(())
+                } else {
+                    Err(Error::Verify)
+                }
+            })
         }
 
-        OP_RETURN => return Err(Error::OpReturn),
+        OP_RETURN => Err(Error::OpReturn),
 
         //
         // Stack ops
         //
-        OP_TOALTSTACK => state.altstack.push(state.stack.pop()?),
+        OP_TOALTSTACK => state.stack.pop().map(|v| state.altstack.push(v)),
 
-        OP_FROMALTSTACK => state.stack.push(state.altstack.pop()?),
+        OP_FROMALTSTACK => state.altstack.pop().map(|v| state.stack.push(v)),
 
-        OP_2DROP => {
-            // (x1 x2 -- )
-            //
-            // NB: This needs to be done in this order (rather than `pop(); pop()`) to maintain
-            //     state compatibilty with C++. If there is exactly one element on the stack,
-            //     removing the top element first would leave us with a different state when the
-            //     error occurs.
-            state.stack.rremove(1).and_then(|_| state.stack.pop())?;
-        }
+        OP_2DROP => state
+            .stack
+            .pop()
+            .and_then(|_| state.stack.pop())
+            .map(|_| ()),
 
-        OP_2DUP => {
-            // (x1 x2 -- x1 x2 x1 x2)
-            state.stack.push(state.stack.rget(1)?.clone());
-            state.stack.push(state.stack.rget(1)?.clone());
-        }
+        // (x1 x2 -- x1 x2 x1 x2)
+        OP_2DUP => state.stack.repush(1).and_then(|()| state.stack.repush(1)),
 
+        // (x1 x2 x3 -- x1 x2 x3 x1 x2 x3)
         OP_3DUP => {
-            // (x1 x2 x3 -- x1 x2 x3 x1 x2 x3)
-            state.stack.push(state.stack.rget(2)?.clone());
-            state.stack.push(state.stack.rget(2)?.clone());
-            state.stack.push(state.stack.rget(2)?.clone());
+            state.stack.repush(2)?;
+            state.stack.repush(2)?;
+            state.stack.repush(2)
         }
 
-        OP_2OVER => {
-            // (x1 x2 x3 x4 -- x1 x2 x3 x4 x1 x2)
-            state.stack.push(state.stack.rget(3)?.clone());
-            state.stack.push(state.stack.rget(3)?.clone());
-        }
+        // (x1 x2 x3 x4 -- x1 x2 x3 x4 x1 x2)
+        OP_2OVER => state.stack.repush(3).and_then(|()| state.stack.repush(3)),
 
-        OP_2ROT => {
-            // (x1 x2 x3 x4 x5 x6 -- x3 x4 x5 x6 x1 x2)
-            let vch1 = state.stack.rremove(5)?.clone();
-            let vch2 = state.stack.rremove(4)?.clone();
-            state.stack.push(vch1);
-            state.stack.push(vch2);
-        }
+        // (x1 x2 x3 x4 x5 x6 -- x3 x4 x5 x6 x1 x2)
+        OP_2ROT => state
+            .stack
+            .move_to_top(5)
+            .and_then(|()| state.stack.move_to_top(5)),
 
-        OP_2SWAP => {
-            // (x1 x2 x3 x4 -- x3 x4 x1 x2)
-            state.stack.rswap(3, 1)?;
-            state.stack.rswap(2, 0)?;
-        }
+        // (x1 x2 x3 x4 -- x3 x4 x1 x2)
+        OP_2SWAP => state
+            .stack
+            .move_to_top(3)
+            .and_then(|()| state.stack.move_to_top(3)),
 
-        OP_IFDUP => {
-            // (x - 0 | x x)
-            let vch = state.stack.rget(0)?;
-            if cast_to_bool(vch) {
-                state.stack.push(vch.clone())
+        // (x - 0 | x x)
+        OP_IFDUP => state.stack.rget(0).cloned().map(|v| {
+            if cast_to_bool(&v) {
+                state.stack.push(v)
             }
-        }
+        }),
 
         // -- stacksize
-        OP_DEPTH => state.stack.push(num::serialize(
-            i64::try_from(state.stack.len()).map_err(|err| Error::StackSize(Some(err)))?,
-        )),
+        OP_DEPTH => i64::try_from(state.stack.len())
+            .map_err(|err| Error::StackSize(Some(err)))
+            .map(|n| state.stack.push(num::serialize(n))),
 
-        OP_DROP => {
-            // (x -- )
-            state.stack.pop()?;
-        }
+        // (x -- )
+        OP_DROP => state.stack.pop().map(|_| ()),
 
         // (x -- x x)
-        OP_DUP => state.stack.push(state.stack.rget(0)?.clone()),
+        OP_DUP => state.stack.repush(0),
 
         // (x1 x2 -- x2)
-        OP_NIP => state.stack.rremove(1).map(|_| ())?,
+        OP_NIP => state.stack.rremove(1).map(|_| ()),
 
         // (x1 x2 -- x1 x2 x1)
-        OP_OVER => state.stack.push(state.stack.rget(1)?.clone()),
+        OP_OVER => state.stack.repush(1),
 
-        OP_PICK | OP_ROLL => {
-            // (xn ... x2 x1 x0 n - xn ... x2 x1 x0 xn)
-            // (xn ... x2 x1 x0 n - ... x2 x1 x0 xn)
-            state.stack.check_len(2)?;
-            let n = usize::try_from(num::parse(state.stack.rget(0)?, require_minimal, None)?)
-                .map_err(|_| Error::InvalidStackOperation(None))?;
-            state.stack.pop()?;
-            state.stack.check_len(n + 1)?;
-            let vch = state.stack.rget(n)?.clone();
-            if op == &OP_ROLL {
-                state.stack.rremove(n)?;
-            }
-            state.stack.push(vch)
-        }
+        // (xn ... x2 x1 x0 n - xn ... x2 x1 x0 xn)
+        // (xn ... x2 x1 x0 n - ... x2 x1 x0 xn)
+        OP_PICK | OP_ROLL => state.stack.check_len(2).and_then(|()| {
+            pop_num(&mut state.stack, None)
+                .and_then(|i| usize::try_from(i).map_err(|_| Error::InvalidStackOperation(None)))
+                .and_then(|n| {
+                    if op == &OP_ROLL {
+                        state.stack.move_to_top(n)
+                    } else {
+                        state.stack.repush(n)
+                    }
+                })
+        }),
 
-        OP_ROT => {
-            // (x1 x2 x3 -- x2 x3 x1)
-            //  x2 x1 x3  after first swap
-            //  x2 x3 x1  after second swap
-            state.stack.rswap(2, 1)?;
-            state.stack.rswap(1, 0)?;
-        }
+        // (x1 x2 x3 -- x2 x3 x1)
+        OP_ROT => state.stack.move_to_top(2),
 
         // (x1 x2 -- x2 x1)
-        OP_SWAP => state.stack.rswap(1, 0)?,
+        OP_SWAP => state.stack.move_to_top(1),
 
         // (x1 x2 -- x2 x1 x2)
-        OP_TUCK => state.stack.rinsert(1, state.stack.rget(0)?.clone())?,
+        OP_TUCK => state.stack.rinsert(1, state.stack.rget(0)?.clone()),
 
         // (in -- in size)
-        OP_SIZE => state.stack.push(num::serialize(
-            i64::try_from(state.stack.rget(0)?.len())
-                .expect("stack element size <= PushValue::MAX_SIZE"),
-        )),
+        OP_SIZE => state.stack.rget(0).cloned().map(|v| {
+            state.stack.push(num::serialize(
+                i64::try_from(v.len()).expect("stack element size <= PushValue::MAX_SIZE"),
+            ))
+        }),
 
         //
         // Bitwise logic
         //
         // (x1 x2 - bool)
-        OP_EQUAL => state.stack.binop(|x1, x2| Ok(cast_from_bool(x1 == x2)))?,
+        OP_EQUAL => state.stack.binop(|x1, x2| Ok(cast_from_bool(x1 == x2))),
         OP_EQUALVERIFY => state
             .stack
-            .binfn(|x1, x2| if x1 == x2 { Ok(()) } else { Err(Error::Verify) })?,
+            .binfn(|x1, x2| if x1 == x2 { Ok(()) } else { Err(Error::Verify) }),
 
         //
         // Numeric
         //
 
         // (in -- out)
-        OP_1ADD => unop_num(&mut state.stack, &|x| x + 1)?,
-        OP_1SUB => unop_num(&mut state.stack, &|x| x - 1)?,
-        OP_NEGATE => unop_num(&mut state.stack, &|x| -x)?,
-        OP_ABS => unop_num(&mut state.stack, &|x| x.abs())?,
-        OP_NOT => unrel(&mut state.stack, &|x| x == 0)?,
-        OP_0NOTEQUAL => unrel(&mut state.stack, &|x| x != 0)?,
+        OP_1ADD => unop_num(&mut state.stack, &|x| x + 1),
+        OP_1SUB => unop_num(&mut state.stack, &|x| x - 1),
+        OP_NEGATE => unop_num(&mut state.stack, &|x| -x),
+        OP_ABS => unop_num(&mut state.stack, &|x| x.abs()),
+        OP_NOT => unrel(&mut state.stack, &|x| x == 0),
+        OP_0NOTEQUAL => unrel(&mut state.stack, &|x| x != 0),
 
         // (x1 x2 -- out)
-        OP_ADD => binop_num(&mut state.stack, &|x1, x2| x1 + x2)?,
-        OP_SUB => binop_num(&mut state.stack, &|x1, x2| x1 - x2)?,
-        OP_BOOLAND => binrel(&mut state.stack, &|x1, x2| x1 != 0 && x2 != 0)?,
-        OP_BOOLOR => binrel(&mut state.stack, &|x1, x2| x1 != 0 || x2 != 0)?,
-        OP_NUMEQUAL => binrel(&mut state.stack, &|x1, x2| x1 == x2)?,
+        OP_ADD => binop_num(&mut state.stack, &|x1, x2| x1 + x2),
+        OP_SUB => binop_num(&mut state.stack, &|x1, x2| x1 - x2),
+        OP_BOOLAND => binrel(&mut state.stack, &|x1, x2| x1 != 0 && x2 != 0),
+        OP_BOOLOR => binrel(&mut state.stack, &|x1, x2| x1 != 0 || x2 != 0),
+        OP_NUMEQUAL => binrel(&mut state.stack, &|x1, x2| x1 == x2),
         OP_NUMEQUALVERIFY => binbasic_num(&mut state.stack, require_minimal, |x1, x2| {
             if x1 == x2 {
                 Ok(())
             } else {
                 Err(Error::Verify)
             }
-        })?,
-        OP_NUMNOTEQUAL => binrel(&mut state.stack, &|x1, x2| x1 != x2)?,
-        OP_LESSTHAN => binrel(&mut state.stack, &|x1, x2| x1 < x2)?,
-        OP_GREATERTHAN => binrel(&mut state.stack, &|x1, x2| x1 > x2)?,
-        OP_LESSTHANOREQUAL => binrel(&mut state.stack, &|x1, x2| x1 <= x2)?,
-        OP_GREATERTHANOREQUAL => binrel(&mut state.stack, &|x1, x2| x1 >= x2)?,
-        OP_MIN => binop_num(&mut state.stack, &min)?,
-        OP_MAX => binop_num(&mut state.stack, &max)?,
+        }),
+        OP_NUMNOTEQUAL => binrel(&mut state.stack, &|x1, x2| x1 != x2),
+        OP_LESSTHAN => binrel(&mut state.stack, &|x1, x2| x1 < x2),
+        OP_GREATERTHAN => binrel(&mut state.stack, &|x1, x2| x1 > x2),
+        OP_LESSTHANOREQUAL => binrel(&mut state.stack, &|x1, x2| x1 <= x2),
+        OP_GREATERTHANOREQUAL => binrel(&mut state.stack, &|x1, x2| x1 >= x2),
+        OP_MIN => binop_num(&mut state.stack, &min),
+        OP_MAX => binop_num(&mut state.stack, &max),
 
+        // (x min max -- out)
         OP_WITHIN => {
-            // (x min max -- out)
-            let bn1 = num::parse(state.stack.rget(2)?, require_minimal, None)?;
-            let bn2 = num::parse(state.stack.rget(1)?, require_minimal, None)?;
-            let bn3 = num::parse(state.stack.rget(0)?, require_minimal, None)?;
-            state.stack.pop()?;
-            state.stack.pop()?;
-            state.stack.pop()?;
-            state.stack.push(cast_from_bool(bn2 <= bn1 && bn1 < bn3))
+            // We have to check them in this order to make sure we get any errors in the same order
+            // as the C++ impl.
+            let x = state.stack.rremove(2).and_then(|v| parse_num(&v, None))?;
+            let min = state.stack.rremove(1).and_then(|v| parse_num(&v, None))?;
+            let max = pop_num(&mut state.stack, None)?;
+            Ok(state.stack.push(cast_from_bool(min <= x && x < max)))
         }
 
         //
         // Crypto
         //
+
+        // (in -- hash)
         OP_RIPEMD160 | OP_SHA1 | OP_SHA256 | OP_HASH160 | OP_HASH256 => {
-            // (in -- hash)
             let vch = state.stack.pop()?;
             let mut vch_hash = vec![];
             if op == &OP_RIPEMD160 {
@@ -941,57 +933,48 @@ fn eval_operation(
             } else if op == &OP_HASH256 {
                 vch_hash = Sha256::digest(Sha256::digest(vch)).to_vec();
             }
-            state.stack.push(vch_hash)
+            Ok(state.stack.push(vch_hash))
         }
 
+        // (sig pubkey -- bool)
         OP_CHECKSIG | OP_CHECKSIGVERIFY => {
-            // (sig pubkey -- bool)
-            let vch_sig = state.stack.rget(1)?.clone();
-            let vch_pub_key = state.stack.rget(0)?.clone();
+            let vch_pub_key = state.stack.pop()?;
+            let vch_sig = state.stack.pop()?;
 
-            let success = is_sig_valid(&vch_sig, &vch_pub_key, flags, script, checker)?;
-
-            state.stack.pop()?;
-            state.stack.pop()?;
-            state.stack.push(cast_from_bool(success));
-            if op == &OP_CHECKSIGVERIFY {
-                if success {
-                    state.stack.pop()?;
+            is_sig_valid(&vch_sig, &vch_pub_key, flags, script, checker).and_then(|success| {
+                if op == &OP_CHECKSIGVERIFY {
+                    if success {
+                        Ok(())
+                    } else {
+                        Err(Error::Verify)
+                    }
                 } else {
-                    return Err(Error::Verify);
+                    Ok(state.stack.push(cast_from_bool(success)))
                 }
-            }
+            })
         }
 
+        // ([sig ...] num_of_signatures [pubkey ...] num_of_pubkeys -- bool)
         OP_CHECKMULTISIG | OP_CHECKMULTISIGVERIFY => {
-            // ([sig ...] num_of_signatures [pubkey ...] num_of_pubkeys -- bool)
-
-            // NB: This is guaranteed u8-safe, because we are limited to 20 keys and
-            //     20 signatures, plus a couple other fields. u8 also gives us total
-            //     conversions to the other types we deal with here (`isize` and `i64`).
-            let mut i: u8 = 0;
-
-            let mut keys_count = u8::try_from(num::parse(
-                state.stack.rget(i.into())?,
-                require_minimal,
-                None,
-            )?)
-            .map_err(|err| Error::PubKeyCount(Some(err)))?;
+            let mut keys_count = pop_num(&mut state.stack, None)
+                .and_then(|i| u8::try_from(i).map_err(|err| Error::PubKeyCount(Some(err))))?;
             if keys_count > MAX_PUBKEY_COUNT {
                 return Err(Error::PubKeyCount(None));
             };
             state.increment_op_count(keys_count)?;
-            i += 1;
-            let mut ikey = i;
-            i += keys_count;
-            assert!(i <= 1 + MAX_PUBKEY_COUNT);
 
-            let mut sigs_count = u8::try_from(num::parse(
-                state.stack.rget(i.into())?,
-                require_minimal,
-                None,
-            )?)
-            .map_err(|err| Error::SigCount(Some(err)))?;
+            // NB: This is guaranteed u8-safe, because we are limited to 20 keys and
+            //     20 signatures, plus a couple other fields. u8 also gives us total
+            //     conversions to the other types we deal with here (`usize` and `i64`).
+            let mut i: u8 = keys_count;
+            let mut ikey: u8 = 0;
+            assert!(i <= MAX_PUBKEY_COUNT);
+
+            let mut sigs_count = state
+                .stack
+                .rget(i.into())
+                .and_then(|v| parse_num(v, None))
+                .and_then(|i| u8::try_from(i).map_err(|err| Error::SigCount(Some(err))))?;
             if sigs_count > keys_count {
                 return Err(Error::SigCount(None));
             };
@@ -1002,8 +985,8 @@ fn eval_operation(
 
             let mut success = true;
             while success && sigs_count > 0 {
-                let vch_sig = state.stack.rget(isig.into())?;
-                let vch_pub_key = state.stack.rget(ikey.into())?;
+                let vch_sig = state.stack.rget(usize::from(isig))?;
+                let vch_pub_key = state.stack.rget(usize::from(ikey))?;
 
                 // Check signature
                 let ok: bool = is_sig_valid(vch_sig, vch_pub_key, flags, script, checker)?;
@@ -1039,18 +1022,18 @@ fn eval_operation(
             }
             state.stack.pop()?;
 
-            state.stack.push(cast_from_bool(success));
-
             if op == &OP_CHECKMULTISIGVERIFY {
                 if success {
-                    state.stack.pop()?;
+                    Ok(())
                 } else {
-                    return Err(Error::Verify);
+                    Err(Error::Verify)
                 }
+            } else {
+                Ok(state.stack.push(cast_from_bool(success)))
             }
         }
     }
-    Ok(state)
+    .map(|()| state)
 }
 
 /// All signature hashes are 32 bytes, since they are either:

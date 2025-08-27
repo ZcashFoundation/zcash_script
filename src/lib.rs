@@ -2,6 +2,7 @@
 
 #![doc(html_logo_url = "https://www.zfnd.org/images/zebra-icon.png")]
 #![doc(html_root_url = "https://docs.rs/zcash_script/0.3.2")]
+#![allow(clippy::unit_arg)]
 #![allow(non_snake_case)]
 #![allow(unsafe_code)]
 #![deny(missing_docs)]
