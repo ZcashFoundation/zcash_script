@@ -139,7 +139,7 @@ impl LargeValue {
         }
     }
 
-    /// Get the [`Stack`] element represented by this [`LargeValue`].
+    /// Get the [`interpreter::Stack`] element represented by this [`LargeValue`].
     pub fn value(&self) -> &[u8] {
         match self {
             PushdataBytelength(v) => v.as_slice(),
@@ -224,7 +224,7 @@ pub enum SmallValue {
 use SmallValue::*;
 
 impl SmallValue {
-    /// Get the [`Stack`] element represented by this [`SmallValue`].
+    /// Get the [`interpreter::Stack`] element represented by this [`SmallValue`].
     pub fn value(&self) -> Vec<u8> {
         match self {
             OP_0 => vec![],

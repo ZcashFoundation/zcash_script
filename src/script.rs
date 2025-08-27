@@ -199,7 +199,8 @@ impl Code<'_> {
             self.parse()
                 .try_fold(interpreter::State::initial(stack), |state, mpb| {
                     mpb.map_err(Error::Opcode).and_then(|opcode| {
-                        interpreter::eval_possibly_bad(&opcode, self, flags, checker, state)
+                        opcode
+                            .eval(self, flags, checker, state)
                             .map_err(|e| Error::Interpreter(Some(opcode), e))
                     })
                 })

@@ -79,6 +79,46 @@ impl Opcode {
             Opcode::Control(_) => Ok(()),
         }
     }
+
+    fn eval(
+        &self,
+        flags: interpreter::Flags,
+        script: &script::Code,
+        checker: &dyn interpreter::SignatureChecker,
+        mut state: interpreter::State,
+    ) -> Result<interpreter::State, interpreter::Error> {
+        match self {
+            Opcode::PushValue(pv) => {
+                if interpreter::should_exec(&state.vexec) {
+                    state.stack =
+                        pv.eval(flags.contains(interpreter::Flags::MinimalData), state.stack)?;
+                }
+                Ok(state)
+            }
+            Opcode::Control(control) => {
+                state.increment_op_count(1)?;
+                (state.stack, state.vexec) = control.eval(state.stack, state.vexec)?;
+                Ok(state)
+            }
+            Opcode::Operation(normal) => {
+                state.increment_op_count(1)?;
+                if interpreter::should_exec(&state.vexec) {
+                    normal.eval(flags, script, checker, state)
+                } else {
+                    Ok(state)
+                }
+            }
+        }
+        .and_then(|final_state| {
+            // Size limits
+            if final_state.stack.len() + final_state.altstack().len() > interpreter::MAX_STACK_DEPTH
+            {
+                Err(interpreter::Error::StackSize(None))
+            } else {
+                Ok(final_state)
+            }
+        })
+    }
 }
 
 impl From<opcode::PushValue> for Opcode {
