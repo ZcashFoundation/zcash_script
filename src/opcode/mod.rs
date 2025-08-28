@@ -1,5 +1,7 @@
 #![allow(non_camel_case_types)]
 
+use thiserror::Error;
+
 pub mod push_value;
 
 use super::Opcode;
@@ -7,6 +9,19 @@ use push_value::{
     LargeValue,
     SmallValue::{self, *},
 };
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Error)]
+pub enum Error {
+    #[error("expected {expected_bytes} bytes, but only {available_bytes} bytes available")]
+    ReadError {
+        expected_bytes: usize,
+        available_bytes: usize,
+    },
+
+    /// __TODO__: `Option` can go away once C++ support is removed.
+    #[error("disabled opcode encountered{}", .0.map_or("".to_owned(), |op| format!(": {:?}", op)))]
+    Disabled(Option<Disabled>),
+}
 
 /// Opcodes that represent constants to be pushed onto the stack.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -183,16 +198,7 @@ impl From<Operation> for u8 {
     }
 }
 
-/// Bad opcodes are a bit complicated.
-///
-/// - They only fail if they are evaluated, so we can’t statically fail scripts that contain them
-///   (unlike [Disabled]).
-/// - [Bad::OP_RESERVED] counts as a push value for the purposes of
-///   [interpreter::VerificationFlags::SigPushOnly] (but push-only sigs must necessarily evaluate
-///   all of their opcodes, so what we’re preserving here is that we get
-///   [script::Error::SigPushOnly] in this case instead of [script::Error::BadOpcode]).
-/// - [Bad::OP_VERIF] and [Bad::OP_VERNOTIF] both _always_ get evaluated, so we need to special case
-///   them when checking whether to throw [script::Error::BadOpcode]
+/// Opcodes that fail if they’re on an active branch.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Bad {
     OP_RESERVED,
@@ -235,9 +241,22 @@ impl From<Bad> for u8 {
 /// When writing scripts, we don’t want to allow bad opcodes, so `Opcode` doesn’t include them.
 /// However, when validating scripts, bad opcodes only cause a failure when they’re on an active
 /// branch, so this type allows us to hold onto the bad opcodes when parsing.
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum PossiblyBad {
     Good(Opcode),
     Bad(Bad),
+}
+
+impl From<Opcode> for PossiblyBad {
+    fn from(value: Opcode) -> Self {
+        PossiblyBad::Good(value)
+    }
+}
+
+impl From<Bad> for PossiblyBad {
+    fn from(value: Bad) -> Self {
+        PossiblyBad::Bad(value)
+    }
 }
 
 pub struct Parsed<'a> {
