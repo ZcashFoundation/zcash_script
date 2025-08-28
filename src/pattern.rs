@@ -45,12 +45,8 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::{
-    op, pv,
-    script::{
-        self,
-        Opcode::{self, PushValue},
-        Script,
-    },
+    num, op, opcode, pv, script,
+    Opcode::{self, PushValue},
 };
 
 /// Pushes a value onto the stack that indicates whether the stack was previously empty.
@@ -61,7 +57,7 @@ pub const EMPTY_STACK_CHECK: [Opcode; 3] = [op::DEPTH, op::_0, op::EQUAL];
 /// Pushes a value onto the stack, then immediately drops it.
 ///
 /// type: `[] -> []`
-pub fn ignored_value(v: script::PushValue) -> [Opcode; 2] {
+pub fn ignored_value(v: opcode::PushValue) -> [Opcode; 2] {
     [PushValue(v), op::DROP]
 }
 
@@ -102,6 +98,7 @@ pub fn if_else(cond: &[Opcode], thn: &[Opcode], els: &[Opcode]) -> Vec<Opcode> {
 }
 
 /// Errors that can happen when creating scripts containing `CHECK*SIG*` operations.
+#[allow(missing_docs)]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Error)]
 pub enum Error {
     #[error("CHECKMULTISIG only supports 20 keys, but you provided {0}")]
@@ -151,7 +148,7 @@ pub fn check_multisig(sig_count: u8, pks: &[&[u8]], verify: bool) -> Result<Vec<
 ///   type: `[_] -> 💥?`
 /// else
 ///   type: `[_] -> [Bool]`
-pub fn equals(expected: script::PushValue, verify: bool) -> [Opcode; 2] {
+pub fn equals(expected: opcode::PushValue, verify: bool) -> [Opcode; 2] {
     [
         PushValue(expected),
         if verify { op::EQUALVERIFY } else { op::EQUAL },
@@ -194,21 +191,21 @@ pub fn check_lock_time_verify(lt: u32) -> [Opcode; 3] {
 }
 
 /// Produce a minimal `PushValue` that encodes the provided number.
-pub fn push_num(n: i64) -> script::PushValue {
-    pv::push_value(&script::serialize_num(n)).expect("all i64 can be encoded as `PushValue`")
+pub fn push_num(n: i64) -> opcode::PushValue {
+    pv::push_value(&num::serialize(n)).expect("all i64 can be encoded as `PushValue`")
 }
 
 /// Produce a minimal `PushValue` that encodes the provided script. This is particularly useful with
 /// P2SH.
-pub fn push_script(script: &[Opcode]) -> Option<script::PushValue> {
-    pv::push_value(&Script::serialize(script))
+pub fn push_script(script: &[Opcode]) -> Option<opcode::PushValue> {
+    pv::push_value(&script::Code::serialize(script))
 }
 
 /// Creates a `PushValue` from a 20-byte value (basically, RipeMD160 and other hashes).
 ///
 /// __TODO__: Once const_generic_exprs lands, this should become `push_array<N>(a: &[u8; N])` with
 ///           `N` bounded by `MAX_SCRIPT_ELEMENT_SIZE`.
-pub fn push_160b_hash(hash: &[u8; 20]) -> script::PushValue {
+pub fn push_160b_hash(hash: &[u8; 20]) -> opcode::PushValue {
     pv::push_value(hash).expect("20 is a valid data size")
 }
 
@@ -216,7 +213,7 @@ pub fn push_160b_hash(hash: &[u8; 20]) -> script::PushValue {
 ///
 /// __TODO__: Once const_generic_exprs lands, this should become `push_array<N>(a: &[u8; N])` with
 ///           `N` bounded by `MAX_SCRIPT_ELEMENT_SIZE`.
-pub fn push_256b_hash(hash: &[u8; 32]) -> script::PushValue {
+pub fn push_256b_hash(hash: &[u8; 32]) -> opcode::PushValue {
     pv::push_value(hash).expect("32 is a valid data size")
 }
 
@@ -252,7 +249,7 @@ pub fn pay_to_script_hash(redeem_script: &[Opcode]) -> Vec<Opcode> {
         &[op::HASH160],
         &equals(
             push_160b_hash(
-                &Ripemd160::digest(Sha256::digest(Script::serialize(redeem_script))).into(),
+                &Ripemd160::digest(Sha256::digest(script::Code::serialize(redeem_script))).into(),
             ),
             false,
         )[..],
@@ -269,7 +266,7 @@ pub fn pay_to_script_hash(redeem_script: &[Opcode]) -> Vec<Opcode> {
 pub fn check_multisig_empty(
     n: u8,
     x: &[&[u8]],
-    ignored: script::PushValue,
+    ignored: opcode::PushValue,
 ) -> Result<Vec<Opcode>, Error> {
     Ok([
         &check_multisig(n, x, true)?,
@@ -298,8 +295,8 @@ pub fn combined_multisig(m: u8, x: &[&[u8]], n: u8, y: &[&[u8]]) -> Result<Vec<O
 /// - P2PKH inside P2SH with a 32-byte ignored data value
 /// - P2PKH inside P2SH with a zero-value placeholder ignored data value
 ///
-/// type: `[Signature, PubKey] -> [Bool] ∪  💥`
-pub fn p2pkh_ignored(ignored: script::PushValue, pk: &[u8]) -> Vec<Opcode> {
+/// type: [Signature, PubKey] -> [Bool] ∪  💥
+pub fn p2pkh_ignored(ignored: opcode::PushValue, pk: &[u8]) -> Vec<Opcode> {
     [&ignored_value(ignored)[..], &pay_to_pubkey_hash(pk)].concat()
 }
 
@@ -308,7 +305,7 @@ pub fn p2pkh_ignored(ignored: script::PushValue, pk: &[u8]) -> Vec<Opcode> {
 /// label: Pay-to-(compressed-)pubkey inside P2SH with an empty stack check
 ///
 /// type: `Signature -> [Bool] ∪  💥`
-pub fn p2pk_empty(recipient_pk: &[u8], ignored: script::PushValue) -> Result<Vec<Opcode>, Error> {
+pub fn p2pk_empty(recipient_pk: &[u8], ignored: opcode::PushValue) -> Result<Vec<Opcode>, Error> {
     Ok([
         &check_sig(recipient_pk, true)?[..],
         &ignored_value(ignored)[..],

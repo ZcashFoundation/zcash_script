@@ -1,3 +1,5 @@
+//! Execution of opcodes
+
 use std::{
     cmp::{max, min},
     slice::Iter,
@@ -9,19 +11,22 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     external::pubkey::PubKey,
-    script::{
-        parse_num, serialize_num, Bad,
-        Control::{self, *},
-        Opcode,
-        Operation::{self, *},
-        ParsedOpcode, PossiblyBad, PushValue, Script, LOCKTIME_THRESHOLD, MAX_SCRIPT_ELEMENT_SIZE,
-        MAX_SCRIPT_SIZE,
-    },
-    script_error::ScriptError,
-    signature,
+    num,
+    opcode::{self, Control::*, Operation::*},
+    script,
+    script_error::*,
+    signature, Opcode,
 };
 
-const MAX_OP_COUNT: u8 = 201;
+/// Threshold for lock_time: below this value it is interpreted as block number,
+/// otherwise as UNIX timestamp.
+const LOCKTIME_THRESHOLD: i64 = 500_000_000; // Tue Nov  5 00:53:20 1985 UTC
+
+/// The maximum number of operations allowed in a script component.
+pub const MAX_OP_COUNT: u8 = 201;
+
+/// The maximum number of pubkeys (and signatures, by implication) allowed in CHECKMULTISIG.
+pub const MAX_PUBKEY_COUNT: u8 = 20;
 
 bitflags::bitflags! {
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -77,31 +82,41 @@ bitflags::bitflags! {
     }
 }
 
+/// This verifies that a signature is correct for the given pubkey and script code.
 pub trait SignatureChecker {
+    /// Check that the signature is valid.
     fn check_sig(
         &self,
         _script_sig: &signature::Decoded,
         _vch_pub_key: &[u8],
-        _script_code: &Script,
+        _script_code: &script::Code,
     ) -> bool {
         false
     }
 
+    /// Return true if the lock time argument is more recent than the time the script was evaluated.
     fn check_lock_time(&self, _lock_time: i64) -> bool {
         false
     }
 }
 
+/// A signature checker that always fails. This is helpful in testing cases that don’t involve
+/// `CHECK*SIG`. The name comes from the C++ impl, where there is no separation between this and the
+/// trait.
 pub struct BaseSignatureChecker();
 
 impl SignatureChecker for BaseSignatureChecker {}
 
+/// A signature checker that uses a callback to get necessary information about the transaction
+/// involved.
 #[derive(Copy, Clone)]
 pub struct CallbackTransactionSignatureChecker<'a> {
+    /// The callback to be used to calculate the sighash.
     pub sighash: SighashCalculator<'a>,
     /// This is stored as an `i64` instead of the `u32` used by transactions to avoid partial
     /// conversions when reading from the stack.
     pub lock_time: i64,
+    /// Whether this is the final UTXO in the transaction.
     pub is_final: bool,
 }
 
@@ -120,17 +135,21 @@ fn cast_to_bool(vch: &ValType) -> bool {
     false
 }
 
-/**
- * Script is a stack machine (like Forth) that evaluates a predicate
- * returning a bool indicating valid or not.  There are no loops.
- */
+/// Script is a stack machine (like Forth) that evaluates a predicate returning a bool indicating
+/// valid or not.  There are no loops.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Stack<T>(Vec<T>);
 
+// NB: This isn’t in `impl Stack`, because that requires us to specify type parameters, even though
+//     this value doesn’t care about them.
+/// The maximum number of elements allowed in the _combined_ stack and altstack.
+pub const MAX_STACK_DEPTH: usize = 1000;
+
 /// Wraps a Vec (or whatever underlying implementation we choose in a way that matches the C++ impl
 /// and provides us some decent chaining)
-impl<T: Clone> Stack<T> {
-    fn new() -> Self {
+impl<T> Stack<T> {
+    /// Creates an empty stack.
+    pub fn new() -> Self {
         Stack(vec![])
     }
 
@@ -139,15 +158,20 @@ impl<T: Clone> Stack<T> {
         if i < len {
             Ok(len - i - 1)
         } else {
-            Err(ScriptError::InvalidStackOperation)
+            Err(ScriptError::InvalidStackOperation(Some((i, len))))
         }
     }
 
+    /// Gets an element from the stack without removing it., counting from the right. I.e.,
+    /// `rget(0)` returns the top element.
     fn rget(&self, i: usize) -> Result<&T, ScriptError> {
         let idx = self.rindex(i)?;
-        self.0.get(idx).ok_or(ScriptError::InvalidStackOperation)
+        self.0
+            .get(idx)
+            .ok_or(ScriptError::InvalidStackOperation(None))
     }
 
+    /// Swaps the elements at two indices in the stack, counting from the right.
     fn rswap(&mut self, a: usize, b: usize) -> Result<(), ScriptError> {
         let ra = self.rindex(a)?;
         let rb = self.rindex(b)?;
@@ -155,49 +179,68 @@ impl<T: Clone> Stack<T> {
         Ok(())
     }
 
+    /// Removes and returns the top element from the stack.
     fn pop(&mut self) -> Result<T, ScriptError> {
-        self.0.pop().ok_or(ScriptError::InvalidStackOperation)
+        self.0
+            .pop()
+            .ok_or(ScriptError::InvalidStackOperation(Some((0, self.0.len()))))
     }
 
+    /// Adds a new element to the top of the stack.
     fn push(&mut self, value: T) {
         self.0.push(value)
     }
 
+    /// Returns true if there are no elements in the stack.
     pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
+    /// Returns the number of elements in the stack.
     pub(crate) fn len(&self) -> usize {
         self.0.len()
     }
 
+    /// Returns an iterator over the stack.
     fn iter(&self) -> Iter<'_, T> {
         self.0.iter()
     }
 
+    /// Returns a mutable reference to the last element of the stack.
     fn last_mut(&mut self) -> Result<&mut T, ScriptError> {
-        self.0.last_mut().ok_or(ScriptError::InvalidStackOperation)
-    }
-
-    fn last(&self) -> Result<&T, ScriptError> {
-        self.0.last().ok_or(ScriptError::InvalidStackOperation)
-    }
-
-    fn split_last(&self) -> Result<(&T, Stack<T>), ScriptError> {
+        let len = self.0.len();
         self.0
-            .split_last()
-            .ok_or(ScriptError::InvalidStackOperation)
-            .map(|(last, rem)| (last, Stack(rem.to_vec())))
+            .last_mut()
+            .ok_or(ScriptError::InvalidStackOperation(Some((0, len))))
     }
 
+    /// Returns a reference to the last element of the stack.
+    fn last(&self) -> Result<&T, ScriptError> {
+        self.0
+            .last()
+            .ok_or(ScriptError::InvalidStackOperation(Some((0, self.0.len()))))
+    }
+
+    /// Removes an element from the stack, counting from the right.
     fn rremove(&mut self, start: usize) -> Result<T, ScriptError> {
         self.rindex(start).map(|rstart| self.0.remove(rstart))
     }
 
+    /// Inserts an element at the given index, counting from the right.
     fn rinsert(&mut self, i: usize, element: T) -> Result<(), ScriptError> {
         let ri = self.rindex(i)?;
         self.0.insert(ri, element);
         Ok(())
+    }
+}
+
+impl<T: Clone> Stack<T> {
+    /// Returns the last element of the stack as well as the remainder of the stack.
+    fn split_last(&self) -> Result<(&T, Stack<T>), ScriptError> {
+        self.0
+            .split_last()
+            .ok_or(ScriptError::InvalidStackOperation(Some((0, self.0.len()))))
+            .map(|(last, rem)| (last, Stack(rem.to_vec())))
     }
 }
 
@@ -222,7 +265,7 @@ fn is_sig_valid(
     vch_sig: &[u8],
     vch_pub_key: &[u8],
     flags: VerificationFlags,
-    script: &Script<'_>,
+    script: &script::Code,
     checker: &dyn SignatureChecker,
 ) -> Result<bool, ScriptError> {
     // Note how this makes the exact order of pubkey/signature evaluation distinguishable by
@@ -268,8 +311,8 @@ fn binbasic_num<R>(
     op: impl Fn(i64, i64) -> Result<R, ScriptError>,
 ) -> Result<R, ScriptError> {
     binfn(stack, |x1, x2| {
-        let bn2 = parse_num(&x2, require_minimal, None).map_err(ScriptError::ScriptNumError)?;
-        let bn1 = parse_num(&x1, require_minimal, None).map_err(ScriptError::ScriptNumError)?;
+        let bn2 = num::parse(&x2, require_minimal, None).map_err(ScriptError::NumError)?;
+        let bn1 = num::parse(&x1, require_minimal, None).map_err(ScriptError::NumError)?;
         op(bn1, bn2)
     })
 }
@@ -290,6 +333,7 @@ fn cast_from_bool(b: bool) -> ValType {
     }
 }
 
+/// This holds the various components that need to be carried between individual opcode evaluations.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct State {
     stack: Stack<Vec<u8>>,
@@ -339,18 +383,23 @@ impl State {
         }
     }
 
+    /// Extract the primary stack from the state.
     pub fn stack(&self) -> &Stack<Vec<u8>> {
         &self.stack
     }
 
+    /// Extract the altstack from the state.
     pub fn altstack(&self) -> &Stack<Vec<u8>> {
         &self.altstack
     }
 
+    /// Extract the op_count from the state (in most cases, you can use `increment_op_count`
+    /// instead).
     pub fn op_count(&self) -> u8 {
         self.op_count
     }
 
+    /// Extract the current conditional state from the overall state.
     pub fn vexec(&self) -> &Stack<bool> {
         &self.vexec
     }
@@ -362,7 +411,7 @@ impl State {
 /// trigger some behavior.
 fn eval_step<'a>(
     pc: &'a [u8],
-    script: &Script,
+    script: &script::Code,
     flags: VerificationFlags,
     checker: impl SignatureChecker,
     state: &mut State,
@@ -370,23 +419,25 @@ fn eval_step<'a>(
     //
     // Read instruction
     //
-    Script::get_op(pc).and_then(
-        |ParsedOpcode {
+    Opcode::parse(pc).and_then(
+        |opcode::Parsed {
              opcode,
              remaining_code,
          }| match opcode {
             // See the documentation of `Bad` for an explanation of this logic.
-            PossiblyBad::Bad(bad) => {
-                if Bad::OP_RESERVED != bad {
+            opcode::PossiblyBad::Bad(bad) => {
+                if opcode::Bad::OP_RESERVED != bad {
                     state.increment_op_count()?;
                 }
-                if matches!(bad, Bad::OP_VERIF | Bad::OP_VERNOTIF) || should_exec(&state.vexec) {
+                if matches!(bad, opcode::Bad::OP_VERIF | opcode::Bad::OP_VERNOTIF)
+                    || should_exec(&state.vexec)
+                {
                     Err(ScriptError::BadOpcode(Some(bad)))
                 } else {
                     Ok(remaining_code)
                 }
             }
-            PossiblyBad::Good(opcode) => {
+            opcode::PossiblyBad::Good(opcode) => {
                 eval_opcode(flags, opcode, script, &checker, state).map(|()| remaining_code)
             }
         },
@@ -396,13 +447,14 @@ fn eval_step<'a>(
 fn eval_opcode(
     flags: VerificationFlags,
     opcode: Opcode,
-    script: &Script,
+    script: &script::Code,
     checker: &dyn SignatureChecker,
     state: &mut State,
 ) -> Result<(), ScriptError> {
     (match opcode {
         Opcode::PushValue(pv) => {
-            if pv.value().len() <= MAX_SCRIPT_ELEMENT_SIZE {
+            let len = pv.value().len();
+            if len <= opcode::push_value::LargeValue::MAX_SIZE {
                 if should_exec(&state.vexec) {
                     eval_push_value(
                         &pv,
@@ -413,7 +465,7 @@ fn eval_opcode(
                     Ok(())
                 }
             } else {
-                Err(ScriptError::PushSize)
+                Err(ScriptError::PushSize(Some(len)))
             }
         }
         Opcode::Control(control) => {
@@ -441,8 +493,8 @@ fn eval_opcode(
     })
     .and_then(|()| {
         // Size limits
-        if state.stack.len() + state.altstack.len() > 1000 {
-            Err(ScriptError::StackSize)
+        if state.stack.len() + state.altstack.len() > MAX_STACK_DEPTH {
+            Err(ScriptError::StackSize(None))
         } else {
             Ok(())
         }
@@ -450,7 +502,7 @@ fn eval_opcode(
 }
 
 fn eval_push_value(
-    pv: &PushValue,
+    pv: &opcode::PushValue,
     require_minimal: bool,
     stack: &mut Stack<Vec<u8>>,
 ) -> Result<(), ScriptError> {
@@ -469,7 +521,7 @@ fn should_exec(vexec: &Stack<bool>) -> bool {
 
 /// <expression> if [statements] [else [statements]] endif
 fn eval_control(
-    op: Control,
+    op: opcode::Control,
     stack: &mut Stack<Vec<u8>>,
     vexec: &mut Stack<bool>,
 ) -> Result<(), ScriptError> {
@@ -509,9 +561,9 @@ fn eval_control(
 }
 
 fn eval_operation(
-    op: Operation,
+    op: opcode::Operation,
     flags: VerificationFlags,
-    script: &Script,
+    script: &script::Code,
     checker: &dyn SignatureChecker,
     stack: &mut Stack<Vec<u8>>,
     altstack: &mut Stack<Vec<u8>>,
@@ -522,15 +574,16 @@ fn eval_operation(
     let unfn_num =
         |stackin: &mut Stack<Vec<u8>>, op: &dyn Fn(i64) -> Vec<u8>| -> Result<(), ScriptError> {
             unop(stackin, |vch| {
-                parse_num(&vch, require_minimal, None)
-                    .map_err(ScriptError::ScriptNumError)
+                num::parse(&vch, require_minimal, None)
+                    .map_err(ScriptError::NumError)
                     .map(op)
             })
         };
 
-    let unop_num = |stack: &mut Stack<Vec<u8>>,
-                    op: &dyn Fn(i64) -> i64|
-     -> Result<(), ScriptError> { unfn_num(stack, &|bn| serialize_num(op(bn))) };
+    let unop_num =
+        |stack: &mut Stack<Vec<u8>>, op: &dyn Fn(i64) -> i64| -> Result<(), ScriptError> {
+            unfn_num(stack, &|bn| num::serialize(op(bn)))
+        };
 
     let binfn_num = |stack: &mut Stack<Vec<u8>>,
                      op: &dyn Fn(i64, i64) -> Vec<u8>|
@@ -540,7 +593,7 @@ fn eval_operation(
 
     let binop_num =
         |stack: &mut Stack<Vec<u8>>, op: &dyn Fn(i64, i64) -> i64| -> Result<(), ScriptError> {
-            binfn_num(stack, &|bn1, bn2| serialize_num(op(bn1, bn2)))
+            binfn_num(stack, &|bn1, bn2| num::serialize(op(bn1, bn2)))
         };
 
     let binrel =
@@ -575,7 +628,7 @@ fn eval_operation(
                 }
             } else {
                 if stack.is_empty() {
-                    return Err(ScriptError::InvalidStackOperation);
+                    return Err(ScriptError::InvalidStackOperation(None));
                 }
 
                 // Note that elsewhere numeric opcodes are limited to
@@ -592,7 +645,7 @@ fn eval_operation(
                 // Thus as a special case we tell `ScriptNum` to accept up
                 // to 5-byte bignums, which are good until 2**39-1, well
                 // beyond the 2**32-1 limit of the `lock_time` field itself.
-                let lock_time = parse_num(stack.rget(0)?, require_minimal, Some(5))?;
+                let lock_time = num::parse(stack.rget(0)?, require_minimal, Some(5))?;
 
                 // In the rare event that the argument may be < 0 due to
                 // some arithmetic being done first, you can always use
@@ -622,7 +675,7 @@ fn eval_operation(
             // (true -- ) or
             // (false -- false) and return
             if stack.is_empty() {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             }
             let value = cast_to_bool(stack.rget(0)?);
             if value {
@@ -639,7 +692,7 @@ fn eval_operation(
         //
         OP_TOALTSTACK => {
             if stack.is_empty() {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             }
             altstack.push(stack.rget(0)?.clone());
             stack.pop()?;
@@ -647,7 +700,7 @@ fn eval_operation(
 
         OP_FROMALTSTACK => {
             if altstack.is_empty() {
-                return Err(ScriptError::InvalidAltstackOperation);
+                return Err(ScriptError::InvalidAltstackOperation(None));
             }
             stack.push(altstack.rget(0)?.clone());
             altstack.pop()?;
@@ -655,7 +708,7 @@ fn eval_operation(
 
         OP_2DROP => {
             if stack.len() < 2 {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             }
 
             stack.pop()?;
@@ -665,7 +718,7 @@ fn eval_operation(
         OP_2DUP => {
             // (x1 x2 -- x1 x2 x1 x2)
             if stack.len() < 2 {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             }
             let vch1 = stack.rget(1)?.clone();
             let vch2 = stack.rget(0)?.clone();
@@ -676,7 +729,7 @@ fn eval_operation(
         OP_3DUP => {
             // (x1 x2 x3 -- x1 x2 x3 x1 x2 x3)
             if stack.len() < 3 {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             }
             let vch1 = stack.rget(2)?.clone();
             let vch2 = stack.rget(1)?.clone();
@@ -689,7 +742,7 @@ fn eval_operation(
         OP_2OVER => {
             // (x1 x2 x3 x4 -- x1 x2 x3 x4 x1 x2)
             if stack.len() < 4 {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             }
             let vch1 = stack.rget(3)?.clone();
             let vch2 = stack.rget(2)?.clone();
@@ -700,7 +753,7 @@ fn eval_operation(
         OP_2ROT => {
             // (x1 x2 x3 x4 x5 x6 -- x3 x4 x5 x6 x1 x2)
             if stack.len() < 6 {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             }
             let vch1 = stack.rget(5)?.clone();
             let vch2 = stack.rget(4)?.clone();
@@ -713,7 +766,7 @@ fn eval_operation(
         OP_2SWAP => {
             // (x1 x2 x3 x4 -- x3 x4 x1 x2)
             if stack.len() < 4 {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             }
             stack.rswap(3, 1)?;
             stack.rswap(2, 0)?;
@@ -722,7 +775,7 @@ fn eval_operation(
         OP_IFDUP => {
             // (x - 0 | x x)
             if stack.is_empty() {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             }
             let vch = stack.rget(0)?;
             if cast_to_bool(vch) {
@@ -732,14 +785,14 @@ fn eval_operation(
 
         OP_DEPTH => {
             // -- stacksize
-            let bn = i64::try_from(stack.len()).map_err(|_| ScriptError::StackSize)?;
-            stack.push(serialize_num(bn))
+            let bn = i64::try_from(stack.len()).map_err(|err| ScriptError::StackSize(Some(err)))?;
+            stack.push(num::serialize(bn))
         }
 
         OP_DROP => {
             // (x -- )
             if stack.is_empty() {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             }
             stack.pop()?;
         }
@@ -747,7 +800,7 @@ fn eval_operation(
         OP_DUP => {
             // (x -- x x)
             if stack.is_empty() {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             }
 
             let vch = stack.rget(0)?;
@@ -757,7 +810,7 @@ fn eval_operation(
         OP_NIP => {
             // (x1 x2 -- x2)
             if stack.len() < 2 {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             }
             stack.rremove(1)?;
         }
@@ -765,7 +818,7 @@ fn eval_operation(
         OP_OVER => {
             // (x1 x2 -- x1 x2 x1)
             if stack.len() < 2 {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             }
             let vch = stack.rget(1)?;
             stack.push(vch.clone());
@@ -775,13 +828,13 @@ fn eval_operation(
             // (xn ... x2 x1 x0 n - xn ... x2 x1 x0 xn)
             // (xn ... x2 x1 x0 n - ... x2 x1 x0 xn)
             if stack.len() < 2 {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             }
-            let n = u16::try_from(parse_num(stack.rget(0)?, require_minimal, None)?)
-                .map_err(|_| ScriptError::InvalidStackOperation)?;
+            let n = u16::try_from(num::parse(stack.rget(0)?, require_minimal, None)?)
+                .map_err(|_| ScriptError::InvalidStackOperation(None))?;
             stack.pop()?;
             if usize::from(n) >= stack.len() {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             }
             let vch: ValType = stack.rget(n.into())?.clone();
             if op == OP_ROLL {
@@ -795,7 +848,7 @@ fn eval_operation(
             //  x2 x1 x3  after first swap
             //  x2 x3 x1  after second swap
             if stack.len() < 3 {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             }
             stack.rswap(2, 1)?;
             stack.rswap(1, 0)?;
@@ -804,7 +857,7 @@ fn eval_operation(
         OP_SWAP => {
             // (x1 x2 -- x2 x1)
             if stack.len() < 2 {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             }
             stack.rswap(1, 0)?;
         }
@@ -812,7 +865,7 @@ fn eval_operation(
         OP_TUCK => {
             // (x1 x2 -- x2 x1 x2)
             if stack.len() < 2 {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             }
             let vch = stack.rget(0)?.clone();
             stack.rinsert(1, vch)?
@@ -821,11 +874,11 @@ fn eval_operation(
         OP_SIZE => {
             // (in -- in size)
             if stack.is_empty() {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             }
             let bn = i64::try_from(stack.rget(0)?.len())
-                .expect("stack element size <= MAX_SCRIPT_ELEMENT_SIZE");
-            stack.push(serialize_num(bn))
+                .expect("stack element size <= PushValue::MAX_SIZE");
+            stack.push(num::serialize(bn))
         }
 
         //
@@ -877,11 +930,11 @@ fn eval_operation(
         OP_WITHIN => {
             // (x min max -- out)
             if stack.len() < 3 {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             }
-            let bn1 = parse_num(stack.rget(2)?, require_minimal, None)?;
-            let bn2 = parse_num(stack.rget(1)?, require_minimal, None)?;
-            let bn3 = parse_num(stack.rget(0)?, require_minimal, None)?;
+            let bn1 = num::parse(stack.rget(2)?, require_minimal, None)?;
+            let bn2 = num::parse(stack.rget(1)?, require_minimal, None)?;
+            let bn3 = num::parse(stack.rget(0)?, require_minimal, None)?;
             let value = bn2 <= bn1 && bn1 < bn3;
             stack.pop()?;
             stack.pop()?;
@@ -895,7 +948,7 @@ fn eval_operation(
         OP_RIPEMD160 | OP_SHA1 | OP_SHA256 | OP_HASH160 | OP_HASH256 => {
             // (in -- hash)
             if stack.is_empty() {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             }
             let vch = stack.rget(0)?;
             let mut vch_hash = vec![];
@@ -919,7 +972,7 @@ fn eval_operation(
         OP_CHECKSIG | OP_CHECKSIGVERIFY => {
             // (sig pubkey -- bool)
             if stack.len() < 2 {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             }
 
             let vch_sig = stack.rget(1)?.clone();
@@ -948,10 +1001,10 @@ fn eval_operation(
             let mut i: u8 = 0;
 
             let mut keys_count =
-                u8::try_from(parse_num(stack.rget(i.into())?, require_minimal, None)?)
-                    .map_err(|_| ScriptError::PubKeyCount)?;
-            if keys_count > 20 {
-                return Err(ScriptError::PubKeyCount);
+                u8::try_from(num::parse(stack.rget(i.into())?, require_minimal, None)?)
+                    .map_err(|err| ScriptError::PubKeyCount(Some(err)))?;
+            if keys_count > MAX_PUBKEY_COUNT {
+                return Err(ScriptError::PubKeyCount(None));
             };
             assert!(*op_count <= MAX_OP_COUNT);
             *op_count += keys_count;
@@ -962,21 +1015,21 @@ fn eval_operation(
             let mut ikey = i;
             i += keys_count;
             if stack.len() <= i.into() {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             }
-            assert!(i <= 21);
+            assert!(i <= 1 + MAX_PUBKEY_COUNT);
 
             let mut sigs_count =
-                u8::try_from(parse_num(stack.rget(i.into())?, require_minimal, None)?)
-                    .map_err(|_| ScriptError::SigCount)?;
+                u8::try_from(num::parse(stack.rget(i.into())?, require_minimal, None)?)
+                    .map_err(|err| ScriptError::SigCount(Some(err)))?;
             if sigs_count > keys_count {
-                return Err(ScriptError::SigCount);
+                return Err(ScriptError::SigCount(None));
             };
             i += 1;
             let mut isig = i;
             i += sigs_count;
             if stack.len() <= i.into() {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             };
 
             let mut success = true;
@@ -1014,7 +1067,7 @@ fn eval_operation(
             // so optionally verify it is exactly equal to zero prior
             // to removing it from the stack.
             if stack.is_empty() {
-                return Err(ScriptError::InvalidStackOperation);
+                return Err(ScriptError::InvalidStackOperation(None));
             }
             if flags.contains(VerificationFlags::NullDummy) && !stack.rget(0)?.is_empty() {
                 return Err(ScriptError::SigNullDummy);
@@ -1035,12 +1088,15 @@ fn eval_operation(
     Ok(())
 }
 
+/// A wrapper around a function that executes a single opcode from a script.
 pub trait StepFn {
+    /// Any additional data that is needed by the `StepFn`. In most cases, it can be `()`.
     type Payload: Clone;
+    /// Call the underlying function to evaluate a single opcode.
     fn call<'a>(
         &self,
         pc: &'a [u8],
-        script: &Script,
+        script: &script::Code,
         state: &mut State,
         payload: &mut Self::Payload,
     ) -> Result<&'a [u8], ScriptError>;
@@ -1049,7 +1105,9 @@ pub trait StepFn {
 /// Produces the default stepper, which carries no payload and runs the script as before.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct DefaultStepEvaluator<C> {
+    /// The flags which can modify interpretation rules.
     pub(crate) flags: VerificationFlags,
+    /// The `SignatureChecker` used in `CHECK*SIG`.
     pub(crate) checker: C,
 }
 
@@ -1058,7 +1116,7 @@ impl<C: SignatureChecker + Copy> StepFn for DefaultStepEvaluator<C> {
     fn call<'a>(
         &self,
         pc: &'a [u8],
-        script: &Script,
+        script: &script::Code,
         state: &mut State,
         _payload: &mut (),
     ) -> Result<&'a [u8], ScriptError> {
@@ -1066,9 +1124,10 @@ impl<C: SignatureChecker + Copy> StepFn for DefaultStepEvaluator<C> {
     }
 }
 
+/// Execution of a script component (e.g., script sig, script pubkey, or redeem script).
 fn eval_script<F>(
     stack: Stack<Vec<u8>>,
-    script: &Script,
+    script: &script::Code,
     payload: &mut F::Payload,
     eval_step: &F,
 ) -> Result<Stack<Vec<u8>>, ScriptError>
@@ -1076,8 +1135,8 @@ where
     F: StepFn,
 {
     // There's a limit on how large scripts can be.
-    if script.0.len() > MAX_SCRIPT_SIZE {
-        return Err(ScriptError::ScriptSize);
+    if script.0.len() > script::Code::MAX_SIZE {
+        return Err(ScriptError::ScriptSize(Some(script.0.len())));
     }
 
     let mut pc = script.0;
@@ -1116,7 +1175,7 @@ impl SignatureChecker for CallbackTransactionSignatureChecker<'_> {
         &self,
         sig: &signature::Decoded,
         vch_pub_key: &[u8],
-        script_code: &Script,
+        script_code: &script::Code,
     ) -> bool {
         let pubkey = PubKey(vch_pub_key);
 
@@ -1160,7 +1219,7 @@ impl SignatureChecker for CallbackTransactionSignatureChecker<'_> {
 /// Additional validation for spend-to-script-hash transactions:
 fn eval_p2sh<F>(
     data_stack: Stack<Vec<u8>>,
-    script_sig: &Script,
+    script_sig: &script::Code,
     payload: &mut F::Payload,
     stepper: &F,
 ) -> Result<Stack<Vec<u8>>, ScriptError>
@@ -1175,7 +1234,7 @@ where
         data_stack
             .split_last()
             .and_then(|(pub_key_2, remaining_stack)| {
-                eval_script(remaining_stack, &Script(pub_key_2), payload, stepper)
+                eval_script(remaining_stack, &script::Code(pub_key_2), payload, stepper)
             })
             .and_then(|p2sh_stack| {
                 if p2sh_stack.last().is_ok_and(cast_to_bool) {
@@ -1189,9 +1248,10 @@ where
     }
 }
 
-pub(crate) fn verify_script<F>(
-    script_sig: &Script,
-    script_pub_key: &Script,
+/// Full execution of a script.
+pub fn verify_script<F>(
+    script_sig: &script::Code,
+    script_pub_key: &script::Code,
     flags: VerificationFlags,
     payload: &mut F::Payload,
     stepper: &F,

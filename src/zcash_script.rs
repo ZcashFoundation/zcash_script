@@ -2,14 +2,7 @@ use std::num::TryFromIntError;
 
 use thiserror::Error;
 
-use crate::{
-    interpreter::{
-        verify_script, DefaultStepEvaluator, SignatureChecker, State, StepFn, VerificationFlags,
-    },
-    script::Script,
-    script_error::ScriptError,
-    signature,
-};
+use crate::{interpreter::*, script, script_error::*};
 
 /// This extends `ScriptError` with cases that can only occur when using the C++ implementation.
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
@@ -32,6 +25,16 @@ pub enum Error {
     ///         hold either.
     #[error("unknown error code: {0}")]
     Unknown(i64),
+}
+
+impl Error {
+    /// Convert errors that don’t exist in the C++ code into the cases that do.
+    pub fn normalize(&self) -> Self {
+        match self {
+            Error::Script(serr) => Error::Script(serr.normalize()),
+            _ => self.clone(),
+        }
+    }
 }
 
 /// The external API of zcash_script. This is defined to make it possible to compare the C++ and
@@ -77,8 +80,8 @@ where
     F: StepFn,
 {
     verify_script(
-        &Script(script_sig),
-        &Script(script_pub_key),
+        &script::Code(script_sig),
+        &script::Code(script_pub_key),
         flags,
         payload,
         stepper,
@@ -104,6 +107,8 @@ pub struct StepResults<T, U> {
 }
 
 impl<T, U> StepResults<T, U> {
+    /// Creates an empty `StepResults` given an initial payload for each of the `StepFn`s that will
+    /// be compared.
     pub fn initial(payload_l: T, payload_r: U) -> Self {
         StepResults {
             identical_states: vec![],
@@ -111,41 +116,6 @@ impl<T, U> StepResults<T, U> {
             payload_l,
             payload_r,
         }
-    }
-}
-
-/// This case is only generated in comparisons. It merges the `interpreter::Error::OpCount` case
-/// with the `opcode::Error::DisabledOpcode` case. This is because there is an edge case when there
-/// is a disabled opcode as the `MAX_OP_COUNT + 1` operation (not opcode) in a script. In this case,
-/// the C++ implementation checks the op_count first, while the Rust implementation fails on
-/// disabled opcodes as soon as they’re read (since the script is guaranteed to fail if they occur,
-/// even in an inactive branch). To allow comparison tests to pass (especially property & fuzz
-/// tests), we need these two failure cases to be seen as identical.
-pub const AMBIGUOUS_COUNT_DISABLED_ERROR: ScriptError =
-    ScriptError::ExternalError("ambiguous OpCount or DisabledOpcode error");
-
-/// This case is only generated in comparisons. It merges `ScriptError::ScriptNumError` and
-/// `ScriptError::SigHighS`, which can only come from the Rust implementation, with
-/// `ScriptError_t_SCRIPT_ERR_UNKNOWN_ERROR`, which can only come from the C++ implementation, but
-/// in at least all of the cases that either of the Rust error cases would happen.
-pub const AMBIGUOUS_UNKNOWN_NUM_HIGHS_ERROR: ScriptError =
-    ScriptError::ExternalError("ambiguous Unknown, or ScriptNum, or HighS error");
-
-/// Convert errors that don’t exist in the C++ code into the cases that do.
-pub fn normalize_error(err: ScriptError) -> ScriptError {
-    match err {
-        ScriptError::OpCount => AMBIGUOUS_COUNT_DISABLED_ERROR,
-        ScriptError::BadOpcode(Some(_)) => ScriptError::BadOpcode(None),
-        ScriptError::DisabledOpcode(_) => AMBIGUOUS_COUNT_DISABLED_ERROR,
-        ScriptError::SignatureEncoding(sig_err) => match sig_err {
-            signature::Error::SigHashType(Some(_)) => signature::Error::SigHashType(None).into(),
-            signature::Error::SigDER(Some(_)) => signature::Error::SigDER(None).into(),
-            signature::Error::SigHighS => AMBIGUOUS_UNKNOWN_NUM_HIGHS_ERROR,
-            _ => sig_err.into(),
-        },
-        ScriptError::ReadError { .. } => ScriptError::BadOpcode(None),
-        ScriptError::ScriptNumError(_) => AMBIGUOUS_UNKNOWN_NUM_HIGHS_ERROR,
-        _ => err,
     }
 }
 
@@ -157,7 +127,12 @@ pub fn normalize_error(err: ScriptError) -> ScriptError {
 ///
 /// This returns a very debuggable result. See `StepResults` for details.
 pub struct ComparisonStepEvaluator<'a, T, U> {
+    /// One of the two `StepFn`s to be compared. The one difference is that in the case where both
+    /// `StepFn`s fail, but with different errors, _this_ is the error that will be returned for the
+    /// script.
     pub eval_step_l: &'a dyn StepFn<Payload = T>,
+    /// One of the two `StepFn`s to be compared. The one difference is that in the case where both
+    /// `StepFn`s fail, but with different errors, _this_ error will be discarded.
     pub eval_step_r: &'a dyn StepFn<Payload = U>,
 }
 
@@ -166,7 +141,7 @@ impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
     fn call<'b>(
         &self,
         pc: &'b [u8],
-        script: &Script,
+        script: &script::Code,
         state: &mut State,
         payload: &mut StepResults<T, U>,
     ) -> Result<&'b [u8], ScriptError> {
@@ -205,6 +180,9 @@ impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
     }
 }
 
+/// This is used for any interpreter that is based on a `StepFn`.
+///
+/// The original C++ interpreter is _not_ a `StepwiseInterpreter`, but the pure Rust one is.
 pub struct StepwiseInterpreter<F>
 where
     F: StepFn,
@@ -214,6 +192,7 @@ where
 }
 
 impl<F: StepFn> StepwiseInterpreter<F> {
+    /// Creates a new interpreter from a `StepFn` and an initial payload.
     pub fn new(initial_payload: F::Payload, stepper: F) -> Self {
         StepwiseInterpreter {
             initial_payload,
@@ -222,6 +201,7 @@ impl<F: StepFn> StepwiseInterpreter<F> {
     }
 }
 
+/// This is the pure Rust interpreter, which doesn’t use the FFI.
 pub fn rust_interpreter<C: SignatureChecker + Copy>(
     flags: VerificationFlags,
     checker: C,
@@ -233,7 +213,7 @@ impl<F: StepFn> ZcashScript for StepwiseInterpreter<F> {
     /// Returns the number of transparent signature operations in the
     /// transparent inputs and outputs of this transaction.
     fn legacy_sigop_count_script(&self, script: &[u8]) -> Result<u32, Error> {
-        let cscript = Script(script);
+        let cscript = script::Code(script);
         Ok(cscript.get_sig_op_count(false))
     }
 
