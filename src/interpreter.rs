@@ -1105,7 +1105,7 @@ pub trait StepFn {
 /// Produces the default stepper, which carries no payload and runs the script as before.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct DefaultStepEvaluator<C> {
-    /// The flags which can modify interpretration rules.
+    /// The flags which can modify interpretation rules.
     pub(crate) flags: VerificationFlags,
     /// The `SignatureChecker` used in `CHECK*SIG`.
     pub(crate) checker: C,

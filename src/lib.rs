@@ -105,7 +105,7 @@ impl From<&Opcode> for Vec<u8> {
 pub struct CxxInterpreter<'a> {
     /// A callback to determine the sighash for a particular UTXO.
     pub sighash: SighashCalculator<'a>,
-    /// The time at which this interpreter is being run.
+    /// The value of the locktime field of the transaction.
     pub lock_time: u32,
     /// Whether this is the final UTXO for the transaction.
     pub is_final: bool,
