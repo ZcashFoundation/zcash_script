@@ -1258,22 +1258,17 @@ fn eval_p2sh<F>(
 where
     F: StepFn,
 {
-    // stack cannot be empty here, because if it was the P2SH HASH <> EQUAL scriptPubKey would
-    // be evaluated with an empty stack and the `eval_script` in the caller would return false.
-    assert!(!data_stack.is_empty());
-    data_stack
-        .split_last()
-        .map_err(|e| script::Error::Interpreter(None, e))
-        .and_then(|(pub_key_2, remaining_stack)| {
-            eval_script(remaining_stack, &script::Code(pub_key_2), payload, stepper)
-        })
-        .map(|p2sh_stack| {
-            if p2sh_stack.last().is_ok_and(cast_to_bool) {
-                Some(p2sh_stack)
-            } else {
-                None
-            }
-        })
+    let (pub_key_2, remaining_stack) = data_stack.split_last().expect(
+        "stack cannot be empty here, because if it were, the P2SH HASH <> EQUAL scriptPubKey would \
+         be evaluated with an empty stack and the `eval_script` in the caller would return false.",
+    );
+    eval_script(remaining_stack, &script::Code(pub_key_2), payload, stepper).map(|p2sh_stack| {
+        if p2sh_stack.last().is_ok_and(cast_to_bool) {
+            Some(p2sh_stack)
+        } else {
+            None
+        }
+    })
 }
 
 /// Full execution of a script.
