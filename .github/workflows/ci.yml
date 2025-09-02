@@ -139,7 +139,15 @@ jobs:
           toolchain: ${{ matrix.rust }}
           override: true
       - run: cargo install cargo-fuzz
-      - uses: actions-rs/cargo@v1
-        with:
-          command: fuzz
-          args: run compare -- -max_len=20000 -max_total_time=100
+      # TODO: After including opcodes in `script::Error::Interpreter`, the fuzzer started having
+      #       memory usage issues. This disables the sanitizer, which avoids those issues. This is a
+      #       workaround. An actual fix requires deeper understanding and here are some possibly-
+      #       relevant references:
+      #
+      #     - rust-fuzz/cargo-fuzz#303
+      #     - rust-lang/rust#95240
+      #     - https://rust-lang.zulipchat.com/#narrow/channel/187780-t-compiler.2Fllvm/topic/Compile.20time.20blowup.20associated.20with.20asan.3F
+      - name: build
+        run: cargo fuzz build --sanitizer none compare
+      - name: fuzz
+        run: cargo fuzz run --sanitizer none compare -- -max_len=20000 -max_total_time=100
