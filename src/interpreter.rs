@@ -818,6 +818,12 @@ fn eval_operation(
         OP_FROMALTSTACK => stack.push(altstack.pop()?),
 
         OP_2DROP => {
+            // (x1 x2 -- )
+            //
+            // NB: This needs to be done in this order (rather than `pop(); pop()`) to maintain
+            //     state compatibilty with C++. If there is exactly one element on the stack,
+            //     removing the top element first would leave us with a different state when the
+            //     error occurs.
             stack.rremove(1).and_then(|_| stack.pop())?;
         }
 
