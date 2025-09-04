@@ -120,10 +120,9 @@ impl From<cxx::ScriptError> for Error {
             cxx::ScriptError_t_SCRIPT_ERR_SCRIPT_SIZE => {
                 Self::from(script::Error::ScriptSize(None))
             }
-            cxx::ScriptError_t_SCRIPT_ERR_PUSH_SIZE => Self::from(script::Error::Interpreter(
-                None,
-                interpreter::Error::PushSize(None),
-            )),
+            cxx::ScriptError_t_SCRIPT_ERR_PUSH_SIZE => {
+                Self::from(script::Error::from(opcode::Error::PushSize(None)))
+            }
             cxx::ScriptError_t_SCRIPT_ERR_OP_COUNT => Self::from(script::Error::Interpreter(
                 None,
                 interpreter::Error::OpCount,

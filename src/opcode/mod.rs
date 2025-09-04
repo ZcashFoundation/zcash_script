@@ -23,6 +23,14 @@ pub enum Error {
     /// __TODO__: `Option` can go away once C++ support is removed.
     #[error("disabled opcode encountered{}", .0.map_or("".to_owned(), |op| format!(": {:?}", op)))]
     Disabled(Option<Disabled>),
+
+    // Max sizes
+    #[error(
+        "push size{} exceeded maxmimum ({} bytes)",
+        .0.map_or("", |size| " ({size} bytes)"),
+        push_value::LargeValue::MAX_SIZE
+    )]
+    PushSize(Option<usize>),
 }
 
 /// Opcodes that represent constants to be pushed onto the stack.
@@ -65,10 +73,6 @@ impl PushValue {
         let mut errors = Vec::new();
         if flags.contains(interpreter::VerificationFlags::MinimalData) && !self.is_minimal_push() {
             errors.push(interpreter::Error::MinimalData);
-        }
-        let len = self.value().len();
-        if push_value::LargeValue::MAX_SIZE < len {
-            errors.push(interpreter::Error::PushSize(Some(len)));
         }
         errors
     }
