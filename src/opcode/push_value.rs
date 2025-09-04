@@ -49,7 +49,7 @@ impl LargeValue {
     fn split_value(script: &[u8], needed_bytes: usize) -> (Result<&[u8], opcode::Error>, &[u8]) {
         match script.split_at_checked(needed_bytes) {
             None => (
-                Err(opcode::Error::ReadError {
+                Err(opcode::Error::Read {
                     expected_bytes: needed_bytes,
                     available_bytes: script.len(),
                 }),
@@ -93,7 +93,7 @@ impl LargeValue {
     pub fn parse(script: &[u8]) -> Option<(Result<LargeValue, opcode::Error>, &[u8])> {
         match script.split_first() {
             None => Some((
-                Err(opcode::Error::ReadError {
+                Err(opcode::Error::Read {
                     expected_bytes: 1,
                     available_bytes: 0,
                 }),

@@ -312,7 +312,7 @@ mod tests {
             ret,
             Err((
                 script::ComponentType::PubKey,
-                Error::from(script::Error::from(opcode::Error::ReadError {
+                Error::from(script::Error::from(opcode::Error::Read {
                     expected_bytes: 1,
                     available_bytes: 0,
                 }))
@@ -327,7 +327,7 @@ mod tests {
                 diverging_result:
                     Some((
                         Ok(state),
-                        Err(script::Error::Opcode(opcode::Error::ReadError {
+                        Err(script::Error::Opcode(opcode::Error::Read {
                             expected_bytes: 1,
                             available_bytes: 0,
                         })),

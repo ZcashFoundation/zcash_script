@@ -15,7 +15,7 @@ use push_value::{
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Error)]
 pub enum Error {
     #[error("expected {expected_bytes} bytes, but only {available_bytes} bytes available")]
-    ReadError {
+    Read {
         expected_bytes: usize,
         available_bytes: usize,
     },
@@ -307,7 +307,7 @@ impl PossiblyBad {
         match push_value::LargeValue::parse(script) {
             None => match script.split_first() {
                 None => (
-                    Err(Error::ReadError {
+                    Err(Error::Read {
                         expected_bytes: 1,
                         available_bytes: 0,
                     }),

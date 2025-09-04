@@ -72,7 +72,7 @@ impl Error {
         match self {
             Self::ScriptSize(Some(_)) => Self::ScriptSize(None),
             Self::Opcode(oerr) => match oerr {
-                opcode::Error::ReadError { .. } => {
+                opcode::Error::Read { .. } => {
                     Self::Interpreter(None, interpreter::Error::BadOpcode)
                 }
                 opcode::Error::Disabled(_) => Self::AMBIGUOUS_COUNT_DISABLED,
