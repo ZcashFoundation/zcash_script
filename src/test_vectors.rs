@@ -7165,21 +7165,21 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[H("4c01")],
             script_pubkey: &[H("01"), O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::ReadError { expected_bytes: 1, available_bytes: 0 })),
+            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::Read { expected_bytes: 1, available_bytes: 0 })),
         },
         // PUSHDATA2 with not enough bytes
         TestVector {
             script_sig: &[H("4d0200ff")],
             script_pubkey: &[H("01"), O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::ReadError { expected_bytes: 2, available_bytes: 1 })),
+            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::Read { expected_bytes: 2, available_bytes: 1 })),
         },
         // PUSHDATA4 with not enough bytes
         TestVector {
             script_sig: &[H("4e03000000ffff")],
             script_pubkey: &[H("01"), O(NOP)],
             flags: DEFAULT_FLAGS,
-            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::ReadError { expected_bytes: 3, available_bytes: 2 })),
+            result: err(script::ComponentType::Sig, script::Error::from(opcode::Error::Read { expected_bytes: 3, available_bytes: 2 })),
         },
         // 0x50 is reserved
         TestVector {
