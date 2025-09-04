@@ -28,12 +28,10 @@ impl LargeValue {
 
     pub const MAX_SIZE: usize = 520; // bytes
 
-    /// Returns a [`LargeValue`] as minimally-encoded as possible. That is, non-empty values that
-    /// should be minimally-encoded as [`SmallValue`]s will be [`PushdataBytelength`].
+    /// Returns a [`LargeValue`] as minimally-encoded as possible. That is, values that
+    /// should be minimally-encoded as [`SmallValue`]s will be [`LargeValue`].
     pub fn from_slice(v: &[u8]) -> Option<LargeValue> {
-        if v.is_empty() {
-            None
-        } else if let Ok(bv) = BoundedVec::try_from(v.to_vec()) {
+        if let Ok(bv) = BoundedVec::try_from(v.to_vec()) {
             Some(PushdataBytelength(bv))
         } else if let Ok(bv) = BoundedVec::try_from(v.to_vec()) {
             Some(OP_PUSHDATA1(bv))
