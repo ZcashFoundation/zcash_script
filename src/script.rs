@@ -76,6 +76,8 @@ impl Error {
                     Self::Interpreter(None, interpreter::Error::BadOpcode)
                 }
                 opcode::Error::Disabled(_) => Self::AMBIGUOUS_COUNT_DISABLED,
+                opcode::Error::PushSize(Some(_)) => Self::from(opcode::Error::PushSize(None)),
+                _ => self.clone(),
             },
             Self::Interpreter(
                 Some(opcode::PossiblyBad::Good(op::IF | op::NOTIF)),
@@ -267,8 +269,11 @@ impl Code<'_> {
         self.parse().all(|op| {
             matches!(
                 op,
-                Ok(opcode::PossiblyBad::Good(Opcode::PushValue(_))
-                    | opcode::PossiblyBad::Bad(opcode::Bad::OP_RESERVED))
+                // NB: The C++ impl only checks the push size during interpretation, so we need to
+                //     pass this check for too-big `PushValue`s.
+                Err(opcode::Error::PushSize(_))
+                    | Ok(opcode::PossiblyBad::Good(Opcode::PushValue(_))
+                        | opcode::PossiblyBad::Bad(opcode::Bad::OP_RESERVED))
             )
         })
     }

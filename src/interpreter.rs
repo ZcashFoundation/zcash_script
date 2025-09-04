@@ -25,14 +25,6 @@ pub enum Error {
     #[error("OP_RETURN encountered")]
     OpReturn,
 
-    // Max sizes
-    #[error(
-        "push size{} exceeded maxmimum ({} bytes)",
-        .0.map_or("", |size| " ({size} bytes)"),
-        opcode::push_value::LargeValue::MAX_SIZE
-    )]
-    PushSize(Option<usize>),
-
     /// __NB__: This doesn’t take an “actual count” argument, because `OpCount` depends on
     ///         conditional execution and thus can only be checked incrementally. However, we could
     ///         statically check a “minimum operation count” for a script, which could then include
@@ -115,7 +107,6 @@ impl Error {
                 signature::Error::SigDER(Some(_)) => Self::from(signature::Error::SigDER(None)),
                 _ => self.clone(),
             },
-            Self::PushSize(Some(_)) => Self::PushSize(None),
             Self::StackSize(Some(_)) => Self::StackSize(None),
             Self::SigCount(Some(_)) => Self::SigCount(None),
             Self::PubKeyCount(Some(_)) => Self::PubKeyCount(None),
@@ -595,19 +586,14 @@ fn eval_opcode(
 ) -> Result<(), Error> {
     match opcode {
         Opcode::PushValue(pv) => {
-            let len = pv.value().len();
-            if len <= opcode::push_value::LargeValue::MAX_SIZE {
-                if should_exec(&state.vexec) {
-                    eval_push_value(
-                        pv,
-                        flags.contains(VerificationFlags::MinimalData),
-                        &mut state.stack,
-                    )
-                } else {
-                    Ok(())
-                }
+            if should_exec(&state.vexec) {
+                eval_push_value(
+                    pv,
+                    flags.contains(VerificationFlags::MinimalData),
+                    &mut state.stack,
+                )
             } else {
-                Err(Error::PushSize(Some(len)))
+                Ok(())
             }
         }
         Opcode::Control(control) => {

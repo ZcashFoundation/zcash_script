@@ -14,8 +14,9 @@ pub enum LargeValue {
     ///     [`OP_0`].
     PushdataBytelength(BoundedVec<u8, 1, 0x4b>),
     OP_PUSHDATA1(EmptyBoundedVec<u8, 0xff>),
-    OP_PUSHDATA2(EmptyBoundedVec<u8, 0xffff>),
-    OP_PUSHDATA4(EmptyBoundedVec<u8, 0xffffffff>),
+    OP_PUSHDATA2(EmptyBoundedVec<u8, { Self::MAX_SIZE }>),
+    /// NB: This constructor is only possible when [`Flags::MinimalData`] isn’t set.
+    OP_PUSHDATA4(EmptyBoundedVec<u8, { Self::MAX_SIZE }>),
 }
 
 use LargeValue::*;
@@ -54,7 +55,16 @@ impl LargeValue {
                 }),
                 &[],
             ),
-            Some((value, remainder)) => (Ok(value), remainder),
+            Some((value, remainder)) => (
+                // NB: This check would ideally be done before the `split_at_checked` call, but the
+                //     C++ impl reads the bytes before checking if the size is too large.
+                if needed_bytes <= Self::MAX_SIZE {
+                    Ok(value)
+                } else {
+                    Err(opcode::Error::PushSize(Some(needed_bytes)))
+                },
+                remainder,
+            ),
         }
     }
 
