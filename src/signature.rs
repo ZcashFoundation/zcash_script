@@ -87,6 +87,18 @@ pub enum Error {
     SigHighS,
 }
 
+impl From<InvalidHashType> for Error {
+    fn from(value: InvalidHashType) -> Self {
+        Self::SigHashType(Some(value))
+    }
+}
+
+impl From<InvalidDerEncoding> for Error {
+    fn from(value: InvalidDerEncoding) -> Self {
+        Self::SigDER(Some(value))
+    }
+}
+
 /// The ways in which a transparent input may commit to the transparent outputs of its
 /// transaction.
 ///
