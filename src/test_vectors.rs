@@ -5,6 +5,7 @@
 //! - `NULLFAIL`, or
 //! - `WITNESS`.
 
+use bounded_vec::EmptyBoundedVec;
 use hex::{FromHex, FromHexError};
 
 use crate::{
@@ -31,6 +32,17 @@ enum Entry {
 }
 
 impl Entry {
+    fn pb_from_lv(lv: opcode::push_value::LargeValue) -> opcode::PossiblyBad {
+        opcode::PossiblyBad::from(Opcode::from(PushValue::from(lv)))
+    }
+
+    /// Constructs a `LargeValue` that may be a non-minimal encoding of a `SmallValue`.
+    fn lv_from_slice(v: &[u8]) -> opcode::PossiblyBad {
+        Self::pb_from_lv(
+            opcode::push_value::LargeValue::from_slice(v).expect("slice fits into push value"),
+        )
+    }
+
     /// Encodes a byte slice as a the snippet of Zcash script code (a push value opcode possibly
     /// followed by additional data) that would push those bytes onto the stack.
     fn val_to_pv(v: &[u8]) -> Vec<u8> {
@@ -11227,111 +11239,183 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_sig: &[H("4c"), H("00")],
             script_pubkey: &[O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: normalized_err(script::Error::Interpreter(None, interpreter::Error::MinimalData)),
+            result: err(
+                script::ComponentType::Sig,
+                script::Error::Interpreter(
+                    Some(Entry::lv_from_slice(&[])),
+                    interpreter::Error::MinimalData)),
         },
         // -1 minimally represented by OP_1NEGATE
         TestVector {
             script_sig: &[H("01"), H("81")],
             script_pubkey: &[O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: normalized_err(script::Error::Interpreter(None, interpreter::Error::MinimalData)),
+            result: err(
+                script::ComponentType::Sig,
+                script::Error::Interpreter(
+                    Some(Entry::lv_from_slice(&[0x81])),
+                    interpreter::Error::MinimalData)),
         },
         // 1 to 16 minimally represented by OP_1 to OP_16
         TestVector {
             script_sig: &[H("01"), H("01")],
             script_pubkey: &[O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: normalized_err(script::Error::Interpreter(None, interpreter::Error::MinimalData)),
+            result: err(
+                script::ComponentType::Sig,
+                script::Error::Interpreter(
+                    Some(Entry::lv_from_slice(&[0x01])),
+                    interpreter::Error::MinimalData)),
         },
         TestVector {
             script_sig: &[H("01"), H("02")],
             script_pubkey: &[O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: normalized_err(script::Error::Interpreter(None, interpreter::Error::MinimalData)),
+            result: err(
+                script::ComponentType::Sig,
+                script::Error::Interpreter(
+                    Some(Entry::lv_from_slice(&[0x02])),
+                    interpreter::Error::MinimalData)),
         },
         TestVector {
             script_sig: &[H("01"), H("03")],
             script_pubkey: &[O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: normalized_err(script::Error::Interpreter(None, interpreter::Error::MinimalData)),
+            result: err(
+                script::ComponentType::Sig,
+                script::Error::Interpreter(
+                    Some(Entry::lv_from_slice(&[0x03])),
+                    interpreter::Error::MinimalData)),
         },
         TestVector {
             script_sig: &[H("01"), H("04")],
             script_pubkey: &[O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: normalized_err(script::Error::Interpreter(None, interpreter::Error::MinimalData)),
+            result: err(
+                script::ComponentType::Sig,
+                script::Error::Interpreter(
+                    Some(Entry::lv_from_slice(&[0x04])),
+                    interpreter::Error::MinimalData)),
         },
         TestVector {
             script_sig: &[H("01"), H("05")],
             script_pubkey: &[O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: normalized_err(script::Error::Interpreter(None, interpreter::Error::MinimalData)),
+            result: err(
+                script::ComponentType::Sig,
+                script::Error::Interpreter(
+                    Some(Entry::lv_from_slice(&[0x05])),
+                    interpreter::Error::MinimalData)),
         },
         TestVector {
             script_sig: &[H("01"), H("06")],
             script_pubkey: &[O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: normalized_err(script::Error::Interpreter(None, interpreter::Error::MinimalData)),
+            result: err(
+                script::ComponentType::Sig,
+                script::Error::Interpreter(
+                    Some(Entry::lv_from_slice(&[0x06])),
+                    interpreter::Error::MinimalData)),
         },
         TestVector {
             script_sig: &[H("01"), H("07")],
             script_pubkey: &[O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: normalized_err(script::Error::Interpreter(None, interpreter::Error::MinimalData)),
+            result: err(
+                script::ComponentType::Sig,
+                script::Error::Interpreter(
+                    Some(Entry::lv_from_slice(&[0x07])),
+                    interpreter::Error::MinimalData)),
         },
         TestVector {
             script_sig: &[H("01"), H("08")],
             script_pubkey: &[O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: normalized_err(script::Error::Interpreter(None, interpreter::Error::MinimalData)),
+            result: err(
+                script::ComponentType::Sig,
+                script::Error::Interpreter(
+                    Some(Entry::lv_from_slice(&[0x08])),
+                    interpreter::Error::MinimalData)),
         },
         TestVector {
             script_sig: &[H("01"), H("09")],
             script_pubkey: &[O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: normalized_err(script::Error::Interpreter(None, interpreter::Error::MinimalData)),
+            result: err(
+                script::ComponentType::Sig,
+                script::Error::Interpreter(
+                    Some(Entry::lv_from_slice(&[0x09])),
+                    interpreter::Error::MinimalData)),
         },
         TestVector {
             script_sig: &[H("01"), H("0a")],
             script_pubkey: &[O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: normalized_err(script::Error::Interpreter(None, interpreter::Error::MinimalData)),
+            result: err(
+                script::ComponentType::Sig,
+                script::Error::Interpreter(
+                    Some(Entry::lv_from_slice(&[0x0a])),
+                    interpreter::Error::MinimalData)),
         },
         TestVector {
             script_sig: &[H("01"), H("0b")],
             script_pubkey: &[O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: normalized_err(script::Error::Interpreter(None, interpreter::Error::MinimalData)),
+            result: err(
+                script::ComponentType::Sig,
+                script::Error::Interpreter(
+                    Some(Entry::lv_from_slice(&[0x0b])),
+                    interpreter::Error::MinimalData)),
         },
         TestVector {
             script_sig: &[H("01"), H("0c")],
             script_pubkey: &[O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: normalized_err(script::Error::Interpreter(None, interpreter::Error::MinimalData)),
+            result: err(
+                script::ComponentType::Sig,
+                script::Error::Interpreter(
+                    Some(Entry::lv_from_slice(&[0x0c])),
+                    interpreter::Error::MinimalData)),
         },
         TestVector {
             script_sig: &[H("01"), H("0d")],
             script_pubkey: &[O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: normalized_err(script::Error::Interpreter(None, interpreter::Error::MinimalData)),
+            result: err(
+                script::ComponentType::Sig,
+                script::Error::Interpreter(
+                    Some(Entry::lv_from_slice(&[0x0d])),
+                    interpreter::Error::MinimalData)),
         },
         TestVector {
             script_sig: &[H("01"), H("0e")],
             script_pubkey: &[O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: normalized_err(script::Error::Interpreter(None, interpreter::Error::MinimalData)),
+            result: err(
+                script::ComponentType::Sig,
+                script::Error::Interpreter(
+                    Some(Entry::lv_from_slice(&[0x0e])),
+                    interpreter::Error::MinimalData)),
         },
         TestVector {
             script_sig: &[H("01"), H("0f")],
             script_pubkey: &[O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: normalized_err(script::Error::Interpreter(None, interpreter::Error::MinimalData)),
+            result: err(
+                script::ComponentType::Sig,
+                script::Error::Interpreter(
+                    Some(Entry::lv_from_slice(&[0x0f])),
+                    interpreter::Error::MinimalData)),
         },
         TestVector {
             script_sig: &[H("01"), H("10")],
             script_pubkey: &[O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: normalized_err(script::Error::Interpreter(None, interpreter::Error::MinimalData)),
+            result: err(
+                script::ComponentType::Sig,
+                script::Error::Interpreter(
+                    Some(Entry::lv_from_slice(&[0x10])),
+                    interpreter::Error::MinimalData)),
         },
         // PUSHDATA1 of 72 bytes minimally represented by direct push
         TestVector {
@@ -11344,7 +11428,11 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             script_pubkey: &[O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: normalized_err(script::Error::Interpreter(None, interpreter::Error::MinimalData)),
+            result: err(
+                script::ComponentType::Sig,
+                script::Error::Interpreter(
+                    Some(Entry::pb_from_lv(opcode::push_value::LargeValue::OP_PUSHDATA1(EmptyBoundedVec::from_vec(vec![0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11]).expect("fits")))),
+                    interpreter::Error::MinimalData)),
         },
         // PUSHDATA2 of 255 bytes minimally represented by PUSHDATA1
         TestVector {
@@ -11357,7 +11445,11 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             script_pubkey: &[O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: normalized_err(script::Error::Interpreter(None, interpreter::Error::MinimalData)),
+            result: err(
+                script::ComponentType::Sig,
+                script::Error::Interpreter(
+                    Some(Entry::pb_from_lv(opcode::push_value::LargeValue::OP_PUSHDATA2(EmptyBoundedVec::from_vec(vec![0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11]).expect("fits")))),
+                    interpreter::Error::MinimalData)),
         },
         // PUSHDATA4 of 256 bytes minimally represented by PUSHDATA2
         TestVector {
@@ -11370,7 +11462,11 @@ pub fn test_vectors() -> Vec<TestVector> {
             ],
             script_pubkey: &[O(DROP), N(1)],
             flags: VerificationFlags::MinimalData,
-            result: normalized_err(script::Error::Interpreter(None, interpreter::Error::MinimalData)),
+            result: err(
+                script::ComponentType::Sig,
+                script::Error::Interpreter(
+                    Some(Entry::pb_from_lv(opcode::push_value::LargeValue::OP_PUSHDATA4(EmptyBoundedVec::from_vec(vec![0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11]).expect("fits")))),
+                    interpreter::Error::MinimalData)),
         },
         // MINIMALDATA enforcement for numeric arguments
 

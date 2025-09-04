@@ -85,6 +85,24 @@ impl Opcode {
     }
 }
 
+impl From<opcode::PushValue> for Opcode {
+    fn from(value: opcode::PushValue) -> Self {
+        Opcode::PushValue(value)
+    }
+}
+
+impl From<opcode::Control> for Opcode {
+    fn from(value: opcode::Control) -> Self {
+        Opcode::Control(value)
+    }
+}
+
+impl From<opcode::Operation> for Opcode {
+    fn from(value: opcode::Operation) -> Self {
+        Opcode::Operation(value)
+    }
+}
+
 impl From<&Opcode> for Vec<u8> {
     fn from(value: &Opcode) -> Self {
         match value {

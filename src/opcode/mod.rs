@@ -94,6 +94,18 @@ impl PushValue {
     }
 }
 
+impl From<SmallValue> for PushValue {
+    fn from(value: SmallValue) -> Self {
+        Self::SmallValue(value)
+    }
+}
+
+impl From<LargeValue> for PushValue {
+    fn from(value: LargeValue) -> Self {
+        Self::LargeValue(value)
+    }
+}
+
 enum_from_primitive! {
 /// Control operations are evaluated regardless of whether the current branch is active.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -317,13 +329,13 @@ impl PossiblyBad {
                     Disabled::from_u8(*leading_byte).map_or(
                         Ok(
                             if let Some(sv) = push_value::SmallValue::from_u8(*leading_byte) {
-                                PossiblyBad::Good(Opcode::PushValue(PushValue::SmallValue(sv)))
+                                PossiblyBad::from(Opcode::from(PushValue::SmallValue(sv)))
                             } else if let Some(ctl) = Control::from_u8(*leading_byte) {
-                                PossiblyBad::Good(Opcode::Control(ctl))
+                                PossiblyBad::from(Opcode::Control(ctl))
                             } else if let Some(op) = Operation::from_u8(*leading_byte) {
-                                PossiblyBad::Good(Opcode::Operation(op))
+                                PossiblyBad::from(Opcode::Operation(op))
                             } else {
-                                PossiblyBad::Bad(Bad::from(*leading_byte))
+                                PossiblyBad::from(Bad::from(*leading_byte))
                             },
                         ),
                         |disabled| Err(Error::Disabled(Some(disabled))),
@@ -332,7 +344,7 @@ impl PossiblyBad {
                 ),
             },
             Some((res, remaining_code)) => (
-                res.map(|v| PossiblyBad::Good(Opcode::PushValue(PushValue::LargeValue(v)))),
+                res.map(|v| PossiblyBad::from(Opcode::from(PushValue::LargeValue(v)))),
                 remaining_code,
             ),
         }
