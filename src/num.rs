@@ -11,6 +11,10 @@ pub enum Error {
 
 const DEFAULT_MAX_SIZE: usize = 4;
 
+/// Convert bytes to the integer they encode.
+///
+/// __NB__: Setting `max_size` to more than `9` has no effect, and the special encoding of
+///         [`i64::MIN`] is the only allowed 9-byte value.
 pub fn parse(vch: &[u8], require_minimal: bool, max_size: Option<usize>) -> Result<i64, Error> {
     match vch.last() {
         None => Ok(0),

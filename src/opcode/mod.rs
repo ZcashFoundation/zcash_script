@@ -2,11 +2,38 @@
 
 pub mod push_value;
 
+use enum_primitive::FromPrimitive;
+use serde::{de, Deserialize, Serialize, Serializer};
+use serde_repr::{Deserialize_repr, Serialize_repr};
+use thiserror::Error;
+
 use super::Opcode;
+use crate::{interpreter, num};
 use push_value::{
     LargeValue,
     SmallValue::{self, *},
 };
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Error)]
+pub enum Error {
+    #[error("expected {expected_bytes} bytes, but only {available_bytes} bytes available")]
+    Read {
+        expected_bytes: usize,
+        available_bytes: usize,
+    },
+
+    /// __TODO__: `Option` can go away once C++ support is removed.
+    #[error("disabled opcode encountered{}", .0.map_or("".to_owned(), |op| format!(": {:?}", op)))]
+    Disabled(Option<Disabled>),
+
+    // Max sizes
+    #[error(
+        "push size{} exceeded maxmimum ({} bytes)",
+        .0.map_or("", |size| " ({size} bytes)"),
+        push_value::LargeValue::MAX_SIZE
+    )]
+    PushSize(Option<usize>),
+}
 
 /// Opcodes that represent constants to be pushed onto the stack.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -43,6 +70,23 @@ impl PushValue {
         }
     }
 
+    /// Statically analyze a push value.
+    pub fn analyze(&self, flags: &interpreter::VerificationFlags) -> Vec<interpreter::Error> {
+        let mut errors = Vec::new();
+        if flags.contains(interpreter::VerificationFlags::MinimalData) && !self.is_minimal_push() {
+            errors.push(interpreter::Error::MinimalData);
+        }
+        errors
+    }
+
+    /// Returns the numeric value represented by the opcode, if one exists.
+    pub fn to_num(&self) -> Result<i64, num::Error> {
+        match self {
+            PushValue::LargeValue(lv) => lv.to_num(),
+            PushValue::SmallValue(sv) => Ok(sv.to_num().into()),
+        }
+    }
+
     /// Get the [`Stack`] element represented by this [`PushValue`].
     pub fn value(&self) -> Vec<u8> {
         match self {
@@ -60,9 +104,53 @@ impl PushValue {
     }
 }
 
+impl From<SmallValue> for PushValue {
+    fn from(value: SmallValue) -> Self {
+        Self::SmallValue(value)
+    }
+}
+
+impl From<LargeValue> for PushValue {
+    fn from(value: LargeValue) -> Self {
+        Self::LargeValue(value)
+    }
+}
+
+impl Serialize for PushValue {
+    /// Wraps in an `Opcode`, then serializes that, since they have the same representation.
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        Opcode::PushValue(self.clone()).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for PushValue {
+    /// Deserializes to an `Opcode` then extracts the `PushValue`.
+    fn deserialize<D>(deserializer: D) -> Result<PushValue, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        Opcode::deserialize(deserializer).and_then(|op| match op {
+            Opcode::PushValue(pv) => Ok(pv),
+            _ => Err(de::Error::custom("invalid PushValue")),
+        })
+    }
+}
+
+impl From<&PushValue> for Vec<u8> {
+    fn from(value: &PushValue) -> Self {
+        match value {
+            PushValue::SmallValue(v) => vec![(*v).into()],
+            PushValue::LargeValue(v) => v.into(),
+        }
+    }
+}
+
 enum_from_primitive! {
 /// Control operations are evaluated regardless of whether the current branch is active.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
 pub enum Control {
     OP_IF = 0x63,
@@ -74,7 +162,7 @@ pub enum Control {
 
 enum_from_primitive! {
 /// Normal operations are only executed when they are on an active branch.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
 pub enum Operation {
     // control
@@ -160,11 +248,34 @@ pub enum Operation {
 }
 }
 
-impl From<&PushValue> for Vec<u8> {
-    fn from(value: &PushValue) -> Self {
-        match value {
-            PushValue::SmallValue(v) => vec![(*v).into()],
-            PushValue::LargeValue(v) => v.into(),
+impl Operation {
+    /// Statically analyze an operation.
+    ///
+    /// __NB__: [`Operation::OP_RETURN`] isn’t tracked by this function. That is functionally
+    ///         more like a `break` then an error.
+    pub fn analyze(&self, flags: &interpreter::VerificationFlags) -> Vec<interpreter::Error> {
+        match self {
+            Operation::OP_CHECKLOCKTIMEVERIFY
+                if !flags.contains(interpreter::VerificationFlags::CHECKLOCKTIMEVERIFY)
+                    && flags.contains(interpreter::VerificationFlags::DiscourageUpgradableNOPs) =>
+            {
+                vec![interpreter::Error::DiscourageUpgradableNOPs]
+            }
+            Operation::OP_NOP1
+            | Operation::OP_NOP3
+            | Operation::OP_NOP4
+            | Operation::OP_NOP5
+            | Operation::OP_NOP6
+            | Operation::OP_NOP7
+            | Operation::OP_NOP8
+            | Operation::OP_NOP9
+            | Operation::OP_NOP10
+                if flags.contains(interpreter::VerificationFlags::DiscourageUpgradableNOPs) =>
+            {
+                vec![interpreter::Error::DiscourageUpgradableNOPs]
+            }
+
+            _ => vec![],
         }
     }
 }
@@ -183,16 +294,7 @@ impl From<Operation> for u8 {
     }
 }
 
-/// Bad opcodes are a bit complicated.
-///
-/// - They only fail if they are evaluated, so we can’t statically fail scripts that contain them
-///   (unlike [Disabled]).
-/// - [Bad::OP_RESERVED] counts as a push value for the purposes of
-///   [interpreter::VerificationFlags::SigPushOnly] (but push-only sigs must necessarily evaluate
-///   all of their opcodes, so what we’re preserving here is that we get
-///   [script::Error::SigPushOnly] in this case instead of [script::Error::BadOpcode]).
-/// - [Bad::OP_VERIF] and [Bad::OP_VERNOTIF] both _always_ get evaluated, so we need to special case
-///   them when checking whether to throw [script::Error::BadOpcode]
+/// Opcodes that fail if they’re on an active branch.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Bad {
     OP_RESERVED,
@@ -235,16 +337,81 @@ impl From<Bad> for u8 {
 /// When writing scripts, we don’t want to allow bad opcodes, so `Opcode` doesn’t include them.
 /// However, when validating scripts, bad opcodes only cause a failure when they’re on an active
 /// branch, so this type allows us to hold onto the bad opcodes when parsing.
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum PossiblyBad {
     Good(Opcode),
     Bad(Bad),
 }
 
-pub struct Parsed<'a> {
-    /// The [`PossiblyBad`] allows us to preserve unknown opcodes, which only trigger a failure if
-    /// they’re on an active branch during interpretation.
-    pub opcode: PossiblyBad,
-    pub remaining_code: &'a [u8],
+impl PossiblyBad {
+    /// This parses a single opcode from a byte stream.
+    ///
+    /// This always returns the unparsed bytes, because parsing failures don’t invalidate the
+    /// remainder of the stream (if any).
+    pub fn parse(script: &[u8]) -> (Result<PossiblyBad, Error>, &[u8]) {
+        match push_value::LargeValue::parse(script) {
+            None => match script.split_first() {
+                None => (
+                    Err(Error::Read {
+                        expected_bytes: 1,
+                        available_bytes: 0,
+                    }),
+                    &[],
+                ),
+                Some((leading_byte, remaining_code)) => (
+                    Disabled::from_u8(*leading_byte).map_or(
+                        Ok(
+                            if let Some(sv) = push_value::SmallValue::from_u8(*leading_byte) {
+                                PossiblyBad::from(Opcode::from(PushValue::SmallValue(sv)))
+                            } else if let Some(ctl) = Control::from_u8(*leading_byte) {
+                                PossiblyBad::from(Opcode::Control(ctl))
+                            } else if let Some(op) = Operation::from_u8(*leading_byte) {
+                                PossiblyBad::from(Opcode::Operation(op))
+                            } else {
+                                PossiblyBad::from(Bad::from(*leading_byte))
+                            },
+                        ),
+                        |disabled| Err(Error::Disabled(Some(disabled))),
+                    ),
+                    remaining_code,
+                ),
+            },
+            Some((res, remaining_code)) => (
+                res.map(|v| PossiblyBad::from(Opcode::from(PushValue::LargeValue(v)))),
+                remaining_code,
+            ),
+        }
+    }
+
+    /// Statically analyze a possibly-bad opcode.
+    pub fn analyze(
+        &self,
+        flags: &interpreter::VerificationFlags,
+    ) -> Result<&Opcode, Vec<interpreter::Error>> {
+        match self {
+            PossiblyBad::Good(op) => {
+                let errors = op.analyze(flags);
+                if errors.is_empty() {
+                    Ok(op)
+                } else {
+                    Err(errors)
+                }
+            }
+            PossiblyBad::Bad(_) => Err(vec![interpreter::Error::BadOpcode]),
+        }
+    }
+}
+
+impl From<Opcode> for PossiblyBad {
+    fn from(value: Opcode) -> Self {
+        PossiblyBad::Good(value)
+    }
+}
+
+impl From<Bad> for PossiblyBad {
+    fn from(value: Bad) -> Self {
+        PossiblyBad::Bad(value)
+    }
 }
 
 enum_from_primitive! {
