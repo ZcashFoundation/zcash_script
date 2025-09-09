@@ -1,23 +1,22 @@
-use std::num::TryFromIntError;
-
 use thiserror::Error;
 
-use crate::{interpreter::*, script, script_error::*};
+use crate::{
+    interpreter::{
+        verify_script, DefaultStepEvaluator, SignatureChecker, State, StepFn, VerificationFlags,
+    },
+    script,
+};
 
 /// This extends `ScriptError` with cases that can only occur when using the C++ implementation.
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum Error {
     /// An error that could occur in any implementation has occurred.
     #[error("{0}")]
-    Script(ScriptError),
+    Script(script::Error),
 
     /// An exception was caught during C++ verification.
     #[error("caught exception during verification")]
     CaughtException,
-
-    /// The script size can’t fit in a `u32`, as required by the C++ code.
-    #[error("invalid script size: {0}")]
-    InvalidScriptSize(TryFromIntError),
 
     /// Some other failure value recovered from C++.
     ///
@@ -37,14 +36,22 @@ impl Error {
     }
 }
 
+impl From<script::Error> for Error {
+    fn from(value: script::Error) -> Self {
+        Error::Script(value)
+    }
+}
+
+/// A verification error annotated with the script component it occurred in.
+pub type AnnError = (Option<script::ComponentType>, Error);
+
 /// The external API of zcash_script. This is defined to make it possible to compare the C++ and
 /// Rust implementations.
 pub trait ZcashScript {
-    /// Returns `Ok(())` if the a transparent input correctly spends the matching output
-    ///  under the additional constraints specified by `flags`. This function
-    ///  receives only the required information to validate the spend and not
-    ///  the transaction itself. In particular, the sighash for the spend
-    ///  is obtained using a callback function.
+    /// Returns `Ok(true)` if the a transparent input correctly spends the matching output under the
+    /// additional constraints specified by `flags`. This function receives only the required
+    /// information to validate the spend and not the transaction itself. In particular, the sighash
+    /// for the spend is obtained using a callback function.
     ///
     ///  - sighash: a callback function which is called to obtain the sighash.
     ///  - lock_time: the lock time of the transaction being validated.
@@ -60,7 +67,7 @@ pub trait ZcashScript {
         script_pub_key: &[u8],
         script_sig: &[u8],
         flags: VerificationFlags,
-    ) -> Result<(), Error>;
+    ) -> Result<bool, AnnError>;
 
     /// Returns the number of transparent signature operations in the input or
     /// output script pointed to by script.
@@ -75,7 +82,7 @@ fn stepwise_verify<F>(
     flags: VerificationFlags,
     payload: &mut F::Payload,
     stepper: &F,
-) -> Result<(), Error>
+) -> Result<bool, (script::ComponentType, Error)>
 where
     F: StepFn,
 {
@@ -86,7 +93,7 @@ where
         payload,
         stepper,
     )
-    .map_err(Error::Script)
+    .map_err(|(t, e)| (t, Error::Script(e)))
 }
 
 /// A payload for comparing the results of two steppers.
@@ -99,7 +106,7 @@ pub struct StepResults<T, U> {
     /// If the execution matched the entire way, then this contains `None`. If there was a
     /// divergence, then this contains `Some` with a pair of `Result`s – one representing each
     /// stepper’s outcome at the point at which they diverged.
-    diverging_result: Option<(Result<State, ScriptError>, Result<State, ScriptError>)>,
+    diverging_result: Option<(Result<State, script::Error>, Result<State, script::Error>)>,
     /// The final payload of the first stepper.
     payload_l: T,
     /// The final payload of the second stepper.
@@ -144,7 +151,7 @@ impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
         script: &script::Code,
         state: &mut State,
         payload: &mut StepResults<T, U>,
-    ) -> Result<&'b [u8], ScriptError> {
+    ) -> Result<&'b [u8], script::Error> {
         let mut right_state = (*state).clone();
         let left = self
             .eval_step_l
@@ -163,7 +170,7 @@ impl<'a, T: Clone, U: Clone> StepFn for ComparisonStepEvaluator<'a, T, U> {
                     // anything
                     payload.diverging_result =
                         Some((l.map(|_| state.clone()), r.map(|_| right_state.clone())));
-                    Err(ScriptError::ExternalError("mismatched step results"))
+                    Err(script::Error::ExternalError("mismatched step results"))
                 }
             }
             // at least one is `Err`
@@ -222,7 +229,7 @@ impl<F: StepFn> ZcashScript for StepwiseInterpreter<F> {
         script_pub_key: &[u8],
         script_sig: &[u8],
         flags: VerificationFlags,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, AnnError> {
         let mut payload = self.initial_payload.clone();
         stepwise_verify(
             script_pub_key,
@@ -231,6 +238,7 @@ impl<F: StepFn> ZcashScript for StepwiseInterpreter<F> {
             &mut payload,
             &self.stepper,
         )
+        .map_err(|(t, e)| (Some(t), e))
     }
 }
 
@@ -243,7 +251,7 @@ mod tests {
         interpreter::{
             CallbackTransactionSignatureChecker, DefaultStepEvaluator, VerificationFlags,
         },
-        script_error::ScriptError,
+        opcode, script,
         testing::{
             invalid_sighash, missing_sighash, repair_flags, sighash, BrokenStepEvaluator,
             OVERFLOW_SCRIPT_SIZE, SCRIPT_PUBKEY, SCRIPT_SIG,
@@ -274,7 +282,7 @@ mod tests {
         if res.diverging_result.is_some() {
             panic!("invalid result: {res:?}");
         }
-        assert_eq!(ret, Ok(()));
+        assert_eq!(ret, Ok(true));
     }
 
     #[test]
@@ -302,10 +310,13 @@ mod tests {
         // The final return value is from whichever stepper failed.
         assert_eq!(
             ret,
-            Err(Error::Script(ScriptError::ReadError {
-                expected_bytes: 1,
-                available_bytes: 0,
-            }))
+            Err((
+                script::ComponentType::PubKey,
+                Error::from(script::Error::from(opcode::Error::ReadError {
+                    expected_bytes: 1,
+                    available_bytes: 0,
+                }))
+            ))
         );
 
         // `State`s are large, so we just check that there was some progress in lock step, and a
@@ -316,10 +327,10 @@ mod tests {
                 diverging_result:
                     Some((
                         Ok(state),
-                        Err(ScriptError::ReadError {
+                        Err(script::Error::Opcode(opcode::Error::ReadError {
                             expected_bytes: 1,
                             available_bytes: 0,
-                        }),
+                        })),
                     )),
                 payload_l: (),
                 payload_r: (),
@@ -360,7 +371,7 @@ mod tests {
         if res.diverging_result.is_some() {
             panic!("mismatched result: {res:?}");
         }
-        assert_eq!(ret, Err(Error::Script(ScriptError::EvalFalse)));
+        assert_eq!(ret, Ok(false));
     }
 
     #[test]
@@ -387,7 +398,7 @@ mod tests {
         if res.diverging_result.is_some() {
             panic!("mismatched result: {res:?}");
         }
-        assert_eq!(ret, Err(Error::Script(ScriptError::EvalFalse)));
+        assert_eq!(ret, Ok(false));
     }
 
     proptest! {
