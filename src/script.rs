@@ -1,5 +1,7 @@
 //! Managing sequences of opcodes.
 
+use std::iter;
+
 use thiserror::Error;
 
 use crate::{
@@ -230,22 +232,25 @@ impl Code<'_> {
     ///  ... OP_N CHECKMULTISIG ...
     pub fn get_sig_op_count(&self, accurate: bool) -> u32 {
         let parser = self.parse();
-        match parser.zip(parser.skip(1)).try_fold(0, |n, ops| match ops {
-            (Ok(last_opcode), Ok(opcode)) => Ok(n + match opcode {
-                opcode::PossiblyBad::Good(Opcode::Operation(op)) => match op {
-                    OP_CHECKSIG | OP_CHECKSIGVERIFY => 1,
-                    OP_CHECKMULTISIG | OP_CHECKMULTISIGVERIFY => match last_opcode {
-                        opcode::PossiblyBad::Good(Opcode::PushValue(
-                            opcode::PushValue::SmallValue(pv),
-                        )) if accurate && pv >= OP_1 && pv <= OP_16 => Self::decode_op_n(pv),
-                        _ => 20,
+        match iter::once(Ok(None))
+            .chain(parser.map(|r| r.map(Some)))
+            .zip(parser)
+            .try_fold(0, |n, ops| match ops {
+                (Ok(last_opcode), Ok(opcode)) => Ok(n + match opcode {
+                    opcode::PossiblyBad::Good(Opcode::Operation(op)) => match op {
+                        OP_CHECKSIG | OP_CHECKSIGVERIFY => 1,
+                        OP_CHECKMULTISIG | OP_CHECKMULTISIGVERIFY => match last_opcode {
+                            Some(opcode::PossiblyBad::Good(Opcode::PushValue(
+                                opcode::PushValue::SmallValue(pv),
+                            ))) if accurate && pv >= OP_1 && pv <= OP_16 => Self::decode_op_n(pv),
+                            _ => u32::from(interpreter::MAX_PUBKEY_COUNT),
+                        },
+                        _ => 0,
                     },
                     _ => 0,
-                },
-                _ => 0,
-            }),
-            (_, _) => Err(n),
-        }) {
+                }),
+                (_, _) => Err(n),
+            }) {
             Err(n) => n,
             Ok(n) => n,
         }
