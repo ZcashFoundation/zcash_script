@@ -69,12 +69,15 @@ impl PushValue {
     }
 
     /// Statically analyze a push value.
-    pub fn analyze(&self, flags: &interpreter::VerificationFlags) -> Vec<interpreter::Error> {
-        let mut errors = Vec::new();
+    pub fn analyze(
+        &self,
+        flags: &interpreter::VerificationFlags,
+    ) -> Result<(), Vec<interpreter::Error>> {
         if flags.contains(interpreter::VerificationFlags::MinimalData) && !self.is_minimal_push() {
-            errors.push(interpreter::Error::MinimalData);
+            Err(vec![interpreter::Error::MinimalData])
+        } else {
+            Ok(())
         }
-        errors
     }
 
     /// Get the [`Stack`] element represented by this [`PushValue`].
@@ -211,13 +214,16 @@ impl Operation {
     ///
     /// __NB__: [`Operation::OP_RETURN`] isn’t tracked by this function. That is functionally
     ///         more like a `break` then an error.
-    pub fn analyze(&self, flags: &interpreter::VerificationFlags) -> Vec<interpreter::Error> {
+    pub fn analyze(
+        &self,
+        flags: &interpreter::VerificationFlags,
+    ) -> Result<(), Vec<interpreter::Error>> {
         match self {
             Operation::OP_CHECKLOCKTIMEVERIFY
                 if !flags.contains(interpreter::VerificationFlags::CHECKLOCKTIMEVERIFY)
                     && flags.contains(interpreter::VerificationFlags::DiscourageUpgradableNOPs) =>
             {
-                vec![interpreter::Error::DiscourageUpgradableNOPs]
+                Err(vec![interpreter::Error::DiscourageUpgradableNOPs])
             }
             Operation::OP_NOP1
             | Operation::OP_NOP3
@@ -230,10 +236,10 @@ impl Operation {
             | Operation::OP_NOP10
                 if flags.contains(interpreter::VerificationFlags::DiscourageUpgradableNOPs) =>
             {
-                vec![interpreter::Error::DiscourageUpgradableNOPs]
+                Err(vec![interpreter::Error::DiscourageUpgradableNOPs])
             }
 
-            _ => vec![],
+            _ => Ok(()),
         }
     }
 }
@@ -356,14 +362,7 @@ impl PossiblyBad {
         flags: &interpreter::VerificationFlags,
     ) -> Result<&Opcode, Vec<interpreter::Error>> {
         match self {
-            PossiblyBad::Good(op) => {
-                let errors = op.analyze(flags);
-                if errors.is_empty() {
-                    Ok(op)
-                } else {
-                    Err(errors)
-                }
-            }
+            PossiblyBad::Good(op) => op.analyze(flags).map(|()| op),
             PossiblyBad::Bad(_) => Err(vec![interpreter::Error::BadOpcode]),
         }
     }

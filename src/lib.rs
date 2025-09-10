@@ -76,11 +76,14 @@ impl Opcode {
     ///
     /// __NB__: [`opcode::Operation::OP_RETURN`] isn’t tracked by this function because it’s
     ///         functionally more like a `break` then an error.
-    pub fn analyze(&self, flags: &interpreter::VerificationFlags) -> Vec<interpreter::Error> {
+    pub fn analyze(
+        &self,
+        flags: &interpreter::VerificationFlags,
+    ) -> Result<(), Vec<interpreter::Error>> {
         match self {
             Opcode::PushValue(pv) => pv.analyze(flags),
             Opcode::Operation(op) => op.analyze(flags),
-            Opcode::Control(_) => vec![],
+            Opcode::Control(_) => Ok(()),
         }
     }
 }
