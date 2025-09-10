@@ -555,28 +555,35 @@ pub mod testing {
     pub fn run_test_vector(
         tv: &TestVector,
         try_normalized_error: bool,
-        f: &dyn Fn(&[u8], &[u8], VerificationFlags) -> Result<bool, AnnError>,
+        interpreter_fn: &dyn Fn(&[u8], &[u8], VerificationFlags) -> Result<bool, AnnError>,
+        sigop_count_fn: &dyn Fn(&[u8]) -> Result<u32, Error>,
     ) {
-        match tv.run(&|sig, pubkey, flags| {
-            f(sig, pubkey, flags).map_err(|err| match err {
-                (t, Error::Script(serr)) => (t, serr),
-                _ => panic!("failed in a very bad way: {:?}", err),
-            })
-        }) {
+        match tv.run(
+            &|sig, pubkey, flags| {
+                interpreter_fn(sig, pubkey, flags).map_err(|err| match err {
+                    (t, Error::Script(serr)) => (t, serr),
+                    _ => panic!("failed in a very bad way: {:?}", err),
+                })
+            },
+            &|pubkey| {
+                sigop_count_fn(pubkey).unwrap_or_else(|e| panic!("something bad happened: {:?}", e))
+            },
+        ) {
             Ok(()) => (),
-            Err(actual) => {
+            Err((actual_res, actual_count)) => {
                 if try_normalized_error
                     && tv.result.clone().normalized()
-                        == actual.clone().map_err(|(_, e)| e.normalize())
+                        == actual_res.clone().map_err(|(_, e)| e.normalize())
+                    && tv.sigop_count == actual_count
                 {
                     ()
                 } else {
                     panic!(
-                        "{:?} didn’t match the result in
+                        "Either {:?} didn’t match the result or {} didn’t match the sigop_count in
 
     {:?}
 ",
-                        actual, tv
+                        actual_res, actual_count, tv
                     );
                 }
             }
@@ -703,31 +710,50 @@ mod tests {
     #[test]
     fn test_vectors_for_cxx() {
         for tv in test_vectors() {
-            run_test_vector(&tv, true, &|sig, pubkey, flags| {
-                CxxInterpreter {
-                    sighash: &missing_sighash,
-                    lock_time: 0,
-                    is_final: false,
-                }
-                .verify_callback(pubkey, sig, flags)
-            })
+            let interp = CxxInterpreter {
+                sighash: &missing_sighash,
+                lock_time: 0,
+                is_final: false,
+            };
+
+            run_test_vector(
+                &tv,
+                true,
+                &|sig, pubkey, flags| interp.verify_callback(pubkey, sig, flags),
+                &|pubkey| interp.legacy_sigop_count_script(pubkey),
+            )
         }
     }
 
     #[test]
     fn test_vectors_for_rust() {
         for tv in test_vectors() {
-            run_test_vector(&tv, false, &|sig, pubkey, flags| {
-                rust_interpreter(
-                    flags,
-                    CallbackTransactionSignatureChecker {
-                        sighash: &missing_sighash,
-                        lock_time: 0,
-                        is_final: false,
-                    },
-                )
-                .verify_callback(&pubkey, &sig, flags)
-            })
+            run_test_vector(
+                &tv,
+                false,
+                &|sig, pubkey, flags| {
+                    rust_interpreter(
+                        flags,
+                        CallbackTransactionSignatureChecker {
+                            sighash: &missing_sighash,
+                            lock_time: 0,
+                            is_final: false,
+                        },
+                    )
+                    .verify_callback(&pubkey, &sig, flags)
+                },
+                &|pubkey| {
+                    rust_interpreter(
+                        VerificationFlags::empty(),
+                        CallbackTransactionSignatureChecker {
+                            sighash: &missing_sighash,
+                            lock_time: 0,
+                            is_final: false,
+                        },
+                    )
+                    .legacy_sigop_count_script(pubkey)
+                },
+            )
         }
     }
 
