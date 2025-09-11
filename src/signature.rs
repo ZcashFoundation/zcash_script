@@ -46,13 +46,10 @@ pub enum InvalidDerEncoding {
     TooLong,
     #[error("the signature was expected to be {expected} bytes, but it was {actual} bytes")]
     IncorrectLength { actual: usize, expected: u8 },
-    #[error(
-        "the {name} component {}failed: {error}",
-        .value.clone().map_or("".to_owned(), |vec| format!("({vec:?}) "))
-    )]
+    #[error("the {name} component ({value:?}) failed: {error}")]
     InvalidComponent {
         name: &'static str,
-        value: Option<Vec<u8>>,
+        value: Vec<u8>,
         error: InvalidDerInteger,
     },
 }
@@ -255,45 +252,55 @@ impl Decoded {
                             // Extract the length of the R element.
                             [0x02, r_len, r_s @ ..] => {
                                 match r_s.split_at_checked((*r_len).into()) {
-                                    // Check whether the S element is an integer.
-                                    // Extract the length of the S element.
-                                    // Make sure the length of the S element is still inside the signature.
-                                    Some((r, [0x02, s_len, s @ ..])) => Self::is_valid_integer(r)
+                                    None => Err(InvalidDerEncoding::InvalidComponent {
+                                        name: "r",
+                                        value: r_s.to_vec(),
+                                        error: InvalidDerInteger::IncorrectLength {
+                                            actual: r_s.len(),
+                                            expected: *r_len,
+                                        },
+                                    }),
+                                    Some((r, s)) => Self::is_valid_integer(r)
                                         .map_err(|error| InvalidDerEncoding::InvalidComponent {
                                             name: "r",
-                                            value: Some(r.to_vec()),
+                                            value: r.to_vec(),
                                             error,
                                         })
-                                        .and_then(|()| {
-                                            if usize::from(*s_len) == s.len() {
-                                                Self::is_valid_integer(s).map_err(|error| {
-                                                    InvalidDerEncoding::InvalidComponent {
+                                        .and_then(|()| match s {
+                                            // Check whether the S element is an integer.
+                                            // Extract the length of the S element.
+                                            // Make sure the length of the S element is still inside the signature.
+                                            [0x02, s_len, s @ ..] => {
+                                                if usize::from(*s_len) == s.len() {
+                                                    Self::is_valid_integer(s).map_err(|error| {
+                                                        InvalidDerEncoding::InvalidComponent {
+                                                            name: "s",
+                                                            value: s.to_vec(),
+                                                            error,
+                                                        }
+                                                    })
+                                                } else {
+                                                    Err(InvalidDerEncoding::InvalidComponent {
                                                         name: "s",
-                                                        value: Some(s.to_vec()),
-                                                        error,
-                                                    }
-                                                })
-                                            } else {
-                                                Err(InvalidDerEncoding::InvalidComponent {
-                                                    name: "s",
-                                                    value: Some(s.to_vec()),
-                                                    error: InvalidDerInteger::IncorrectLength {
-                                                        actual: s.len(),
-                                                        expected: *s_len,
-                                                    },
-                                                })
+                                                        value: s.to_vec(),
+                                                        error: InvalidDerInteger::IncorrectLength {
+                                                            actual: s.len(),
+                                                            expected: *s_len,
+                                                        },
+                                                    })
+                                                }
                                             }
+                                            [..] => Err(InvalidDerEncoding::InvalidComponent {
+                                                name: "s",
+                                                value: s.to_vec(),
+                                                error: InvalidDerInteger::NotAnInteger,
+                                            }),
                                         }),
-                                    _ => Err(InvalidDerEncoding::InvalidComponent {
-                                        name: "s",
-                                        value: None,
-                                        error: InvalidDerInteger::NotAnInteger,
-                                    }),
                                 }
                             }
-                            [..] => Err(InvalidDerEncoding::InvalidComponent {
+                            r_s => Err(InvalidDerEncoding::InvalidComponent {
                                 name: "r",
-                                value: None,
+                                value: r_s.to_vec(),
                                 error: InvalidDerInteger::NotAnInteger,
                             }),
                         }
