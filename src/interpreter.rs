@@ -529,28 +529,6 @@ impl State {
     }
 }
 
-/// Run a single step of the interpreter.
-///
-/// This is useful for testing & debugging, as we can set up the exact state we want in order to
-/// trigger some behavior.
-fn eval_step<'a>(
-    pc: &'a [u8],
-    script: &script::Code,
-    flags: VerificationFlags,
-    checker: &dyn SignatureChecker,
-    state: &mut State,
-) -> Result<&'a [u8], script::Error> {
-    //
-    // Read instruction
-    //
-    let (res, remaining_code) = opcode::PossiblyBad::parse(pc);
-    res.map_err(script::Error::Opcode).and_then(|opcode| {
-        eval_possibly_bad(&opcode, script, flags, checker, state)
-            .map_err(|ierr| script::Error::Interpreter(Some(opcode), ierr))
-            .map(|()| remaining_code)
-    })
-}
-
 /// Bad opcodes are a bit complicated.
 ///
 /// - They only fail if they are evaluated, so we can’t statically fail scripts that contain them
@@ -1105,73 +1083,6 @@ fn eval_operation(
     Ok(())
 }
 
-/// A wrapper around a function that executes a single opcode from a script.
-pub trait StepFn {
-    /// Any additional data that is needed by the `StepFn`. In most cases, it can be `()`.
-    type Payload: Clone;
-    /// Call the underlying function to evaluate a single opcode.
-    fn call<'a>(
-        &self,
-        pc: &'a [u8],
-        script: &script::Code,
-        state: &mut State,
-        payload: &mut Self::Payload,
-    ) -> Result<&'a [u8], script::Error>;
-}
-
-/// Produces the default stepper, which carries no payload and runs the script as before.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct DefaultStepEvaluator<C> {
-    /// The flags which can modify interpretation rules.
-    pub(crate) flags: VerificationFlags,
-    /// The `SignatureChecker` used in `CHECK*SIG`.
-    pub(crate) checker: C,
-}
-
-impl<C: SignatureChecker + Copy> StepFn for DefaultStepEvaluator<C> {
-    type Payload = ();
-    fn call<'a>(
-        &self,
-        pc: &'a [u8],
-        script: &script::Code,
-        state: &mut State,
-        _payload: &mut (),
-    ) -> Result<&'a [u8], script::Error> {
-        eval_step(pc, script, self.flags, &self.checker, state)
-    }
-}
-
-/// Execution of a script component (e.g., script sig, script pubkey, or redeem script).
-fn eval_script<F>(
-    stack: Stack<Vec<u8>>,
-    script: &script::Code,
-    payload: &mut F::Payload,
-    eval_step: &F,
-) -> Result<Stack<Vec<u8>>, script::Error>
-where
-    F: StepFn,
-{
-    // There's a limit on how large scripts can be.
-    if script.0.len() > script::Code::MAX_SIZE {
-        return Err(script::Error::ScriptSize(Some(script.0.len())));
-    }
-
-    let mut pc = script.0;
-
-    let mut state = State::initial(stack);
-
-    // Main execution loop
-    while !pc.is_empty() {
-        pc = eval_step.call(pc, script, &mut state, payload)?;
-    }
-
-    if !state.vexec.is_empty() {
-        return Err(script::Error::UnclosedConditional(state.vexec.len()));
-    }
-
-    Ok(state.stack)
-}
-
 /// All signature hashes are 32 bytes, since they are either:
 /// - a SHA-256 output (for v1 or v2 transactions).
 /// - a BLAKE2b-256 output (for v3 and above transactions).
@@ -1230,95 +1141,5 @@ impl SignatureChecker for CallbackTransactionSignatureChecker<'_> {
         } else {
             !self.is_final
         }
-    }
-}
-
-fn eval_sig<F>(
-    script_sig: &script::Code,
-    flags: VerificationFlags,
-    payload: &mut F::Payload,
-    stepper: &F,
-) -> Result<Stack<Vec<u8>>, script::Error>
-where
-    F: StepFn,
-{
-    if flags.contains(VerificationFlags::SigPushOnly) && !script_sig.is_push_only() {
-        Err(script::Error::SigPushOnly)
-    } else {
-        eval_script(Stack::new(), script_sig, payload, stepper)
-    }
-}
-
-/// Additional validation for spend-to-script-hash transactions:
-fn eval_p2sh<F>(
-    data_stack: Stack<Vec<u8>>,
-    payload: &mut F::Payload,
-    stepper: &F,
-) -> Result<Option<Stack<Vec<u8>>>, script::Error>
-where
-    F: StepFn,
-{
-    let (pub_key_2, remaining_stack) = data_stack.split_last().expect(
-        "stack cannot be empty here, because if it were, the P2SH HASH <> EQUAL scriptPubKey would \
-         be evaluated with an empty stack and the `eval_script` in the caller would return false.",
-    );
-    eval_script(remaining_stack, &script::Code(pub_key_2), payload, stepper).map(|p2sh_stack| {
-        if p2sh_stack.last().is_ok_and(cast_to_bool) {
-            Some(p2sh_stack)
-        } else {
-            None
-        }
-    })
-}
-
-/// Full execution of a script.
-pub fn verify_script<F>(
-    script: &script::Raw,
-    flags: VerificationFlags,
-    payload: &mut F::Payload,
-    stepper: &F,
-) -> Result<bool, (script::ComponentType, script::Error)>
-where
-    F: StepFn,
-{
-    let data_stack = eval_sig(&script.sig, flags, payload, stepper)
-        .map_err(|e| (script::ComponentType::Sig, e))?;
-    let pub_key_stack = eval_script(data_stack.clone(), &script.pub_key, payload, stepper)
-        .map_err(|e| (script::ComponentType::PubKey, e))?;
-    if pub_key_stack.last().is_ok_and(cast_to_bool) {
-        if flags.contains(VerificationFlags::P2SH) && script.pub_key.is_pay_to_script_hash() {
-            // script_sig must be literals-only or validation fails
-            if script.sig.is_push_only() {
-                eval_p2sh(data_stack, payload, stepper)
-                    .map_err(|e| (script::ComponentType::Redeem, e))
-            } else {
-                Err((script::ComponentType::Sig, script::Error::SigPushOnly))
-            }
-        } else {
-            Ok(Some(pub_key_stack))
-        }
-        .and_then(|mresult_stack| {
-            match mresult_stack {
-                None => Ok(false),
-                Some(result_stack) => {
-                    // The CLEANSTACK check is only performed after potential P2SH evaluation, as the
-                    // non-P2SH evaluation of a P2SH script will obviously not result in a clean stack
-                    // (the P2SH inputs remain).
-                    if flags.contains(VerificationFlags::CleanStack) {
-                        // Disallow CLEANSTACK without P2SH, because Bitcoin did.
-                        assert!(flags.contains(VerificationFlags::P2SH));
-                        if result_stack.len() == 1 {
-                            Ok(true)
-                        } else {
-                            Err((script::ComponentType::Redeem, script::Error::CleanStack))
-                        }
-                    } else {
-                        Ok(true)
-                    }
-                }
-            }
-        })
-    } else {
-        Ok(false)
     }
 }

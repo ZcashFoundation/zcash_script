@@ -27,14 +27,9 @@ use std::os::raw::{c_int, c_uint, c_void};
 
 use tracing::warn;
 
-use interpreter::{
-    CallbackTransactionSignatureChecker, DefaultStepEvaluator, SighashCalculator, VerificationFlags,
-};
+use interpreter::{CallbackTransactionSignatureChecker, SighashCalculator, VerificationFlags};
 use signature::HashType;
-pub use zcash_script::{
-    rust_interpreter, AnnError, ComparisonStepEvaluator, Error, StepResults, StepwiseInterpreter,
-    ZcashScript,
-};
+pub use zcash_script::{AnnError, Error, RustInterpreter, ZcashScript};
 
 /// Script opcodes
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -391,25 +386,18 @@ pub fn cxx_rust_comparison_interpreter(
     sighash: SighashCalculator,
     lock_time: u32,
     is_final: bool,
-    flags: VerificationFlags,
-) -> ComparisonInterpreter<
-    CxxInterpreter,
-    StepwiseInterpreter<DefaultStepEvaluator<CallbackTransactionSignatureChecker>>,
-> {
+) -> ComparisonInterpreter<CxxInterpreter, RustInterpreter<CallbackTransactionSignatureChecker>> {
     ComparisonInterpreter {
         first: CxxInterpreter {
             sighash,
             lock_time,
             is_final,
         },
-        second: rust_interpreter(
-            flags,
-            CallbackTransactionSignatureChecker {
-                sighash,
-                lock_time: lock_time.into(),
-                is_final,
-            },
-        ),
+        second: RustInterpreter::new(CallbackTransactionSignatureChecker {
+            sighash,
+            lock_time: lock_time.into(),
+            is_final,
+        }),
     }
 }
 
@@ -455,8 +443,7 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U>
 #[cfg(any(test, feature = "test-dependencies"))]
 pub mod testing {
     use crate::{
-        interpreter::{State, StepFn, VerificationFlags},
-        opcode::Operation,
+        interpreter::VerificationFlags,
         pattern::*,
         pv, script,
         signature::HashType,
@@ -480,33 +467,6 @@ pub mod testing {
 
     /// A `usize` one larger than the longest allowed script, for testing bounds.
     pub const OVERFLOW_SCRIPT_SIZE: usize = script::Code::MAX_SIZE + 1;
-
-    /// This is the same as `DefaultStepEvaluator`, except that it skips `OP_EQUAL`, allowing us to
-    /// test comparison failures.
-    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-    pub struct BrokenStepEvaluator<T>(pub T);
-
-    impl<T: StepFn> StepFn for BrokenStepEvaluator<T> {
-        type Payload = T::Payload;
-        fn call<'a>(
-            &self,
-            pc: &'a [u8],
-            script: &script::Code,
-            state: &mut State,
-            payload: &mut T::Payload,
-        ) -> Result<&'a [u8], script::Error> {
-            self.0.call(
-                if pc[0] == Operation::OP_EQUAL.into() {
-                    &pc[1..]
-                } else {
-                    pc
-                },
-                script,
-                state,
-                payload,
-            )
-        }
-    }
 
     lazy_static::lazy_static! {
         /// The P2SH redeem script used for the static test case.
@@ -610,13 +570,13 @@ mod tests {
     use proptest::prelude::{prop, prop_assert_eq, proptest, ProptestConfig};
 
     use super::{
-        check_verify_callback, normalize_err, rust_interpreter,
+        check_verify_callback, normalize_err,
         test_vectors::test_vectors,
         testing::{
             annotate_script, invalid_sighash, missing_sighash, repair_flags, run_test_vector,
             sighash, OVERFLOW_SCRIPT_SIZE, SCRIPT,
         },
-        CxxInterpreter, Error, ZcashScript,
+        CxxInterpreter, Error, RustInterpreter, ZcashScript,
     };
     use crate::{
         interpreter::{CallbackTransactionSignatureChecker, VerificationFlags},
@@ -635,14 +595,11 @@ mod tests {
                 lock_time,
                 is_final,
             },
-            &rust_interpreter(
-                flags,
-                CallbackTransactionSignatureChecker {
-                    sighash: &sighash,
-                    lock_time: lock_time.into(),
-                    is_final,
-                },
-            ),
+            &RustInterpreter::new(CallbackTransactionSignatureChecker {
+                sighash: &sighash,
+                lock_time: lock_time.into(),
+                is_final,
+            }),
             &SCRIPT,
             flags,
         );
@@ -665,14 +622,11 @@ mod tests {
                 lock_time,
                 is_final,
             },
-            &rust_interpreter(
-                flags,
-                CallbackTransactionSignatureChecker {
-                    sighash: &invalid_sighash,
-                    lock_time: lock_time.into(),
-                    is_final,
-                },
-            ),
+            &RustInterpreter::new(CallbackTransactionSignatureChecker {
+                sighash: &invalid_sighash,
+                lock_time: lock_time.into(),
+                is_final,
+            }),
             &SCRIPT,
             flags,
         );
@@ -696,14 +650,11 @@ mod tests {
                 lock_time,
                 is_final,
             },
-            &rust_interpreter(
-                flags,
-                CallbackTransactionSignatureChecker {
-                    sighash: &missing_sighash,
-                    lock_time: lock_time.into(),
-                    is_final,
-                },
-            ),
+            &RustInterpreter::new(CallbackTransactionSignatureChecker {
+                sighash: &missing_sighash,
+                lock_time: lock_time.into(),
+                is_final,
+            }),
             &SCRIPT,
             flags,
         );
@@ -740,25 +691,19 @@ mod tests {
                 &tv,
                 false,
                 &|script, flags| {
-                    rust_interpreter(
-                        flags,
-                        CallbackTransactionSignatureChecker {
-                            sighash: &missing_sighash,
-                            lock_time: 0,
-                            is_final: false,
-                        },
-                    )
+                    RustInterpreter::new(CallbackTransactionSignatureChecker {
+                        sighash: &missing_sighash,
+                        lock_time: 0,
+                        is_final: false,
+                    })
                     .verify_callback(&script, flags)
                 },
                 &|pubkey| {
-                    rust_interpreter(
-                        VerificationFlags::empty(),
-                        CallbackTransactionSignatureChecker {
-                            sighash: &missing_sighash,
-                            lock_time: 0,
-                            is_final: false,
-                        },
-                    )
+                    RustInterpreter::new(CallbackTransactionSignatureChecker {
+                        sighash: &missing_sighash,
+                        lock_time: 0,
+                        is_final: false,
+                    })
                     .legacy_sigop_count_script(&pubkey)
                 },
             )
@@ -809,8 +754,7 @@ mod tests {
                     lock_time,
                     is_final,
                 },
-                &rust_interpreter(
-                    flags,
+                &RustInterpreter::new(
                     CallbackTransactionSignatureChecker {
                         sighash: &sighash,
                         lock_time: lock_time.into(),
@@ -849,8 +793,7 @@ mod tests {
                     lock_time,
                     is_final,
                 },
-                &rust_interpreter(
-                    flags,
+                &RustInterpreter::new(
                     CallbackTransactionSignatureChecker {
                         sighash: &sighash,
                         lock_time: lock_time.into(),
