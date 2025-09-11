@@ -12876,11 +12876,31 @@ pub fn test_vectors() -> Vec<TestVector> {
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::WrongType)))),
             sigop_count: 1,
         },
+        // R with leading null byte is incorrectly encoded
+        TestVector {
+            script_sig: &[H("0b"), H("3008020300000002010100")],
+            script_pubkey: &[N(0), O(CHECKSIG), O(NOT)],
+            flags: EMPTY_FLAGS,
+            result: err(
+                script::ComponentType::PubKey,
+                script::Error::Interpreter(
+                    Some(opcode::PossiblyBad::from(CHECKSIG)),
+                    interpreter::Error::from(signature::Error::from(
+                        signature::InvalidDerEncoding::InvalidComponent {
+                            name: "r",
+                            value: vec![0, 0, 0],
+                            error: signature::InvalidDerInteger::LeadingNullByte
+                        },
+                    )),
+                ),
+            ),
+            sigop_count: 1,
+        },
         // Missing S is incorrectly encoded
         TestVector {
             script_sig: &[
                 H("25"),
-                H("30220220000000000000000000000000000000000000000000000000000000000000000000"),
+                H("30220220010000000000000000000000000000000000000000000000000000000000000000"),
             ],
             script_pubkey: &[N(0), O(CHECKSIG), O(NOT)],
             flags: EMPTY_FLAGS,
