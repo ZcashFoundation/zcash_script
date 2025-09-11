@@ -25,7 +25,6 @@ pub mod test_vectors;
 
 use std::os::raw::{c_int, c_uint, c_void};
 
-use enum_primitive::FromPrimitive;
 use tracing::warn;
 
 use interpreter::{
@@ -52,41 +51,58 @@ pub enum Opcode {
 
 impl Opcode {
     /// This parses a single opcode from a byte stream.
-    pub fn parse(script: &[u8]) -> Result<opcode::Parsed<'_>, opcode::Error> {
-        match opcode::push_value::LargeValue::parse(script)? {
-            None => match script.split_first() {
-                None => Err(opcode::Error::ReadError {
-                    expected_bytes: 1,
-                    available_bytes: 0,
-                }),
-                Some((leading_byte, remaining_code)) => opcode::Disabled::from_u8(*leading_byte)
-                    .map_or(
-                        Ok(opcode::Parsed {
-                            opcode: if let Some(sv) =
-                                opcode::push_value::SmallValue::from_u8(*leading_byte)
-                            {
-                                opcode::PossiblyBad::Good(Opcode::PushValue(
-                                    opcode::PushValue::SmallValue(sv),
-                                ))
-                            } else if let Some(ctl) = opcode::Control::from_u8(*leading_byte) {
-                                opcode::PossiblyBad::Good(Opcode::Control(ctl))
-                            } else if let Some(op) = opcode::Operation::from_u8(*leading_byte) {
-                                opcode::PossiblyBad::Good(Opcode::Operation(op))
-                            } else {
-                                opcode::PossiblyBad::Bad(opcode::Bad::from(*leading_byte))
-                            },
-                            remaining_code,
-                        }),
-                        |disabled| Err(opcode::Error::Disabled(Some(disabled))),
-                    ),
-            },
-            Some((v, remaining_code)) => Ok(opcode::Parsed {
-                opcode: opcode::PossiblyBad::Good(Opcode::PushValue(
-                    opcode::PushValue::LargeValue(v),
+    ///
+    /// This always returns the unparsed bytes, because parsing failures don’t invalidate the
+    /// remainder of the stream (if any).
+    ///
+    /// __NB__: This is stricter than the parsing allowed by script verification. For that, use
+    ///         [`opcode::PossiblyBad::parse`].
+    pub fn parse(script: &[u8]) -> (Result<Opcode, script::Error>, &[u8]) {
+        let (res, rem) = opcode::PossiblyBad::parse(script);
+        (
+            res.map_err(script::Error::Opcode).and_then(|pb| match pb {
+                opcode::PossiblyBad::Bad(_) => Err(script::Error::Interpreter(
+                    Some(pb),
+                    interpreter::Error::BadOpcode,
                 )),
-                remaining_code,
+                opcode::PossiblyBad::Good(op) => Ok(op),
             }),
+            rem,
+        )
+    }
+
+    /// Statically analyze an opcode. That is, this identifies potential runtime errors without
+    /// needing to evaluate the script.
+    ///
+    /// __NB__: [`opcode::Operation::OP_RETURN`] isn’t tracked by this function because it’s
+    ///         functionally more like a `break` then an error.
+    pub fn analyze(
+        &self,
+        flags: &interpreter::VerificationFlags,
+    ) -> Result<(), Vec<interpreter::Error>> {
+        match self {
+            Opcode::PushValue(pv) => pv.analyze(flags),
+            Opcode::Operation(op) => op.analyze(flags),
+            Opcode::Control(_) => Ok(()),
         }
+    }
+}
+
+impl From<opcode::PushValue> for Opcode {
+    fn from(value: opcode::PushValue) -> Self {
+        Opcode::PushValue(value)
+    }
+}
+
+impl From<opcode::Control> for Opcode {
+    fn from(value: opcode::Control) -> Self {
+        Opcode::Control(value)
+    }
+}
+
+impl From<opcode::Operation> for Opcode {
+    fn from(value: opcode::Operation) -> Self {
+        Opcode::Operation(value)
     }
 }
 
@@ -125,10 +141,9 @@ impl From<cxx::ScriptError> for Error {
             cxx::ScriptError_t_SCRIPT_ERR_SCRIPT_SIZE => {
                 Self::from(script::Error::ScriptSize(None))
             }
-            cxx::ScriptError_t_SCRIPT_ERR_PUSH_SIZE => Self::from(script::Error::Interpreter(
-                None,
-                interpreter::Error::PushSize(None),
-            )),
+            cxx::ScriptError_t_SCRIPT_ERR_PUSH_SIZE => {
+                Self::from(script::Error::from(opcode::Error::PushSize(None)))
+            }
             cxx::ScriptError_t_SCRIPT_ERR_OP_COUNT => Self::from(script::Error::Interpreter(
                 None,
                 interpreter::Error::OpCount,
@@ -543,28 +558,35 @@ pub mod testing {
     pub fn run_test_vector(
         tv: &TestVector,
         try_normalized_error: bool,
-        f: &dyn Fn(&[u8], &[u8], VerificationFlags) -> Result<bool, AnnError>,
+        interpreter_fn: &dyn Fn(&[u8], &[u8], VerificationFlags) -> Result<bool, AnnError>,
+        sigop_count_fn: &dyn Fn(&[u8]) -> Result<u32, Error>,
     ) {
-        match tv.run(&|sig, pubkey, flags| {
-            f(sig, pubkey, flags).map_err(|err| match err {
-                (t, Error::Script(serr)) => (t, serr),
-                _ => panic!("failed in a very bad way: {:?}", err),
-            })
-        }) {
+        match tv.run(
+            &|sig, pubkey, flags| {
+                interpreter_fn(sig, pubkey, flags).map_err(|err| match err {
+                    (t, Error::Script(serr)) => (t, serr),
+                    _ => panic!("failed in a very bad way: {:?}", err),
+                })
+            },
+            &|pubkey| {
+                sigop_count_fn(pubkey).unwrap_or_else(|e| panic!("something bad happened: {:?}", e))
+            },
+        ) {
             Ok(()) => (),
-            Err(actual) => {
+            Err((actual_res, actual_count)) => {
                 if try_normalized_error
                     && tv.result.clone().normalized()
-                        == actual.clone().map_err(|(_, e)| e.normalize())
+                        == actual_res.clone().map_err(|(_, e)| e.normalize())
+                    && tv.sigop_count == actual_count
                 {
                     ()
                 } else {
                     panic!(
-                        "{:?} didn’t match the result in
+                        "Either {:?} didn’t match the result or {} didn’t match the sigop_count in
 
     {:?}
 ",
-                        actual, tv
+                        actual_res, actual_count, tv
                     );
                 }
             }
@@ -691,31 +713,50 @@ mod tests {
     #[test]
     fn test_vectors_for_cxx() {
         for tv in test_vectors() {
-            run_test_vector(&tv, true, &|sig, pubkey, flags| {
-                CxxInterpreter {
-                    sighash: &missing_sighash,
-                    lock_time: 0,
-                    is_final: false,
-                }
-                .verify_callback(pubkey, sig, flags)
-            })
+            let interp = CxxInterpreter {
+                sighash: &missing_sighash,
+                lock_time: 0,
+                is_final: false,
+            };
+
+            run_test_vector(
+                &tv,
+                true,
+                &|sig, pubkey, flags| interp.verify_callback(pubkey, sig, flags),
+                &|pubkey| interp.legacy_sigop_count_script(pubkey),
+            )
         }
     }
 
     #[test]
     fn test_vectors_for_rust() {
         for tv in test_vectors() {
-            run_test_vector(&tv, false, &|sig, pubkey, flags| {
-                rust_interpreter(
-                    flags,
-                    CallbackTransactionSignatureChecker {
-                        sighash: &missing_sighash,
-                        lock_time: 0,
-                        is_final: false,
-                    },
-                )
-                .verify_callback(&pubkey, &sig, flags)
-            })
+            run_test_vector(
+                &tv,
+                false,
+                &|sig, pubkey, flags| {
+                    rust_interpreter(
+                        flags,
+                        CallbackTransactionSignatureChecker {
+                            sighash: &missing_sighash,
+                            lock_time: 0,
+                            is_final: false,
+                        },
+                    )
+                    .verify_callback(&pubkey, &sig, flags)
+                },
+                &|pubkey| {
+                    rust_interpreter(
+                        VerificationFlags::empty(),
+                        CallbackTransactionSignatureChecker {
+                            sighash: &missing_sighash,
+                            lock_time: 0,
+                            is_final: false,
+                        },
+                    )
+                    .legacy_sigop_count_script(pubkey)
+                },
+            )
         }
     }
 

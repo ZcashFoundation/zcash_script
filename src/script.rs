@@ -1,6 +1,7 @@
 //! Managing sequences of opcodes.
 
-use itertools::{Either, Itertools};
+use std::iter;
+
 use thiserror::Error;
 
 use crate::{
@@ -73,10 +74,12 @@ impl Error {
         match self {
             Self::ScriptSize(Some(_)) => Self::ScriptSize(None),
             Self::Opcode(oerr) => match oerr {
-                opcode::Error::ReadError { .. } => {
+                opcode::Error::Read { .. } => {
                     Self::Interpreter(None, interpreter::Error::BadOpcode)
                 }
                 opcode::Error::Disabled(_) => Self::AMBIGUOUS_COUNT_DISABLED,
+                opcode::Error::PushSize(Some(_)) => Self::from(opcode::Error::PushSize(None)),
+                _ => self.clone(),
             },
             Self::Interpreter(
                 Some(opcode::PossiblyBad::Good(op::IF | op::NOTIF)),
@@ -112,18 +115,20 @@ impl From<opcode::Error> for Error {
     }
 }
 
-/// “Strict” scripts disallow [`Bad`] opcodes, and so we collect any bad opcodes that we find, so we
-/// can report all of them, rather than just the first one.
-pub enum StrictError {
-    /// A script validation failure.
-    Script(Error),
-    /// All of the [`Bad`] opcodes we found.
-    BadOpcodes(Vec<opcode::Bad>),
-}
+/// An iterator that provides `Opcode`s from a byte stream.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Parser<'a>(&'a [u8]);
 
-impl From<Error> for StrictError {
-    fn from(value: Error) -> Self {
-        StrictError::Script(value)
+impl<'a> Iterator for Parser<'a> {
+    type Item = Result<opcode::PossiblyBad, opcode::Error>;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.0.is_empty() {
+            None
+        } else {
+            let (res, rem) = opcode::PossiblyBad::parse(self.0);
+            self.0 = rem;
+            Some(res)
+        }
     }
 }
 
@@ -147,42 +152,68 @@ impl Code<'_> {
     /// Maximum script length in bytes
     pub const MAX_SIZE: usize = 10_000;
 
-    /// Fails on all [`Bad`] opcodes, not just ones on active branches.
-    pub fn parse_strict(&self) -> Result<Vec<Opcode>, StrictError> {
-        self.parse()
-            .map_err(StrictError::Script)
-            .and_then(|script| {
-                let (opcodes, bad_opcodes): (Vec<_>, Vec<_>) =
-                    script.into_iter().partition_map(|pb| match pb {
-                        opcode::PossiblyBad::Good(opcode) => Either::Left(opcode),
-                        opcode::PossiblyBad::Bad(bad) => Either::Right(bad),
-                    });
-                if bad_opcodes.is_empty() {
-                    Ok(opcodes)
-                } else {
-                    Err(StrictError::BadOpcodes(bad_opcodes))
-                }
+    /// This parses an entire script. This is stricter than the incremental parsing that is done
+    /// during [`interpreter::verify_script`], because it fails on statically-identifiable
+    /// interpretation errors no matter where they occur (that is, even on branches that may not be
+    /// evaluated on a particular run).
+    ///
+    /// This is useful for validating and analyzing scripts before they are put into a transaction,
+    /// but not for scripts that are read from the chain, because it may fail on valid scripts.
+    pub fn parse_strict<'a>(
+        &'a self,
+        flags: &'a interpreter::VerificationFlags,
+    ) -> impl Iterator<Item = Result<Opcode, Vec<Error>>> + 'a {
+        self.parse().map(|mpb| {
+            mpb.map_err(|e| vec![Error::Opcode(e)]).and_then(|pb| {
+                pb.analyze(flags)
+                    .map_err(|ierrs| {
+                        ierrs
+                            .into_iter()
+                            .map(|ie| Error::Interpreter(Some(pb.clone()), ie))
+                            .collect()
+                    })
+                    .cloned()
             })
+        })
     }
 
-    /// Parse an entire script component.
-    pub fn parse(&self) -> Result<Vec<opcode::PossiblyBad>, Error> {
-        let mut pc = self.0;
-        let mut result = vec![];
-        while !pc.is_empty() {
-            let opcode::Parsed {
-                opcode,
-                remaining_code,
-            } = Opcode::parse(pc)?;
-            pc = remaining_code;
-            result.push(opcode)
-        }
-        Ok(result)
+    /// Produce an [`Opcode`] iterator from [`Code`].
+    pub fn parse(&self) -> Parser<'_> {
+        Parser(self.0)
     }
 
     /// Convert a sequence of `Opcode`s to the bytes that would be included in a transaction.
     pub fn serialize(script: &[Opcode]) -> Vec<u8> {
         script.iter().flat_map(Vec::from).collect()
+    }
+
+    /// This should behave the same as `interpreter::eval_script`.
+    pub fn eval(
+        &self,
+        flags: interpreter::VerificationFlags,
+        checker: &dyn interpreter::SignatureChecker,
+        stack: interpreter::Stack<Vec<u8>>,
+    ) -> Result<interpreter::Stack<Vec<u8>>, Error> {
+        // There's a limit on how large scripts can be.
+        if self.0.len() <= Code::MAX_SIZE {
+            let mut state = interpreter::State::initial(stack);
+            self.parse()
+                .try_for_each(|mpb| {
+                    mpb.map_err(Error::Opcode).and_then(|opcode| {
+                        interpreter::eval_possibly_bad(&opcode, self, flags, checker, &mut state)
+                            .map_err(|e| Error::Interpreter(Some(opcode), e))
+                    })
+                })
+                .and_then(|()| {
+                    if !state.vexec().is_empty() {
+                        Err(Error::UnclosedConditional(state.vexec().len()))
+                    } else {
+                        Ok(state.stack().clone())
+                    }
+                })
+        } else {
+            Err(Error::ScriptSize(Some(self.0.len())))
+        }
     }
 
     /// Encode/decode small integers:
@@ -200,63 +231,55 @@ impl Code<'_> {
     /// counted more accurately, assuming they are of the form
     ///  ... OP_N CHECKMULTISIG ...
     pub fn get_sig_op_count(&self, accurate: bool) -> u32 {
-        let mut n = 0;
-        let mut pc = self.0;
-        let mut last_opcode = None;
-        while !pc.is_empty() {
-            let opcode::Parsed {
-                opcode,
-                remaining_code,
-            } = match Opcode::parse(pc) {
-                Ok(o) => o,
-                // Stop counting when we get to an invalid opcode.
-                Err(_) => break,
-            };
-            pc = remaining_code;
-            if let opcode::PossiblyBad::Good(Opcode::Operation(op)) = opcode {
-                n += match op {
-                    OP_CHECKSIG | OP_CHECKSIGVERIFY => 1,
-                    OP_CHECKMULTISIG | OP_CHECKMULTISIGVERIFY => match last_opcode {
-                        Some(opcode::PossiblyBad::Good(Opcode::PushValue(
-                            opcode::PushValue::SmallValue(pv),
-                        ))) => {
-                            if accurate && pv >= OP_1 && pv <= OP_16 {
-                                Self::decode_op_n(pv)
-                            } else {
-                                20
-                            }
-                        }
-                        _ => 20,
+        let parser = self.parse();
+        match iter::once(Ok(None))
+            .chain(parser.map(|r| r.map(Some)))
+            .zip(parser)
+            .try_fold(0, |n, ops| match ops {
+                (Ok(last_opcode), Ok(opcode)) => Ok(n + match opcode {
+                    opcode::PossiblyBad::Good(Opcode::Operation(op)) => match op {
+                        OP_CHECKSIG | OP_CHECKSIGVERIFY => 1,
+                        OP_CHECKMULTISIG | OP_CHECKMULTISIGVERIFY => match last_opcode {
+                            Some(opcode::PossiblyBad::Good(Opcode::PushValue(
+                                opcode::PushValue::SmallValue(pv),
+                            ))) if accurate && pv >= OP_1 && pv <= OP_16 => Self::decode_op_n(pv),
+                            _ => u32::from(interpreter::MAX_PUBKEY_COUNT),
+                        },
+                        _ => 0,
                     },
                     _ => 0,
-                };
-            }
-            last_opcode = Some(opcode);
+                }),
+                (_, _) => Err(n),
+            }) {
+            Err(n) => n,
+            Ok(n) => n,
         }
-        n
     }
 
     /// Returns true iff this script is P2SH.
     pub fn is_pay_to_script_hash(&self) -> bool {
-        self.parse_strict().map_or(false, |ops| match &ops[..] {
-            [ Opcode::Operation(OP_HASH160),
-              Opcode::PushValue(PushValue::LargeValue(PushdataBytelength(v))),
-              Opcode::Operation(OP_EQUAL)
-            ] => v.len() == 0x14,
-            _ => false
-        })
+        self.parse_strict(&interpreter::VerificationFlags::all())
+            .collect::<Result<Vec<_>, _>>()
+            .map_or(false, |ops| match &ops[..] {
+                [ Opcode::Operation(OP_HASH160),
+                  Opcode::PushValue(PushValue::LargeValue(PushdataBytelength(v))),
+                  Opcode::Operation(OP_EQUAL)
+                ] => v.len() == 0x14,
+                _ => false
+            })
     }
 
     /// Called by `IsStandardTx` and P2SH/BIP62 VerifyScript (which makes it consensus-critical).
     pub fn is_push_only(&self) -> bool {
-        self.parse().map_or(false, |op| {
-            op.iter().all(|op| {
-                matches!(
-                    op,
-                    opcode::PossiblyBad::Good(Opcode::PushValue(_))
-                        | opcode::PossiblyBad::Bad(opcode::Bad::OP_RESERVED)
-                )
-            })
+        self.parse().all(|op| {
+            matches!(
+                op,
+                // NB: The C++ impl only checks the push size during interpretation, so we need to
+                //     pass this check for too-big `PushValue`s.
+                Err(opcode::Error::PushSize(_))
+                    | Ok(opcode::PossiblyBad::Good(Opcode::PushValue(_))
+                        | opcode::PossiblyBad::Bad(opcode::Bad::OP_RESERVED))
+            )
         })
     }
 }

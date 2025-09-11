@@ -3,7 +3,7 @@
 #![allow(missing_docs)]
 
 use crate::opcode::{
-    push_value::{LargeValue, SmallValue::*},
+    push_value::SmallValue::*,
     PushValue::{self, SmallValue},
 };
 
@@ -29,9 +29,5 @@ pub const _16: PushValue = SmallValue(OP_16);
 /// Produces a minimally-encoded data value. It fails if the slice is larger than
 /// `LargeValue::MAX_SIZE`.
 pub fn push_value(value: &[u8]) -> Option<PushValue> {
-    if value.len() <= LargeValue::MAX_SIZE {
-        PushValue::from_slice(value)
-    } else {
-        None
-    }
+    PushValue::from_slice(value)
 }

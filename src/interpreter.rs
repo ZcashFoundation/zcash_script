@@ -25,14 +25,6 @@ pub enum Error {
     #[error("OP_RETURN encountered")]
     OpReturn,
 
-    // Max sizes
-    #[error(
-        "push size{} exceeded maxmimum ({} bytes)",
-        .0.map_or("", |size| " ({size} bytes)"),
-        opcode::push_value::LargeValue::MAX_SIZE
-    )]
-    PushSize(Option<usize>),
-
     /// __NB__: This doesn’t take an “actual count” argument, because `OpCount` depends on
     ///         conditional execution and thus can only be checked incrementally. However, we could
     ///         statically check a “minimum operation count” for a script, which could then include
@@ -115,7 +107,6 @@ impl Error {
                 signature::Error::SigDER(Some(_)) => Self::from(signature::Error::SigDER(None)),
                 _ => self.clone(),
             },
-            Self::PushSize(Some(_)) => Self::PushSize(None),
             Self::StackSize(Some(_)) => Self::StackSize(None),
             Self::SigCount(Some(_)) => Self::SigCount(None),
             Self::PubKeyCount(Some(_)) => Self::PubKeyCount(None),
@@ -535,22 +526,18 @@ fn eval_step<'a>(
     pc: &'a [u8],
     script: &script::Code,
     flags: VerificationFlags,
-    checker: impl SignatureChecker,
+    checker: &dyn SignatureChecker,
     state: &mut State,
 ) -> Result<&'a [u8], script::Error> {
     //
     // Read instruction
     //
-    Opcode::parse(pc).map_err(script::Error::Opcode).and_then(
-        |opcode::Parsed {
-             opcode,
-             remaining_code,
-         }| {
-            eval_possibly_bad(&opcode, script, flags, checker, state)
-                .map_err(|ierr| script::Error::Interpreter(Some(opcode), ierr))
-                .map(|()| remaining_code)
-        },
-    )
+    let (res, remaining_code) = opcode::PossiblyBad::parse(pc);
+    res.map_err(script::Error::Opcode).and_then(|opcode| {
+        eval_possibly_bad(&opcode, script, flags, checker, state)
+            .map_err(|ierr| script::Error::Interpreter(Some(opcode), ierr))
+            .map(|()| remaining_code)
+    })
 }
 
 /// Bad opcodes are a bit complicated.
@@ -576,16 +563,17 @@ fn eval_bad(bad: &opcode::Bad, state: &mut State) -> Result<(), Error> {
     }
 }
 
-fn eval_possibly_bad(
+/// Eval a single [`Opcode`] … which may be [`opcode::Bad`].
+pub fn eval_possibly_bad(
     opcode: &opcode::PossiblyBad,
     script: &script::Code,
     flags: VerificationFlags,
-    checker: impl SignatureChecker,
+    checker: &dyn SignatureChecker,
     state: &mut State,
 ) -> Result<(), Error> {
     match opcode {
         opcode::PossiblyBad::Bad(bad) => eval_bad(bad, state),
-        opcode::PossiblyBad::Good(opcode) => eval_opcode(flags, opcode, script, &checker, state),
+        opcode::PossiblyBad::Good(opcode) => eval_opcode(flags, opcode, script, checker, state),
     }
 }
 
@@ -598,19 +586,14 @@ fn eval_opcode(
 ) -> Result<(), Error> {
     match opcode {
         Opcode::PushValue(pv) => {
-            let len = pv.value().len();
-            if len <= opcode::push_value::LargeValue::MAX_SIZE {
-                if should_exec(&state.vexec) {
-                    eval_push_value(
-                        pv,
-                        flags.contains(VerificationFlags::MinimalData),
-                        &mut state.stack,
-                    )
-                } else {
-                    Ok(())
-                }
+            if should_exec(&state.vexec) {
+                eval_push_value(
+                    pv,
+                    flags.contains(VerificationFlags::MinimalData),
+                    &mut state.stack,
+                )
             } else {
-                Err(Error::PushSize(Some(len)))
+                Ok(())
             }
         }
         Opcode::Control(control) => {
@@ -1143,7 +1126,7 @@ impl<C: SignatureChecker + Copy> StepFn for DefaultStepEvaluator<C> {
         state: &mut State,
         _payload: &mut (),
     ) -> Result<&'a [u8], script::Error> {
-        eval_step(pc, script, self.flags, self.checker, state)
+        eval_step(pc, script, self.flags, &self.checker, state)
     }
 }
 
