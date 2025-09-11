@@ -46,13 +46,10 @@ pub enum InvalidDerEncoding {
     TooLong,
     #[error("the signature was expected to be {expected} bytes, but it was {actual} bytes")]
     IncorrectLength { actual: usize, expected: u8 },
-    #[error(
-        "the {name} component {}failed: {error}",
-        .value.clone().map_or("".to_owned(), |vec| format!("({vec:?}) "))
-    )]
+    #[error("the {name} component ({value:?}) failed: {error}")]
     InvalidComponent {
         name: &'static str,
-        value: Option<Vec<u8>>,
+        value: Vec<u8>,
         error: InvalidDerInteger,
     },
 }
@@ -261,7 +258,7 @@ impl Decoded {
                                     Some((r, [0x02, s_len, s @ ..])) => Self::is_valid_integer(r)
                                         .map_err(|error| InvalidDerEncoding::InvalidComponent {
                                             name: "r",
-                                            value: Some(r.to_vec()),
+                                            value: r.to_vec(),
                                             error,
                                         })
                                         .and_then(|()| {
@@ -269,14 +266,14 @@ impl Decoded {
                                                 Self::is_valid_integer(s).map_err(|error| {
                                                     InvalidDerEncoding::InvalidComponent {
                                                         name: "s",
-                                                        value: Some(s.to_vec()),
+                                                        value: s.to_vec(),
                                                         error,
                                                     }
                                                 })
                                             } else {
                                                 Err(InvalidDerEncoding::InvalidComponent {
                                                     name: "s",
-                                                    value: Some(s.to_vec()),
+                                                    value: s.to_vec(),
                                                     error: InvalidDerInteger::IncorrectLength {
                                                         actual: s.len(),
                                                         expected: *s_len,
@@ -284,16 +281,24 @@ impl Decoded {
                                                 })
                                             }
                                         }),
-                                    _ => Err(InvalidDerEncoding::InvalidComponent {
+                                    Some((_r, s)) => Err(InvalidDerEncoding::InvalidComponent {
                                         name: "s",
-                                        value: None,
+                                        value: s.to_vec(),
                                         error: InvalidDerInteger::NotAnInteger,
+                                    }),
+                                    None => Err(InvalidDerEncoding::InvalidComponent {
+                                        name: "r",
+                                        value: r_s.to_vec(),
+                                        error: InvalidDerInteger::IncorrectLength {
+                                            actual: r_s.len(),
+                                            expected: *r_len,
+                                        },
                                     }),
                                 }
                             }
-                            [..] => Err(InvalidDerEncoding::InvalidComponent {
+                            r_s => Err(InvalidDerEncoding::InvalidComponent {
                                 name: "r",
-                                value: None,
+                                value: r_s.to_vec(),
                                 error: InvalidDerInteger::NotAnInteger,
                             }),
                         }

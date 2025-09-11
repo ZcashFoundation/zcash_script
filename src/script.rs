@@ -242,8 +242,16 @@ impl Code<'_> {
                         OP_CHECKMULTISIG | OP_CHECKMULTISIGVERIFY => match last_opcode {
                             Some(opcode::PossiblyBad::Good(Opcode::PushValue(
                                 opcode::PushValue::SmallValue(pv),
-                            ))) if accurate && pv >= OP_1 && pv <= OP_16 => Self::decode_op_n(pv),
-                            _ => u32::from(interpreter::MAX_PUBKEY_COUNT),
+                            )))
+                                // Even with an accurate count, 0 keys is counted as 20 for some
+                                // reason.
+                                if accurate && pv >= OP_1 && pv <= OP_16 => Self::decode_op_n(   pv),
+                            // Apparently it’s too much work to figure out if it’s one of the few
+                            // `LargeValue`s that’s valid, so we assume the worst.
+                            Some(_) => u32::from(interpreter::MAX_PUBKEY_COUNT),
+                            // We’re at the beginning of the script pubkey, so any pubkey count must
+                            // be part of the script sig – assume the worst.
+                            None => u32::from(interpreter::MAX_PUBKEY_COUNT),
                         },
                         _ => 0,
                     },
