@@ -5,6 +5,8 @@
 //! - `NULLFAIL`, or
 //! - `WITNESS`.
 
+use core::iter;
+
 use bounded_vec::EmptyBoundedVec;
 use hex::{FromHex, FromHexError};
 
@@ -29,6 +31,8 @@ enum Entry {
     A(&'static str),
     /// A PushValue encoded as a number
     N(i64),
+    /// A PushValue encoded as a signature (R component, S component, hash type)
+    Sig(&'static str, &'static str, u8),
 }
 
 impl Entry {
@@ -57,6 +61,21 @@ impl Entry {
             Entry::H(bytes) => <Vec<u8>>::from_hex(*bytes),
             Entry::A(string) => Ok(Self::val_to_pv(string.as_bytes())),
             Entry::N(num) => Ok(Self::val_to_pv(&num::serialize(*num))),
+            Entry::Sig(r_hex, s_hex, hash_type) => {
+                let r = <Vec<u8>>::from_hex(*r_hex)?;
+                let r_len = u8::try_from(r.len()).expect("signatures have single-byte lengths");
+                let s = <Vec<u8>>::from_hex(*s_hex)?;
+                let s_len = u8::try_from(s.len()).expect("signatures have single-byte lengths");
+                Ok(Self::val_to_pv(
+                    &[0x30, 4 + r_len + s_len, 0x02, r_len]
+                        .into_iter()
+                        .chain(r.into_iter())
+                        .chain([0x02, s_len].into_iter())
+                        .chain(s.into_iter())
+                        .chain(iter::once(*hash_type))
+                        .collect::<Vec<_>>(),
+                ))
+            }
         }
     }
 }
@@ -12878,7 +12897,7 @@ pub fn test_vectors() -> Vec<TestVector> {
         },
         // R with leading null byte is incorrectly encoded
         TestVector {
-            script_sig: &[H("0b"), H("3008020300000002010100")],
+            script_sig: &[Sig("000000", "01", 0)],
             script_pubkey: &[N(0), O(CHECKSIG), O(NOT)],
             flags: EMPTY_FLAGS,
             result: err(
