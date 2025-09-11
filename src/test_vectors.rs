@@ -14649,5 +14649,18 @@ pub fn test_vectors() -> Vec<TestVector> {
             result: err(script::ComponentType::PubKey, script::Error::from(opcode::Error::Disabled(Some(OP_CAT)))),
             sigop_count: 0,
         },
+
+        // The `OP_CHECKSIG` signature has a length that points past the end of the signature.
+        TestVector {
+            script_sig: &[H("0A"), H("30070231000000000000"), O(_0), O(CHECKSIG)],
+            script_pubkey: &[],
+            flags: DEFAULT_FLAGS,
+            result: err(script::ComponentType::Sig, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
+                name: "s",
+                value: None,
+                error: signature::InvalidDerInteger::NotAnInteger
+            })))),
+            sigop_count: 0,
+        },
     ]
 }
