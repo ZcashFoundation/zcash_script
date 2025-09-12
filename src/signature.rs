@@ -3,10 +3,12 @@
 //! This is in a separate module so we can minimize the code that has access to the internals,
 //! making it easier to ensure that we check the encoding correctly.
 
+use std::fmt::Display;
+
 use secp256k1::ecdsa;
 use thiserror::Error;
 
-use crate::external::pubkey::PubKey;
+use crate::{external::pubkey::PubKey, script::Asm};
 
 /// Things that can go wrong when constructing a `HashType` from bit flags.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Error)]
@@ -46,13 +48,10 @@ pub enum InvalidDerEncoding {
     TooLong,
     #[error("the signature was expected to be {expected} bytes, but it was {actual} bytes")]
     IncorrectLength { actual: usize, expected: u8 },
-    #[error(
-        "the {name} component {}failed: {error}",
-        .value.clone().map_or("".to_owned(), |vec| format!("({vec:?}) "))
-    )]
+    #[error("the {name} component ({value:?}) failed: {error}")]
     InvalidComponent {
         name: &'static str,
-        value: Option<Vec<u8>>,
+        value: Vec<u8>,
         error: InvalidDerInteger,
     },
 }
@@ -173,6 +172,28 @@ impl HashType {
     }
 }
 
+impl Asm for HashType {
+    fn to_asm(&self, _attempt_sighash_decode: bool) -> String {
+        let signed_outputs = match self.signed_outputs {
+            SignedOutputs::All => "ALL",
+            SignedOutputs::Single => "SINGLE",
+            SignedOutputs::None => "NONE",
+        };
+        let anyone_can_pay = if self.anyone_can_pay {
+            "|ANYONECANPAY"
+        } else {
+            ""
+        };
+        format!("{}{}", signed_outputs, anyone_can_pay)
+    }
+}
+
+impl std::fmt::Display for HashType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_asm(false))
+    }
+}
+
 /// Different signature encoding failures may result in either aborting execution or continuing
 /// execution with an invalid signature.
 pub enum Validity {
@@ -255,45 +276,55 @@ impl Decoded {
                             // Extract the length of the R element.
                             [0x02, r_len, r_s @ ..] => {
                                 match r_s.split_at_checked((*r_len).into()) {
-                                    // Check whether the S element is an integer.
-                                    // Extract the length of the S element.
-                                    // Make sure the length of the S element is still inside the signature.
-                                    Some((r, [0x02, s_len, s @ ..])) => Self::is_valid_integer(r)
+                                    None => Err(InvalidDerEncoding::InvalidComponent {
+                                        name: "r",
+                                        value: r_s.to_vec(),
+                                        error: InvalidDerInteger::IncorrectLength {
+                                            actual: r_s.len(),
+                                            expected: *r_len,
+                                        },
+                                    }),
+                                    Some((r, s)) => Self::is_valid_integer(r)
                                         .map_err(|error| InvalidDerEncoding::InvalidComponent {
                                             name: "r",
-                                            value: Some(r.to_vec()),
+                                            value: r.to_vec(),
                                             error,
                                         })
-                                        .and_then(|()| {
-                                            if usize::from(*s_len) == s.len() {
-                                                Self::is_valid_integer(s).map_err(|error| {
-                                                    InvalidDerEncoding::InvalidComponent {
+                                        .and_then(|()| match s {
+                                            // Check whether the S element is an integer.
+                                            // Extract the length of the S element.
+                                            // Make sure the length of the S element is still inside the signature.
+                                            [0x02, s_len, s @ ..] => {
+                                                if usize::from(*s_len) == s.len() {
+                                                    Self::is_valid_integer(s).map_err(|error| {
+                                                        InvalidDerEncoding::InvalidComponent {
+                                                            name: "s",
+                                                            value: s.to_vec(),
+                                                            error,
+                                                        }
+                                                    })
+                                                } else {
+                                                    Err(InvalidDerEncoding::InvalidComponent {
                                                         name: "s",
-                                                        value: Some(s.to_vec()),
-                                                        error,
-                                                    }
-                                                })
-                                            } else {
-                                                Err(InvalidDerEncoding::InvalidComponent {
-                                                    name: "s",
-                                                    value: Some(s.to_vec()),
-                                                    error: InvalidDerInteger::IncorrectLength {
-                                                        actual: s.len(),
-                                                        expected: *s_len,
-                                                    },
-                                                })
+                                                        value: s.to_vec(),
+                                                        error: InvalidDerInteger::IncorrectLength {
+                                                            actual: s.len(),
+                                                            expected: *s_len,
+                                                        },
+                                                    })
+                                                }
                                             }
+                                            [..] => Err(InvalidDerEncoding::InvalidComponent {
+                                                name: "s",
+                                                value: s.to_vec(),
+                                                error: InvalidDerInteger::NotAnInteger,
+                                            }),
                                         }),
-                                    _ => Err(InvalidDerEncoding::InvalidComponent {
-                                        name: "s",
-                                        value: None,
-                                        error: InvalidDerInteger::NotAnInteger,
-                                    }),
                                 }
                             }
-                            [..] => Err(InvalidDerEncoding::InvalidComponent {
+                            r_s => Err(InvalidDerEncoding::InvalidComponent {
                                 name: "r",
-                                value: None,
+                                value: r_s.to_vec(),
                                 error: InvalidDerInteger::NotAnInteger,
                             }),
                         }

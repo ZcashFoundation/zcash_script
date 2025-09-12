@@ -1,6 +1,6 @@
 //! Managing sequences of opcodes.
 
-use std::iter;
+use std::{fmt::Display, iter};
 
 use thiserror::Error;
 
@@ -113,6 +113,12 @@ impl From<opcode::Error> for Error {
     fn from(value: opcode::Error) -> Self {
         Error::Opcode(value)
     }
+}
+
+/// Type that has a "asm" representation.
+pub(crate) trait Asm {
+    /// Return the "asm" representation of this type.
+    fn to_asm(&self, attempt_sighash_decode: bool) -> String;
 }
 
 /// An iterator that provides `Opcode`s from a byte stream.
@@ -242,8 +248,16 @@ impl Code<'_> {
                         OP_CHECKMULTISIG | OP_CHECKMULTISIGVERIFY => match last_opcode {
                             Some(opcode::PossiblyBad::Good(Opcode::PushValue(
                                 opcode::PushValue::SmallValue(pv),
-                            ))) if accurate && pv >= OP_1 && pv <= OP_16 => Self::decode_op_n(pv),
-                            _ => u32::from(interpreter::MAX_PUBKEY_COUNT),
+                            )))
+                                // Even with an accurate count, 0 keys is counted as 20 for some
+                                // reason.
+                                if accurate && pv >= OP_1 && pv <= OP_16 => Self::decode_op_n(   pv),
+                            // Apparently it’s too much work to figure out if it’s one of the few
+                            // `LargeValue`s that’s valid, so we assume the worst.
+                            Some(_) => u32::from(interpreter::MAX_PUBKEY_COUNT),
+                            // We’re at the beginning of the script pubkey, so any pubkey count must
+                            // be part of the script sig – assume the worst.
+                            None => u32::from(interpreter::MAX_PUBKEY_COUNT),
                         },
                         _ => 0,
                     },
@@ -281,5 +295,133 @@ impl Code<'_> {
                         | opcode::PossiblyBad::Bad(opcode::Bad::OP_RESERVED))
             )
         })
+    }
+}
+
+impl Asm for Code<'_> {
+    fn to_asm(&self, attempt_sighash_decode: bool) -> String {
+        let mut v = Vec::new();
+        for r in self.parse_strict(&interpreter::VerificationFlags::StrictEnc) {
+            match r {
+                Ok(op) => v.push(op.to_asm(attempt_sighash_decode)),
+                Err(_) => {
+                    v.push("[error]".to_string());
+                    break;
+                }
+            }
+        }
+        v.join(" ")
+    }
+}
+
+/// Implement Display for any type that implements Asm
+impl Display for Code<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_asm(false))
+    }
+}
+
+/// A script represented by two byte sequences – one is the sig, the other is the pubkey.
+pub struct Raw<'a> {
+    /// The script signature from the spending transaction.
+    pub sig: Code<'a>,
+    /// The script pubkey from the funding transaction.
+    pub pub_key: Code<'a>,
+}
+
+impl<'a> Raw<'a> {
+    /// Create a [`Raw`] script from the slices extracted from transactions.
+    pub fn from_raw_parts(sig: &'a [u8], pub_key: &'a [u8]) -> Self {
+        Raw {
+            sig: Code(sig),
+            pub_key: Code(pub_key),
+        }
+    }
+
+    /// Apply a function to both components of a script, returning the tuple of results.
+    pub fn map<T>(&self, f: &dyn Fn(&Code) -> T) -> (T, T) {
+        (f(&self.sig), f(&self.pub_key))
+    }
+
+    /// Validate a [`Raw`] script.
+    pub fn eval(
+        &self,
+        flags: interpreter::VerificationFlags,
+        checker: &dyn interpreter::SignatureChecker,
+    ) -> Result<bool, (ComponentType, Error)> {
+        if flags.contains(interpreter::VerificationFlags::SigPushOnly) && !self.sig.is_push_only() {
+            Err((ComponentType::Sig, Error::SigPushOnly))
+        } else {
+            let data_stack = self
+                .sig
+                .eval(flags, checker, interpreter::Stack::new())
+                .map_err(|e| (ComponentType::Sig, e))?;
+            let pub_key_stack = self
+                .pub_key
+                .eval(flags, checker, data_stack.clone())
+                .map_err(|e| (ComponentType::PubKey, e))?;
+            if pub_key_stack.last().is_ok_and(interpreter::cast_to_bool) {
+                if flags.contains(interpreter::VerificationFlags::P2SH)
+                    && self.pub_key.is_pay_to_script_hash()
+                {
+                    // script_sig must be literals-only or validation fails
+                    if self.sig.is_push_only() {
+                        data_stack
+                            .split_last()
+                            .map_err(|e| Error::Interpreter(None, e))
+                            .and_then(|(pub_key_2, remaining_stack)| {
+                                Code(pub_key_2).eval(flags, checker, remaining_stack)
+                            })
+                            .map(|p2sh_stack| {
+                                if p2sh_stack.last().is_ok_and(interpreter::cast_to_bool) {
+                                    Some(p2sh_stack)
+                                } else {
+                                    None
+                                }
+                            })
+                            .map_err(|e| (ComponentType::Redeem, e))
+                    } else {
+                        Err((ComponentType::Sig, Error::SigPushOnly))
+                    }
+                } else {
+                    Ok(Some(pub_key_stack))
+                }
+                .and_then(|mresult_stack| {
+                    match mresult_stack {
+                        None => Ok(false),
+                        Some(result_stack) => {
+                            // The CLEANSTACK check is only performed after potential P2SH evaluation, as the
+                            // non-P2SH evaluation of a P2SH script will obviously not result in a clean stack
+                            // (the P2SH inputs remain).
+                            if flags.contains(interpreter::VerificationFlags::CleanStack) {
+                                // Disallow CLEANSTACK without P2SH, because Bitcoin did.
+                                assert!(flags.contains(interpreter::VerificationFlags::P2SH));
+                                if result_stack.len() == 1 {
+                                    Ok(true)
+                                } else {
+                                    Err((ComponentType::Redeem, Error::CleanStack))
+                                }
+                            } else {
+                                Ok(true)
+                            }
+                        }
+                    }
+                })
+            } else {
+                Ok(false)
+            }
+        }
+    }
+}
+
+impl Asm for Raw<'_> {
+    fn to_asm(&self, attempt_sighash_decode: bool) -> String {
+        self.sig.to_asm(attempt_sighash_decode) + " " + &self.pub_key.to_asm(false)
+    }
+}
+
+impl Display for Raw<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_asm(true))
     }
 }

@@ -196,17 +196,13 @@ pub trait SignatureChecker {
     /// Check that the signature is valid.
     fn check_sig(
         &self,
-        _script_sig: &signature::Decoded,
-        _vch_pub_key: &[u8],
-        _script_code: &script::Code,
-    ) -> bool {
-        false
-    }
+        script_sig: &signature::Decoded,
+        vch_pub_key: &[u8],
+        script_code: &script::Code,
+    ) -> bool;
 
     /// Return true if the lock time argument is more recent than the time the script was evaluated.
-    fn check_lock_time(&self, _lock_time: i64) -> bool {
-        false
-    }
+    fn check_lock_time(&self, lock_time: i64) -> bool;
 }
 
 /// A signature checker that always fails. This is helpful in testing cases that don’t involve
@@ -214,7 +210,20 @@ pub trait SignatureChecker {
 /// trait.
 pub struct BaseSignatureChecker();
 
-impl SignatureChecker for BaseSignatureChecker {}
+impl SignatureChecker for BaseSignatureChecker {
+    fn check_sig(
+        &self,
+        _script_sig: &signature::Decoded,
+        _vch_pub_key: &[u8],
+        _script_code: &script::Code,
+    ) -> bool {
+        false
+    }
+
+    fn check_lock_time(&self, _lock_time: i64) -> bool {
+        false
+    }
+}
 
 /// A signature checker that uses a callback to get necessary information about the transaction
 /// involved.
@@ -231,7 +240,9 @@ pub struct CallbackTransactionSignatureChecker<'a> {
 
 type ValType = Vec<u8>;
 
-fn cast_to_bool(vch: &ValType) -> bool {
+/// Treat a stack entry as a generalized boolean. Anything other than 0 and -0 (minimal encoding not
+/// required) is treated as `true`.
+pub fn cast_to_bool(vch: &ValType) -> bool {
     for i in 0..vch.len() {
         if vch[i] != 0 {
             // Can be negative zero
@@ -331,7 +342,7 @@ impl<T> Stack<T> {
     }
 
     /// Returns a reference to the last element of the stack.
-    fn last(&self) -> Result<&T, Error> {
+    pub fn last(&self) -> Result<&T, Error> {
         self.0
             .last()
             .ok_or(Error::InvalidStackOperation(Some((0, self.0.len()))))
@@ -352,7 +363,7 @@ impl<T> Stack<T> {
 
 impl<T: Clone> Stack<T> {
     /// Returns the last element of the stack as well as the remainder of the stack.
-    fn split_last(&self) -> Result<(&T, Stack<T>), Error> {
+    pub fn split_last(&self) -> Result<(&T, Stack<T>), Error> {
         self.0
             .split_last()
             .ok_or(Error::InvalidStackOperation(Some((0, self.0.len()))))
@@ -1174,7 +1185,7 @@ pub const SIGHASH_SIZE: usize = 32;
 /// The `extern "C"` function that calls this doesn’t give much opportunity for rich failure
 /// reporting, but returning `None` indicates _some_ failure to produce the desired hash.
 pub type SighashCalculator<'a> =
-    &'a dyn Fn(&[u8], &signature::HashType) -> Option<[u8; SIGHASH_SIZE]>;
+    &'a dyn Fn(&script::Code, &signature::HashType) -> Option<[u8; SIGHASH_SIZE]>;
 
 impl SignatureChecker for CallbackTransactionSignatureChecker<'_> {
     fn check_sig(
@@ -1186,7 +1197,7 @@ impl SignatureChecker for CallbackTransactionSignatureChecker<'_> {
         let pubkey = PubKey(vch_pub_key);
 
         pubkey.is_valid()
-            && (self.sighash)(script_code.0, sig.sighash_type())
+            && (self.sighash)(script_code, sig.sighash_type())
                 .map(|sighash| pubkey.verify(&sighash, sig.sig()))
                 .unwrap_or(false)
     }
@@ -1262,8 +1273,7 @@ where
 
 /// Full execution of a script.
 pub fn verify_script<F>(
-    script_sig: &script::Code,
-    script_pub_key: &script::Code,
+    script: &script::Raw,
     flags: VerificationFlags,
     payload: &mut F::Payload,
     stepper: &F,
@@ -1271,14 +1281,14 @@ pub fn verify_script<F>(
 where
     F: StepFn,
 {
-    let data_stack = eval_sig(script_sig, flags, payload, stepper)
+    let data_stack = eval_sig(&script.sig, flags, payload, stepper)
         .map_err(|e| (script::ComponentType::Sig, e))?;
-    let pub_key_stack = eval_script(data_stack.clone(), script_pub_key, payload, stepper)
+    let pub_key_stack = eval_script(data_stack.clone(), &script.pub_key, payload, stepper)
         .map_err(|e| (script::ComponentType::PubKey, e))?;
     if pub_key_stack.last().is_ok_and(cast_to_bool) {
-        if flags.contains(VerificationFlags::P2SH) && script_pub_key.is_pay_to_script_hash() {
+        if flags.contains(VerificationFlags::P2SH) && script.pub_key.is_pay_to_script_hash() {
             // script_sig must be literals-only or validation fails
-            if script_sig.is_push_only() {
+            if script.sig.is_push_only() {
                 eval_p2sh(data_stack, payload, stepper)
                     .map_err(|e| (script::ComponentType::Redeem, e))
             } else {

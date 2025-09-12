@@ -161,6 +161,16 @@ impl LargeValue {
             OP_PUSHDATA4(data) => 0x10000 <= data.as_slice().len(),
         }
     }
+
+    /// Returns the numeric value represented by the opcode, if one exists.
+    pub fn to_num(&self) -> Result<i64, num::Error> {
+        num::parse(
+            self.value(),
+            false,
+            // To ensure that any encoding supported by `num` is supported here.
+            Some(usize::MAX),
+        )
+    }
 }
 
 impl From<&LargeValue> for Vec<u8> {
@@ -220,6 +230,30 @@ impl SmallValue {
             OP_0 => vec![],
             OP_1NEGATE => vec![0x81],
             _ => vec![u8::from(*self) - (u8::from(OP_1) - 1)],
+        }
+    }
+
+    /// Returns the numeric value of the opcode. It will always be in the range -1..=16.
+    pub fn to_num(self) -> i8 {
+        match self {
+            OP_0 => 0,
+            OP_1NEGATE => -1,
+            OP_1 => 1,
+            OP_2 => 2,
+            OP_3 => 3,
+            OP_4 => 4,
+            OP_5 => 5,
+            OP_6 => 6,
+            OP_7 => 7,
+            OP_8 => 8,
+            OP_9 => 9,
+            OP_10 => 10,
+            OP_11 => 11,
+            OP_12 => 12,
+            OP_13 => 13,
+            OP_14 => 14,
+            OP_15 => 15,
+            OP_16 => 16,
         }
     }
 }
