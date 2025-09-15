@@ -5,6 +5,8 @@
 //! - `NULLFAIL`, or
 //! - `WITNESS`.
 
+use core::iter;
+
 use bounded_vec::EmptyBoundedVec;
 use hex::{FromHex, FromHexError};
 
@@ -29,6 +31,8 @@ enum Entry {
     A(&'static str),
     /// A PushValue encoded as a number
     N(i64),
+    /// A PushValue encoded as a signature (R component, S component, hash type)
+    Sig(&'static str, &'static str, u8),
 }
 
 impl Entry {
@@ -57,6 +61,21 @@ impl Entry {
             Entry::H(bytes) => <Vec<u8>>::from_hex(*bytes),
             Entry::A(string) => Ok(Self::val_to_pv(string.as_bytes())),
             Entry::N(num) => Ok(Self::val_to_pv(&num::serialize(*num))),
+            Entry::Sig(r_hex, s_hex, hash_type) => {
+                let r = <Vec<u8>>::from_hex(*r_hex)?;
+                let r_len = u8::try_from(r.len()).expect("signatures have single-byte lengths");
+                let s = <Vec<u8>>::from_hex(*s_hex)?;
+                let s_len = u8::try_from(s.len()).expect("signatures have single-byte lengths");
+                Ok(Self::val_to_pv(
+                    &[0x30, 4 + r_len + s_len, 0x02, r_len]
+                        .into_iter()
+                        .chain(r.into_iter())
+                        .chain([0x02, s_len].into_iter())
+                        .chain(s.into_iter())
+                        .chain(iter::once(*hash_type))
+                        .collect::<Vec<_>>(),
+                ))
+            }
         }
     }
 }
@@ -83,6 +102,9 @@ impl ResultCmp {
 }
 
 /// A single test case.
+///
+/// __NB__: This uses separate `script_sig` and `script_pubkey` fields instead of a representation
+///         like `script::Raw` because it allows us to have more informative error reporting than .
 #[derive(Debug)]
 pub struct TestVector {
     script_sig: &'static [Entry],
@@ -124,12 +146,11 @@ impl TestVector {
     pub fn run(
         &self,
         interpreter_fn: &dyn Fn(
-            &[u8],
-            &[u8],
+            &script::Raw,
             VerificationFlags,
         )
             -> Result<bool, (Option<script::ComponentType>, script::Error)>,
-        sigop_count_fn: &dyn Fn(&[u8]) -> u32,
+        sigop_count_fn: &dyn Fn(&script::Code) -> u32,
     ) -> Result<
         (),
         (
@@ -150,8 +171,8 @@ impl TestVector {
                 .map(|vs| vs.concat()),
         ) {
             (Ok(sig), Ok(pubkey)) => {
-                let res = interpreter_fn(&sig, &pubkey, self.flags);
-                let count = sigop_count_fn(&pubkey);
+                let res = interpreter_fn(&script::Raw::from_raw_parts(&sig, &pubkey), self.flags);
+                let count = sigop_count_fn(&script::Code(&pubkey));
                 if compare_results(res.clone(), self.result.clone()) && count == self.sigop_count {
                     Ok(())
                 } else {
@@ -12874,17 +12895,37 @@ pub fn test_vectors() -> Vec<TestVector> {
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::WrongType)))),
             sigop_count: 1,
         },
+        // R with leading null byte is incorrectly encoded
+        TestVector {
+            script_sig: &[Sig("000000", "01", 0)],
+            script_pubkey: &[N(0), O(CHECKSIG), O(NOT)],
+            flags: EMPTY_FLAGS,
+            result: err(
+                script::ComponentType::PubKey,
+                script::Error::Interpreter(
+                    Some(opcode::PossiblyBad::from(CHECKSIG)),
+                    interpreter::Error::from(signature::Error::from(
+                        signature::InvalidDerEncoding::InvalidComponent {
+                            name: "r",
+                            value: vec![0, 0, 0],
+                            error: signature::InvalidDerInteger::LeadingNullByte
+                        },
+                    )),
+                ),
+            ),
+            sigop_count: 1,
+        },
         // Missing S is incorrectly encoded
         TestVector {
             script_sig: &[
                 H("25"),
-                H("30220220000000000000000000000000000000000000000000000000000000000000000000"),
+                H("30220220010000000000000000000000000000000000000000000000000000000000000000"),
             ],
             script_pubkey: &[N(0), O(CHECKSIG), O(NOT)],
             flags: EMPTY_FLAGS,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "s",
-                value: None,
+                value: vec![],
                 error: signature::InvalidDerInteger::NotAnInteger
             })))),
             sigop_count: 1,
@@ -12899,7 +12940,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             flags: EMPTY_FLAGS,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "s",
-                value: Some(vec![119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119]),
+                value: vec![119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119],
                 error: signature::InvalidDerInteger::IncorrectLength { actual: 16, expected: 10 }
             })))),
             sigop_count: 1,
@@ -12914,7 +12955,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             flags: EMPTY_FLAGS,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "r",
-                value: None,
+                value: vec![3, 16, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 2, 16, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119],
                 error: signature::InvalidDerInteger::NotAnInteger
             })))),
             sigop_count: 1,
@@ -12929,7 +12970,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             flags: EMPTY_FLAGS,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "s",
-                value: None,
+                value: vec![3, 16, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119],
                 error: signature::InvalidDerInteger::NotAnInteger
             })))),
             sigop_count: 1,
@@ -12941,7 +12982,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             flags: EMPTY_FLAGS,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "r",
-                value: Some(Vec::new()),
+                value: vec![],
                 error: signature::InvalidDerInteger::ZeroLength
             })))),
             sigop_count: 1,
@@ -12953,7 +12994,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             flags: EMPTY_FLAGS,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "s",
-                value: Some(Vec::new()),
+                value: vec![],
                 error: signature::InvalidDerInteger::ZeroLength
             })))),
             sigop_count: 1,
@@ -12968,7 +13009,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             flags: EMPTY_FLAGS,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "s",
-                value: Some(vec![135, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119]),
+                value: vec![135, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119, 119],
                 error: signature::InvalidDerInteger::Negative
             })))),
             sigop_count: 1,
@@ -13334,7 +13375,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             flags: EMPTY_FLAGS,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "r",
-                value: Some(vec![0, 96, 85, 132, 119, 51, 123, 144, 34, 231, 5, 52, 241, 254, 167, 26, 49, 140, 175, 131, 104, 18, 70, 90, 37, 9, 147, 28, 94, 124, 73, 135]),
+                value: vec![0, 96, 85, 132, 119, 51, 123, 144, 34, 231, 5, 52, 241, 254, 167, 26, 49, 140, 175, 131, 104, 18, 70, 90, 37, 9, 147, 28, 94, 124, 73, 135],
                 error: signature::InvalidDerInteger::LeadingNullByte
             })))),
             sigop_count: 1,
@@ -13355,7 +13396,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             flags: EMPTY_FLAGS,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "s",
-                value: Some(vec![0, 70, 19, 11, 242, 186, 247, 207, 192, 101, 6, 124, 139, 158, 51, 160, 102, 217, 193, 94, 220, 234, 159, 235, 12, 162, 210, 51, 227, 89, 121, 37, 180]),
+                value: vec![0, 70, 19, 11, 242, 186, 247, 207, 192, 101, 6, 124, 139, 158, 51, 160, 102, 217, 193, 94, 220, 234, 159, 235, 12, 162, 210, 51, 227, 89, 121, 37, 180],
                 error: signature::InvalidDerInteger::LeadingNullByte
             })))),
             sigop_count: 1,
@@ -13376,7 +13417,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             flags: EMPTY_FLAGS,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "r",
-                value: Some(vec![215, 160, 65, 124, 63, 109, 26, 21, 9, 77, 28, 242, 163, 55, 140, 160, 80, 62, 184, 165, 118, 48, 149, 58, 158, 41, 135, 226, 29, 221, 10, 101]),
+                value: vec![215, 160, 65, 124, 63, 109, 26, 21, 9, 77, 28, 242, 163, 55, 140, 160, 80, 62, 184, 165, 118, 48, 149, 58, 158, 41, 135, 226, 29, 221, 10, 101],
                 error: signature::InvalidDerInteger::Negative
             })))),
             sigop_count: 1,
@@ -13398,7 +13439,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             flags: EMPTY_FLAGS,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "r",
-                value: Some(vec![0, 94, 206, 19, 53, 231, 247, 87, 161, 161, 244, 118, 167, 251, 91, 217, 9, 100, 232, 160, 34, 72, 159, 137, 6, 20, 160, 74, 207, 183, 52, 192]),
+                value: vec![0, 94, 206, 19, 53, 231, 247, 87, 161, 161, 244, 118, 167, 251, 91, 217, 9, 100, 232, 160, 34, 72, 159, 137, 6, 20, 160, 74, 207, 183, 52, 192],
                 error: signature::InvalidDerInteger::LeadingNullByte,
             })))),
             sigop_count: 1,
@@ -13420,7 +13461,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             flags: EMPTY_FLAGS,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "r",
-                value: Some(vec![0, 94, 206, 19, 53, 231, 246, 87, 161, 161, 244, 118, 167, 251, 91, 217, 9, 100, 232, 160, 34, 72, 159, 137, 6, 20, 160, 74, 207, 183, 52, 192]),
+                value: vec![0, 94, 206, 19, 53, 231, 246, 87, 161, 161, 244, 118, 167, 251, 91, 217, 9, 100, 232, 160, 34, 72, 159, 137, 6, 20, 160, 74, 207, 183, 52, 192],
                 error: signature::InvalidDerInteger::LeadingNullByte
             })))),
             sigop_count: 1,
@@ -13441,7 +13482,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             flags: EMPTY_FLAGS,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "r",
-                value: Some(vec![215, 160, 65, 124, 63, 109, 26, 21, 9, 77, 28, 242, 163, 55, 140, 160, 80, 62, 184, 165, 118, 48, 149, 58, 158, 41, 135, 226, 29, 221, 10, 101]),
+                value: vec![215, 160, 65, 124, 63, 109, 26, 21, 9, 77, 28, 242, 163, 55, 140, 160, 80, 62, 184, 165, 118, 48, 149, 58, 158, 41, 135, 226, 29, 221, 10, 101],
                 error: signature::InvalidDerInteger::Negative
             })))),
             sigop_count: 1,
@@ -13463,7 +13504,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             flags: EMPTY_FLAGS,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "r",
-                value: Some(vec![142, 67, 192, 185, 31, 124, 30, 91, 197, 142, 65, 200, 24, 95, 138, 96, 134, 225, 17, 176, 9, 1, 135, 150, 138, 134, 242, 130, 36, 98, 211, 201]),
+                value: vec![142, 67, 192, 185, 31, 124, 30, 91, 197, 142, 65, 200, 24, 95, 138, 96, 134, 225, 17, 176, 9, 1, 135, 150, 138, 134, 242, 130, 36, 98, 211, 201],
                 error: signature::InvalidDerInteger::Negative
             })))),
             sigop_count: 1,
@@ -13608,7 +13649,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             flags: EMPTY_FLAGS,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "r",
-                value: Some(vec![129, 170, 157, 67, 111, 33, 84, 232, 182, 214, 0, 81, 109, 176, 61, 120, 222, 113, 223, 104, 91, 88, 90, 152, 7, 234, 212, 33, 11, 216, 131, 73]),
+                value: vec![129, 170, 157, 67, 111, 33, 84, 232, 182, 214, 0, 81, 109, 176, 61, 120, 222, 113, 223, 104, 91, 88, 90, 152, 7, 234, 212, 33, 11, 216, 131, 73],
                 error: signature::InvalidDerInteger::Negative
             })))),
             sigop_count: 20,
@@ -13636,7 +13677,7 @@ pub fn test_vectors() -> Vec<TestVector> {
             flags: EMPTY_FLAGS,
             result: err(script::ComponentType::PubKey, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKMULTISIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
                 name: "r",
-                value: Some(vec![218, 111, 68, 29, 195, 180, 178, 200, 76, 250, 141, 176, 205, 91, 52, 237, 146, 201, 224, 22, 134, 222, 90, 128, 13, 64, 73, 139, 112, 192, 220, 172]),
+                value: vec![218, 111, 68, 29, 195, 180, 178, 200, 76, 250, 141, 176, 205, 91, 52, 237, 146, 201, 224, 22, 134, 222, 90, 128, 13, 64, 73, 139, 112, 192, 220, 172],
                 error: signature::InvalidDerInteger::Negative
             })))),
             sigop_count: 20,
@@ -14656,9 +14697,9 @@ pub fn test_vectors() -> Vec<TestVector> {
             script_pubkey: &[],
             flags: DEFAULT_FLAGS,
             result: err(script::ComponentType::Sig, script::Error::Interpreter(Some(opcode::PossiblyBad::from(CHECKSIG)), interpreter::Error::from(signature::Error::from(signature::InvalidDerEncoding::InvalidComponent {
-                name: "s",
-                value: None,
-                error: signature::InvalidDerInteger::NotAnInteger
+                name: "r",
+                value: vec![0, 0, 0, 0, 0],
+                error: signature::InvalidDerInteger::IncorrectLength { actual: 5, expected: 49 }
             })))),
             sigop_count: 0,
         },
