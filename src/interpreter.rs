@@ -377,7 +377,9 @@ impl<T: Clone> Stack<T> {
 }
 
 /// This holds the various components that need to be carried between individual opcode evaluations.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+///
+/// **NB**: This intentionally doesn’t provide a `Clone` impl, to prevent resuse of old state.
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct State {
     /// The primary evaluation stack.
     pub stack: Stack<Vec<u8>>,
