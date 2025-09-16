@@ -294,11 +294,6 @@ impl<T> Stack<T> {
         self.0.push(value)
     }
 
-    /// Returns true if there are no elements in the stack.
-    pub(crate) fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
     /// Returns the number of elements in the stack.
     pub(crate) fn len(&self) -> usize {
         self.0.len()

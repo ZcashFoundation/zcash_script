@@ -1,9 +1,6 @@
 use thiserror::Error;
 
-use crate::{
-    interpreter::{self, SignatureChecker},
-    script,
-};
+use crate::{interpreter, script};
 
 /// This extends `ScriptError` with cases that can only occur when using the C++ implementation.
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
@@ -83,7 +80,7 @@ impl<C> RustInterpreter<C> {
     }
 }
 
-impl<C: SignatureChecker + Copy> ZcashScript for RustInterpreter<C> {
+impl<C: interpreter::SignatureChecker + Copy> ZcashScript for RustInterpreter<C> {
     /// Returns the number of transparent signature operations in the
     /// transparent inputs and outputs of this transaction.
     fn legacy_sigop_count_script(&self, script: &script::Code) -> Result<u32, Error> {
