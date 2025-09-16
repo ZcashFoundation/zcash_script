@@ -6,9 +6,9 @@ extern crate zcash_script;
 use zcash_script::{
     check_verify_callback,
     interpreter::{self, CallbackTransactionSignatureChecker},
-    normalize_err, rust_interpreter, script,
+    normalize_err, script,
     signature::HashType,
-    testing, CxxInterpreter,
+    testing, CxxInterpreter, RustInterpreter,
 };
 
 fn missing_sighash(_script_code: &script::Code, _hash_type: &HashType) -> Option<[u8; 32]> {
@@ -26,14 +26,11 @@ fuzz_target!(|tup: (u32, bool, &[u8], &[u8], u32)| {
             lock_time,
             is_final,
         },
-        &rust_interpreter(
-            flags,
-            CallbackTransactionSignatureChecker {
-                sighash: &missing_sighash,
-                lock_time: lock_time.into(),
-                is_final,
-            },
-        ),
+        &RustInterpreter::new(CallbackTransactionSignatureChecker {
+            sighash: &missing_sighash,
+            lock_time: lock_time.into(),
+            is_final,
+        }),
         &script,
         flags,
     );
