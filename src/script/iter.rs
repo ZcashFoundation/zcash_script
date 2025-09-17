@@ -34,7 +34,7 @@ pub fn eval_script<T: script::Evaluable, U: script::Evaluable>(
                 if sig.is_push_only() {
                     data_stack
                         .split_last()
-                        .map_err(|e| script::Error::Interpreter(None, e))
+                        .map_err(|_| script::Error::MissingRedeemScript)
                         .and_then(|(pub_key_2, remaining_stack)| {
                             script::Code(pub_key_2).eval(flags, checker, remaining_stack)
                         })

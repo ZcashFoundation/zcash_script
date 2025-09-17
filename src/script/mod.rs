@@ -42,6 +42,9 @@ pub enum Error {
     #[error("{} closed before the end of the script", match .0 { 1 => "1 conditional opcode wasn’t", n => "{n} conditional opcodes weren’t"})]
     UnclosedConditional(usize),
 
+    #[error("the script is P2SH, but there was no redeem script left on the stack")]
+    MissingRedeemScript,
+
     #[error("clean stack requirement not met")]
     CleanStack,
 }
@@ -98,6 +101,9 @@ impl Error {
             },
             Self::UnclosedConditional(_) => {
                 Self::Interpreter(None, interpreter::Error::UnbalancedConditional)
+            }
+            Self::MissingRedeemScript => {
+                Self::Interpreter(None, interpreter::Error::InvalidStackOperation(None))
             }
             _ => self.clone(),
         }
