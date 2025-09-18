@@ -69,9 +69,9 @@ impl Entry {
                 Ok(Self::val_to_pv(
                     &[0x30, 4 + r_len + s_len, 0x02, r_len]
                         .into_iter()
-                        .chain(r.into_iter())
-                        .chain([0x02, s_len].into_iter())
-                        .chain(s.into_iter())
+                        .chain(r)
+                        .chain([0x02, s_len])
+                        .chain(s)
                         .chain(iter::once(*hash_type))
                         .collect::<Vec<_>>(),
                 ))
