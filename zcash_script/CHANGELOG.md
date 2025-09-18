@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- The C++ implementation and `ZcashScript` trait, etc. have moved to the new libzcash_script crate
 - `HashType` and `SignedOutputs` are no longer re-exported at the top level, access them via `signature::`
 - `script_error::ScriptError` no longer has a defined primitive representation, as the variants have changed and the use of the representation had already been removed
 - `interpreter::CallbackTransactionSignatureChecker::verify_signature` was an internal function that was accidentally exposed

@@ -1,3 +1,5 @@
+//! Constant values represented as opcodes.
+
 #![allow(non_camel_case_types)]
 
 use alloc::vec::Vec;
@@ -15,7 +17,9 @@ pub enum LargeValue {
     /// NB: The lower bound here is 1 because `PushdataBytelength([;0])` has the same encoding as
     ///     [`OP_0`].
     PushdataBytelength(BoundedVec<u8, 1, 0x4b>),
+    /// A value whose byte length can fit into a single byte.
     OP_PUSHDATA1(EmptyBoundedVec<u8, 0xff>),
+    /// A value whose byte length can fit into two bytes.
     OP_PUSHDATA2(EmptyBoundedVec<u8, { Self::MAX_SIZE }>),
     /// NB: This constructor is only possible when [`Flags::MinimalData`] isn’t set.
     OP_PUSHDATA4(EmptyBoundedVec<u8, { Self::MAX_SIZE }>),
@@ -28,6 +32,7 @@ impl LargeValue {
     const PUSHDATA2_BYTE: u8 = 0x4d;
     const PUSHDATA4_BYTE: u8 = 0x4e;
 
+    /// The maximum number of bytes able to be stored in a single [`PushValue`].
     pub const MAX_SIZE: usize = 520; // bytes
 
     /// The number of bytes this requires in a script.
@@ -208,6 +213,7 @@ impl From<&LargeValue> for Vec<u8> {
 
 /// Data values represented entirely by their opcode byte.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[allow(missing_docs)]
 #[repr(u8)]
 pub enum SmallValue {
     // push value

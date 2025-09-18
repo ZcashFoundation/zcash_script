@@ -1,6 +1,5 @@
 use thiserror::Error;
-
-use crate::{interpreter, script};
+use zcash_script::{interpreter, script};
 
 /// This extends `ScriptError` with cases that can only occur when using the C++ implementation.
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
@@ -65,7 +64,7 @@ pub trait ZcashScript {
 
     /// Returns the number of transparent signature operations in the input or
     /// output script pointed to by script.
-    fn legacy_sigop_count_script(&self, script: &script::Code) -> Result<u32, Error>;
+    fn legacy_sigop_count_script(&self, script: &script::Code) -> Result<u32, script::Error>;
 }
 
 /// This is the pure Rust interpreter, which doesn’t use the FFI.
@@ -83,7 +82,7 @@ impl<C> RustInterpreter<C> {
 impl<C: interpreter::SignatureChecker + Copy> ZcashScript for RustInterpreter<C> {
     /// Returns the number of transparent signature operations in the
     /// transparent inputs and outputs of this transaction.
-    fn legacy_sigop_count_script(&self, script: &script::Code) -> Result<u32, Error> {
+    fn legacy_sigop_count_script(&self, script: &script::Code) -> Result<u32, script::Error> {
         Ok(script.sig_op_count(false))
     }
 
