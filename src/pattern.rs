@@ -45,7 +45,8 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::{
-    num, op, opcode, pv, script,
+    num, op, opcode, pv,
+    script::{self, Evaluable},
     Opcode::{self, PushValue},
 };
 
@@ -197,8 +198,10 @@ pub fn push_num(n: i64) -> opcode::PushValue {
 
 /// Produce a minimal `PushValue` that encodes the provided script. This is particularly useful with
 /// P2SH.
-pub fn push_script(script: &[Opcode]) -> Option<opcode::PushValue> {
-    pv::push_value(&script::Code::serialize(script))
+pub fn push_script<T: Into<opcode::PossiblyBad> + opcode::Evaluable + Clone>(
+    script: &script::Component<T>,
+) -> Option<opcode::PushValue> {
+    pv::push_value(&script.to_bytes())
 }
 
 /// Creates a `PushValue` from a 20-byte value (basically, RipeMD160 and other hashes).
@@ -244,13 +247,13 @@ pub fn pay_to_pubkey_hash(pk: &[u8]) -> Vec<Opcode> {
 /// P2SH
 ///
 /// type: `[_] -> [Bool]`
-pub fn pay_to_script_hash(redeem_script: &[Opcode]) -> Vec<Opcode> {
+pub fn pay_to_script_hash<T: Into<opcode::PossiblyBad> + opcode::Evaluable + Clone>(
+    redeem_script: &script::Component<T>,
+) -> Vec<Opcode> {
     [
         &[op::HASH160],
         &equals(
-            push_160b_hash(
-                &Ripemd160::digest(Sha256::digest(script::Code::serialize(redeem_script))).into(),
-            ),
+            push_160b_hash(&Ripemd160::digest(Sha256::digest(redeem_script.to_bytes())).into()),
             false,
         )[..],
     ]

@@ -19,6 +19,7 @@ pub mod pattern;
 pub mod pv;
 pub mod script;
 pub mod signature;
+pub mod solver;
 mod zcash_script;
 
 #[cfg(any(test, feature = "test-dependencies"))]
@@ -79,6 +80,30 @@ impl Opcode {
             Opcode::Control(_) => Ok(()),
         }
     }
+}
+
+impl opcode::Evaluable for Opcode {
+    fn byte_len(&self) -> usize {
+        match self {
+            Opcode::PushValue(pv) => pv.byte_len(),
+            Opcode::Control(_) => 1,
+            Opcode::Operation(_) => 1,
+        }
+    }
+
+    fn to_bytes(&self) -> Vec<u8> {
+        Vec::<u8>::from(self)
+    }
+
+    fn restrict(pb: opcode::PossiblyBad) -> Result<Self, script::Error> {
+        match pb {
+            opcode::PossiblyBad::Good(op) => Ok(op),
+            opcode::PossiblyBad::Bad(_) => Err(script::Error::Interpreter(
+                Some(pb),
+                interpreter::Error::BadOpcode,
+            )),
+        }
+    }
 
     fn eval(
         &self,
@@ -91,7 +116,7 @@ impl Opcode {
             Opcode::PushValue(pv) => {
                 if interpreter::should_exec(&state.vexec) {
                     state.stack =
-                        pv.eval(flags.contains(interpreter::Flags::MinimalData), state.stack)?;
+                        pv.eval_(flags.contains(interpreter::Flags::MinimalData), state.stack)?;
                 }
                 Ok(state)
             }
@@ -118,6 +143,13 @@ impl Opcode {
                 Ok(final_state)
             }
         })
+    }
+
+    fn extract_push_value(&self) -> Result<&opcode::PushValue, script::Error> {
+        match self {
+            Opcode::PushValue(pv) => Ok(pv),
+            _ => Err(script::Error::SigPushOnly),
+        }
     }
 }
 
@@ -146,6 +178,33 @@ impl From<&Opcode> for Vec<u8> {
             Opcode::Control(v) => vec![(*v).into()],
             Opcode::Operation(v) => vec![(*v).into()],
         }
+    }
+}
+
+/// A Zcash script consists of a sig and a pubkey.
+///
+/// - Script<opcode::PossiblyBad, opcode::PossiblyBad> – from the chain
+/// - Script<opcode::PushValue, opcode::Structured> – authoring sig_push_only
+/// - Script<opcode::Structured, opcode::Structured> – authoring non-sig_push_only
+///
+/// Until `Structured` is added, we use `Opcode` in its place.
+pub struct Script<Sig = opcode::PushValue, PubKey = Opcode> {
+    sig: script::Component<Sig>,
+    pub_key: script::Component<PubKey>,
+}
+
+impl<
+        Sig: Into<opcode::PossiblyBad> + opcode::Evaluable + Clone,
+        PubKey: Into<opcode::PossiblyBad> + opcode::Evaluable + Clone,
+    > Script<Sig, PubKey>
+{
+    /// Evaluate an entire script.
+    pub fn eval(
+        &self,
+        flags: interpreter::Flags,
+        checker: &dyn interpreter::SignatureChecker,
+    ) -> Result<bool, (script::ComponentType, script::Error)> {
+        script::iter::eval_script(&self.sig, &self.pub_key, flags, checker)
     }
 }
 
@@ -313,7 +372,7 @@ extern "C" fn sighash_callback(
     // And we don’t have access to the flags here to determine if it should be checked.
     if let Some(sighash) = HashType::from_bits(hash_type, false)
         .ok()
-        .and_then(|ht| callback(&script::Code(script_code_vec), &ht))
+        .and_then(|ht| callback(&script::Code(script_code_vec.to_vec()), &ht))
     {
         assert_eq!(sighash_out_len, sighash.len().try_into().unwrap());
         // SAFETY: `sighash_out` is a valid buffer created in
@@ -483,11 +542,12 @@ pub mod testing {
     use crate::{
         interpreter,
         pattern::*,
-        pv, script,
+        pv,
+        script::{self, Evaluable},
         signature::HashType,
         test_vectors::TestVector,
         zcash_script::{AnnError, Error},
-        Opcode,
+        Opcode, Script,
     };
     use hex::FromHex;
 
@@ -508,26 +568,28 @@ pub mod testing {
 
     lazy_static::lazy_static! {
         /// The P2SH redeem script used for the static test case.
-        pub static ref REDEEM_SCRIPT: Vec<Opcode> = check_multisig(
+        pub static ref REDEEM_SCRIPT: script::PubKey = script::Component(check_multisig(
             2,
             &[
                 &<[u8; 0x21]>::from_hex("03b2cc71d23eb30020a4893982a1e2d352da0d20ee657fa02901c432758909ed8f").expect("valid key"),
                 &<[u8; 0x21]>::from_hex("029d1e9a9354c0d2aee9ffd0f0cea6c39bbf98c4066cf143115ba2279d0ba7dabe").expect("valid key"),
                 &<[u8; 0x21]>::from_hex("03e32096b63fd57f3308149d238dcbb24d8d28aad95c0e4e74e3e5e6a11b61bcc4").expect("valid key")
             ],
-            false).expect("all keys are valid and there’s not more than 20 of them");
+            false).expect("all keys are valid and there’s not more than 20 of them"));
         /// The scriptPubkey used for the static test case.
-        pub static ref SCRIPT_PUBKEY: Vec<u8> = script::Code::serialize(&pay_to_script_hash(&REDEEM_SCRIPT));
+        pub static ref SCRIPT_PUBKEY: script::PubKey = script::Component(pay_to_script_hash(&REDEEM_SCRIPT));
         /// The scriptSig used for the static test case.
-        pub static ref SCRIPT_SIG: Vec<u8> = script::Code::serialize(&[
+        pub static ref SCRIPT_SIG: script::Sig = script::Component(vec![
             push_num(0),
             pv::push_value(&<[u8; 0x48]>::from_hex("3045022100d2ab3e6258fe244fa442cfb38f6cef9ac9a18c54e70b2f508e83fa87e20d040502200eead947521de943831d07a350e45af8e36c2166984a8636f0a8811ff03ed09401").expect("valid sig")).expect("fits into a PushValue"),
             pv::push_value(&<[u8; 0x47]>::from_hex("3044022013e15d865010c257eef133064ef69a780b4bc7ebe6eda367504e806614f940c3022062fdbc8c2d049f91db2042d6c9771de6f1ef0b3b1fea76c1ab5542e44ed29ed801").expect("valid sig")).expect("fits into a PushValue"),
             push_script(&REDEEM_SCRIPT).expect("fits into a PushValue"),
-        ].map(Opcode::PushValue));
+        ]);
         /// The combined script used for the static test case.
-        pub static ref SCRIPT: script::Raw<'static> =
-            script::Raw::from_raw_parts(&SCRIPT_SIG, &SCRIPT_PUBKEY);
+        pub static ref SCRIPT: script::Raw =
+            script::Raw::from_raw_parts(SCRIPT_SIG.to_bytes(), SCRIPT_PUBKEY.to_bytes());
+        pub static ref REAL_SCRIPT: Script =
+            Script{ sig : SCRIPT_SIG.clone(), pub_key : SCRIPT_PUBKEY.clone() };
     }
 
     /// The correct sighash for the static test case.
@@ -785,7 +847,7 @@ mod tests {
             flag_bits in prop::bits::u32::masked(interpreter::Flags::all().bits()),
         ) {
             let flags = repair_flags(interpreter::Flags::from_bits_truncate(flag_bits));
-            let script = script::Raw::from_raw_parts(&sig, &pub_key);
+            let script = script::Raw::from_raw_parts(sig, pub_key);
             let ret = check_verify_callback(
                 &CxxInterpreter {
                     sighash: &sighash,
@@ -824,7 +886,7 @@ mod tests {
         ) {
             let flags = repair_flags(interpreter::Flags::from_bits_truncate(flag_bits))
                 | interpreter::Flags::SigPushOnly;
-            let script = script::Raw::from_raw_parts(&sig, &pub_key);
+            let script = script::Raw::from_raw_parts(sig, pub_key);
             let ret = check_verify_callback(
                 &CxxInterpreter {
                     sighash: &sighash,

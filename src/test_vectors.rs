@@ -170,8 +170,11 @@ impl TestVector {
                 .map(|vs| vs.concat()),
         ) {
             (Ok(sig), Ok(pubkey)) => {
-                let res = interpreter_fn(&script::Raw::from_raw_parts(&sig, &pubkey), self.flags);
-                let count = sigop_count_fn(&script::Code(&pubkey));
+                let res = interpreter_fn(
+                    &script::Raw::from_raw_parts(sig, pubkey.clone()),
+                    self.flags,
+                );
+                let count = sigop_count_fn(&script::Code(pubkey));
                 if compare_results(res.clone(), self.result.clone()) && count == self.sigop_count {
                     Ok(())
                 } else {
