@@ -11,7 +11,9 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use super::Opcode;
-use crate::{external::pubkey::PubKey, interpreter, num, script, signature};
+#[cfg(feature = "signature-validation")]
+use crate::{external::pubkey::PubKey, signature};
+use crate::{interpreter, num, script};
 use push_value::{
     LargeValue,
     SmallValue::{self, *},
@@ -370,6 +372,7 @@ impl Operation {
         })
     }
 
+    #[cfg(feature = "signature-validation")]
     fn is_compressed_or_uncompressed_pub_key(vch_pub_key: &[u8]) -> bool {
         match vch_pub_key.first() {
             Some(0x02 | 0x03) => vch_pub_key.len() == PubKey::COMPRESSED_SIZE,
@@ -378,6 +381,7 @@ impl Operation {
         }
     }
 
+    #[cfg(feature = "signature-validation")]
     fn check_pub_key_encoding(
         vch_sig: &[u8],
         flags: interpreter::Flags,
@@ -390,6 +394,7 @@ impl Operation {
         Ok(())
     }
 
+    #[cfg(feature = "signature-validation")]
     fn is_sig_valid(
         vch_sig: &[u8],
         vch_pub_key: &[u8],
@@ -415,6 +420,17 @@ impl Operation {
                 Ok(checker.check_sig(&sig, vch_pub_key, script))
             }
         }
+    }
+
+    #[cfg(not(feature = "signature-validation"))]
+    fn is_sig_valid(
+        _vch_sig: &[u8],
+        _vch_pub_key: &[u8],
+        _flags: interpreter::Flags,
+        _script: &script::Code,
+        _checker: &dyn interpreter::SignatureChecker,
+    ) -> Result<bool, interpreter::Error> {
+        Ok(false)
     }
 
     fn cast_from_bool(b: bool) -> Vec<u8> {

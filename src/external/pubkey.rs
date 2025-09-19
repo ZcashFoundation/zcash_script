@@ -1,3 +1,5 @@
+#![cfg(feature = "signature-validation")]
+
 use secp256k1::{ecdsa, Message, PublicKey, Secp256k1};
 
 pub struct PubKey<'a>(pub &'a [u8]);

@@ -682,6 +682,7 @@ mod tests {
         script, Script,
     };
 
+    #[cfg(feature = "signature-validation")]
     #[test]
     fn it_works() {
         let lock_time: u32 = 2410374;
@@ -783,6 +784,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "signature-validation")]
     #[test]
     fn test_vectors_for_rust() {
         for tv in test_vectors() {
@@ -809,6 +811,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "signature-validation")]
     #[test]
     fn test_vectors_for_pure_rust() {
         for tv in test_vectors() {
@@ -837,6 +840,7 @@ mod tests {
             cases: 20_000, .. ProptestConfig::default()
         })]
 
+        #[cfg(feature = "signature-validation")]
         #[test]
         fn test_arbitrary_scripts(
             lock_time in prop::num::u32::ANY,
