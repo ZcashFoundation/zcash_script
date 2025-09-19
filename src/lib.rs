@@ -679,7 +679,7 @@ mod tests {
     };
     use crate::{
         interpreter::{self, CallbackTransactionSignatureChecker},
-        script,
+        script, Script,
     };
 
     #[test]
@@ -872,6 +872,58 @@ mod tests {
             );
         }
 
+        #[test]
+        /// These tests are more subtle than the others, because while the implementations should
+        /// always succeed or fail in the same cases, they don’t always fail the same way. See the
+        /// comments in the definition for details.
+        fn test_arbitrary_scripts_new_api(
+            lock_time in prop::num::u32::ANY,
+            is_final in prop::bool::ANY,
+            pub_key_ in prop::collection::vec(0..=0xffu8, 0..=OVERFLOW_SCRIPT_SIZE),
+            sig_ in prop::collection::vec(0..=0xffu8, 1..=OVERFLOW_SCRIPT_SIZE),
+            flag_bits in prop::bits::u32::masked(interpreter::Flags::all().bits()),
+        ) {
+            let flags = repair_flags(interpreter::Flags::from_bits_truncate(flag_bits));
+            let script = script::Raw::from_raw_parts(sig_.clone(), pub_key_.clone());
+            let cxx_ret = CxxInterpreter {
+                    sighash: &sighash,
+                    lock_time,
+                    is_final,
+            }.verify_callback(&script, flags);
+            match (script::Code(sig_).to_component(), script::Code(pub_key_).to_component()) {
+                // Parsing of the script components succeeded, so we can evaluate & compare as normal.
+                (Ok(sig), Ok(pub_key)) => {
+                    let rust_ret = Script {sig, pub_key}.eval(flags, &CallbackTransactionSignatureChecker {
+                        sighash: &sighash,
+                        lock_time: lock_time.into(),
+                        is_final,
+                    });
+                    prop_assert_eq!(
+                        cxx_ret.clone().map_err(normalize_err),
+                        rust_ret.clone().map_err(|(_, e)| Error::Script(e).normalize()),
+                        "\n• original Rust result: {:?}\n• parsed script: {:?}",
+                        rust_ret,
+                        annotate_script(&script, &flags)
+                    )
+                }
+                // Parsing of at least one script component failed. If C++ evaluation failed with a
+                // parse error or succeeded, we compare as normal. If it failed in some other way,
+                // it could be due to parse/eval interleaving, so we can’t compare the results and
+                // effectively discard the test case.
+                (Err(oerr), _) | (Ok(_), Err(oerr)) => {
+                    if matches!(cxx_ret, Ok(_) | Err((_, Error::Script(script::Error::Opcode(_))))) {
+                        let rust_ret = Err(Error::Script(script::Error::Opcode(oerr)));
+                        prop_assert_eq!(
+                            cxx_ret.clone().map_err(normalize_err),
+                            rust_ret.clone().map_err(|e| e.normalize()),
+                            "\n• original Rust result: {:?}\n• parsed script: {:?}",
+                            rust_ret,
+                            annotate_script(&script, &flags),
+                        )
+                    }
+                }
+            }
+        }
         /// Similar to `test_arbitrary_scripts`, but ensures the `sig` only contains pushes.
         #[test]
         fn test_restricted_sig_scripts(

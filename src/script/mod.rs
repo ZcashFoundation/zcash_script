@@ -156,6 +156,20 @@ pub type Sig = Component<PushValue>;
 /// A script pubkey has any `Opcode`.
 pub type PubKey = Component<Opcode>;
 
+/// A script component (sig or pubkey) that came from the chain.
+///
+/// This is used to preserve particular bits that authored scripts don’t allow.
+///
+/// **NB**: `Code(script_bytes).to_component().map_err(Error::Opcode).and_then(Component::eval))`
+///         has the same _semantics_ as `Code(script_bytes).eval(_)`, but it won’t have the same
+///         error message because `to_component` will return a parse error anywhere in the script
+///         before `Component::eval` is called, while `Code::eval` interleaves the parsing and
+///         evaluation, like the C++ implementation.
+///
+/// Unlike `Raw`, this allows the chain data to be combined with authored data in, for example,
+/// `Script<opcode::PushValue, opcode::PossiblyBad>`, which can then be evaluated holistically.
+pub type FromChain = Component<opcode::PossiblyBad>;
+
 impl<T: opcode::Evaluable> Component<T> {
     /// This parses an entire script. This is stricter than the incremental parsing that is done
     /// during `verify_script`, because it fails on unknown opcodes no matter where they occur.
@@ -298,10 +312,13 @@ impl Code {
     }
 
     /// Produce an [`Opcode`] iterator from [`Code`].
-    ///
-    /// It returns `Err` with the length if the script is too long.
     pub fn parse(&self) -> Parser<'_> {
         Parser(&self.0)
+    }
+
+    /// Convert this into a `Component`, which can then be combined in authored scripts in `Script`.
+    pub fn to_component(&self) -> Result<Component<opcode::PossiblyBad>, opcode::Error> {
+        self.parse().collect::<Result<_, _>>().map(Component)
     }
 
     /// Convert a sequence of `Opcode`s to the bytes that would be included in a transaction.
