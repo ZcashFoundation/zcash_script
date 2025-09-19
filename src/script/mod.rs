@@ -192,7 +192,7 @@ impl<T: Into<opcode::PossiblyBad> + opcode::Evaluable + Clone> Evaluable for Com
             ..=Code::MAX_SIZE => iter::eval(
                 self.0.iter().cloned().map(Ok),
                 flags,
-                &Code(&self.to_bytes()),
+                &Code(self.to_bytes()),
                 stack,
                 checker,
             ),
@@ -266,9 +266,9 @@ pub enum ComponentType {
 
 /// Serialized script, used inside transaction inputs and outputs
 #[derive(Clone, Debug)]
-pub struct Code<'a>(pub &'a [u8]);
+pub struct Code(pub Vec<u8>);
 
-impl Code<'_> {
+impl Code {
     /// Maximum script length in bytes
     pub const MAX_SIZE: usize = 10_000;
 
@@ -301,7 +301,7 @@ impl Code<'_> {
     ///
     /// It returns `Err` with the length if the script is too long.
     pub fn parse(&self) -> Parser<'_> {
-        Parser(self.0)
+        Parser(&self.0)
     }
 
     /// Convert a sequence of `Opcode`s to the bytes that would be included in a transaction.
@@ -319,7 +319,7 @@ impl Code<'_> {
     }
 }
 
-impl Evaluable for Code<'_> {
+impl Evaluable for Code {
     /// Get the byte length of this script sig.
     fn byte_len(&self) -> usize {
         self.0.len()
@@ -371,16 +371,16 @@ impl Evaluable for Code<'_> {
 }
 
 /// A script represented by two byte sequences – one is the sig, the other is the pubkey.
-pub struct Raw<'a> {
+pub struct Raw {
     /// The script signature from the spending transaction.
-    pub sig: Code<'a>,
+    pub sig: Code,
     /// The script pubkey from the funding transaction.
-    pub pub_key: Code<'a>,
+    pub pub_key: Code,
 }
 
-impl<'a> Raw<'a> {
+impl Raw {
     /// Create a [`Raw`] script from the slices extracted from transactions.
-    pub fn from_raw_parts(sig: &'a [u8], pub_key: &'a [u8]) -> Self {
+    pub fn from_raw_parts(sig: Vec<u8>, pub_key: Vec<u8>) -> Self {
         Raw {
             sig: Code(sig),
             pub_key: Code(pub_key),

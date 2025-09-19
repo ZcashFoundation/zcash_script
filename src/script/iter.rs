@@ -36,7 +36,7 @@ pub fn eval_script<T: script::Evaluable, U: script::Evaluable>(
                         .split_last()
                         .map_err(|_| script::Error::MissingRedeemScript)
                         .and_then(|(pub_key_2, remaining_stack)| {
-                            script::Code(pub_key_2).eval(flags, checker, remaining_stack)
+                            script::Code(pub_key_2.clone()).eval(flags, checker, remaining_stack)
                         })
                         .map(|p2sh_stack| {
                             if p2sh_stack

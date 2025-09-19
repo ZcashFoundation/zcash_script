@@ -371,7 +371,7 @@ extern "C" fn sighash_callback(
     // And we don’t have access to the flags here to determine if it should be checked.
     if let Some(sighash) = HashType::from_bits(hash_type, false)
         .ok()
-        .and_then(|ht| callback(&script::Code(script_code_vec), &ht))
+        .and_then(|ht| callback(&script::Code(script_code_vec.to_vec()), &ht))
     {
         assert_eq!(sighash_out_len, sighash.len().try_into().unwrap());
         // SAFETY: `sighash_out` is a valid buffer created in
@@ -546,7 +546,7 @@ pub mod testing {
         signature::HashType,
         test_vectors::TestVector,
         zcash_script::{AnnError, Error},
-        Opcode,
+        Opcode, Script,
     };
     use hex::FromHex;
 
@@ -576,19 +576,19 @@ pub mod testing {
             ],
             false).expect("all keys are valid and there’s not more than 20 of them"));
         /// The scriptPubkey used for the static test case.
-        pub static ref SCRIPT_PUBKEY: Vec<u8> = script::Component(pay_to_script_hash(&REDEEM_SCRIPT)).to_bytes();
+        pub static ref SCRIPT_PUBKEY: script::PubKey = script::Component(pay_to_script_hash(&REDEEM_SCRIPT));
         /// The scriptSig used for the static test case.
-        pub static ref SCRIPT_SIG: Vec<u8> = script::Component(vec![
+        pub static ref SCRIPT_SIG: script::Sig = script::Component(vec![
             push_num(0),
             pv::push_value(&<[u8; 0x48]>::from_hex("3045022100d2ab3e6258fe244fa442cfb38f6cef9ac9a18c54e70b2f508e83fa87e20d040502200eead947521de943831d07a350e45af8e36c2166984a8636f0a8811ff03ed09401").expect("valid sig")).expect("fits into a PushValue"),
             pv::push_value(&<[u8; 0x47]>::from_hex("3044022013e15d865010c257eef133064ef69a780b4bc7ebe6eda367504e806614f940c3022062fdbc8c2d049f91db2042d6c9771de6f1ef0b3b1fea76c1ab5542e44ed29ed801").expect("valid sig")).expect("fits into a PushValue"),
             push_script(&REDEEM_SCRIPT).expect("fits into a PushValue"),
-        ]).to_bytes();
+        ]);
         /// The combined script used for the static test case.
-        pub static ref SCRIPT: script::Raw<'static> =
-            script::Raw::from_raw_parts(&SCRIPT_SIG, &SCRIPT_PUBKEY);
-        // pub static ref REAL_SCRIPT: Script<opcode::PushValue, Opcode> =
-        //     Script{ sig : SCRIPT_SIG, pub_key : SCRIPT_PUBKEY };
+        pub static ref SCRIPT: script::Raw =
+            script::Raw::from_raw_parts(SCRIPT_SIG.to_bytes(), SCRIPT_PUBKEY.to_bytes());
+        pub static ref REAL_SCRIPT: Script =
+            Script{ sig : SCRIPT_SIG.clone(), pub_key : SCRIPT_PUBKEY.clone() };
     }
 
     /// The correct sighash for the static test case.
@@ -846,7 +846,7 @@ mod tests {
             flag_bits in prop::bits::u32::masked(interpreter::Flags::all().bits()),
         ) {
             let flags = repair_flags(interpreter::Flags::from_bits_truncate(flag_bits));
-            let script = script::Raw::from_raw_parts(&sig, &pub_key);
+            let script = script::Raw::from_raw_parts(sig, pub_key);
             let ret = check_verify_callback(
                 &CxxInterpreter {
                     sighash: &sighash,
@@ -885,7 +885,7 @@ mod tests {
         ) {
             let flags = repair_flags(interpreter::Flags::from_bits_truncate(flag_bits))
                 | interpreter::Flags::SigPushOnly;
-            let script = script::Raw::from_raw_parts(&sig, &pub_key);
+            let script = script::Raw::from_raw_parts(sig, pub_key);
             let ret = check_verify_callback(
                 &CxxInterpreter {
                     sighash: &sighash,
