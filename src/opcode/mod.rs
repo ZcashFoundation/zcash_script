@@ -2,11 +2,16 @@
 
 pub mod push_value;
 
+use std::cmp::{max, min};
+
 use enum_primitive::FromPrimitive;
+use ripemd::Ripemd160;
+use sha1::Sha1;
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use super::Opcode;
-use crate::{interpreter, num};
+use crate::{external::pubkey::PubKey, interpreter, num, script, signature};
 use push_value::{
     LargeValue,
     SmallValue::{self, *},
@@ -69,11 +74,8 @@ impl PushValue {
     }
 
     /// Statically analyze a push value.
-    pub fn analyze(
-        &self,
-        flags: &interpreter::VerificationFlags,
-    ) -> Result<(), Vec<interpreter::Error>> {
-        if flags.contains(interpreter::VerificationFlags::MinimalData) && !self.is_minimal_push() {
+    pub fn analyze(&self, flags: &interpreter::Flags) -> Result<(), Vec<interpreter::Error>> {
+        if flags.contains(interpreter::Flags::MinimalData) && !self.is_minimal_push() {
             Err(vec![interpreter::Error::MinimalData])
         } else {
             Ok(())
@@ -88,7 +90,7 @@ impl PushValue {
         }
     }
 
-    /// Get the [`Stack`] element represented by this [`PushValue`].
+    /// Get the [`interpreter::Stack`] element represented by this [`PushValue`].
     pub fn value(&self) -> Vec<u8> {
         match self {
             PushValue::LargeValue(pv) => pv.value().to_vec(),
@@ -101,6 +103,19 @@ impl PushValue {
         match self {
             PushValue::LargeValue(lv) => lv.is_minimal_push(),
             PushValue::SmallValue(_) => true,
+        }
+    }
+
+    pub fn eval(
+        &self,
+        require_minimal: bool,
+        mut stack: interpreter::Stack<Vec<u8>>,
+    ) -> Result<interpreter::Stack<Vec<u8>>, interpreter::Error> {
+        if require_minimal && !self.is_minimal_push() {
+            Err(interpreter::Error::MinimalData)
+        } else {
+            stack.push(self.value());
+            Ok(stack)
         }
     }
 }
@@ -127,6 +142,41 @@ pub enum Control {
     OP_ELSE = 0x67,
     OP_ENDIF = 0x68,
 }
+}
+
+impl Control {
+    /// <expression> if [statements] [else [statements]] endif
+    pub fn eval(
+        &self,
+        mut stack: interpreter::Stack<Vec<u8>>,
+        mut vexec: interpreter::Stack<bool>,
+    ) -> Result<(interpreter::Stack<Vec<u8>>, interpreter::Stack<bool>), interpreter::Error> {
+        match self {
+            // <expression> if [statements] [else [statements]] endif
+            Self::OP_IF | Self::OP_NOTIF => vexec.push(
+                interpreter::should_exec(&vexec) && {
+                    let value = interpreter::cast_to_bool(&stack.pop()?);
+                    if self == &Self::OP_NOTIF {
+                        !value
+                    } else {
+                        value
+                    }
+                },
+            ),
+
+            Self::OP_ELSE => vexec
+                .last_mut()
+                .map_err(|_| interpreter::Error::UnbalancedConditional)
+                .map(|last| *last = !*last)?,
+
+            Self::OP_ENDIF => {
+                vexec
+                    .pop()
+                    .map_err(|_| interpreter::Error::UnbalancedConditional)?;
+            }
+        }
+        Ok((stack, vexec))
+    }
 }
 
 enum_from_primitive! {
@@ -222,33 +272,533 @@ impl Operation {
     ///
     /// __NB__: [`Operation::OP_RETURN`] isn’t tracked by this function. That is functionally
     ///         more like a `break` then an error.
-    pub fn analyze(
-        &self,
-        flags: &interpreter::VerificationFlags,
-    ) -> Result<(), Vec<interpreter::Error>> {
+    pub fn analyze(&self, flags: &interpreter::Flags) -> Result<(), Vec<interpreter::Error>> {
         match self {
-            Operation::OP_CHECKLOCKTIMEVERIFY
-                if !flags.contains(interpreter::VerificationFlags::CHECKLOCKTIMEVERIFY)
-                    && flags.contains(interpreter::VerificationFlags::DiscourageUpgradableNOPs) =>
+            Self::OP_CHECKLOCKTIMEVERIFY
+                if !flags.contains(interpreter::Flags::CHECKLOCKTIMEVERIFY)
+                    && flags.contains(interpreter::Flags::DiscourageUpgradableNOPs) =>
             {
                 Err(vec![interpreter::Error::DiscourageUpgradableNOPs])
             }
-            Operation::OP_NOP1
-            | Operation::OP_NOP3
-            | Operation::OP_NOP4
-            | Operation::OP_NOP5
-            | Operation::OP_NOP6
-            | Operation::OP_NOP7
-            | Operation::OP_NOP8
-            | Operation::OP_NOP9
-            | Operation::OP_NOP10
-                if flags.contains(interpreter::VerificationFlags::DiscourageUpgradableNOPs) =>
+            Self::OP_NOP1
+            | Self::OP_NOP3
+            | Self::OP_NOP4
+            | Self::OP_NOP5
+            | Self::OP_NOP6
+            | Self::OP_NOP7
+            | Self::OP_NOP8
+            | Self::OP_NOP9
+            | Self::OP_NOP10
+                if flags.contains(interpreter::Flags::DiscourageUpgradableNOPs) =>
             {
                 Err(vec![interpreter::Error::DiscourageUpgradableNOPs])
             }
 
             _ => Ok(()),
         }
+    }
+
+    fn binbasic_num<R>(
+        stack: &mut interpreter::Stack<Vec<u8>>,
+        require_minimal: bool,
+        op: impl FnOnce(i64, i64) -> Result<R, interpreter::Error>,
+    ) -> Result<R, interpreter::Error> {
+        stack.binfn(|x1, x2| {
+            let bn2 = num::parse(&x2, require_minimal, None).map_err(interpreter::Error::Num)?;
+            let bn1 = num::parse(&x1, require_minimal, None).map_err(interpreter::Error::Num)?;
+            op(bn1, bn2)
+        })
+    }
+
+    fn is_compressed_or_uncompressed_pub_key(vch_pub_key: &[u8]) -> bool {
+        match vch_pub_key.first() {
+            Some(0x02 | 0x03) => vch_pub_key.len() == PubKey::COMPRESSED_SIZE,
+            Some(0x04) => vch_pub_key.len() == PubKey::SIZE,
+            _ => false, // not a public key
+        }
+    }
+
+    fn check_pub_key_encoding(
+        vch_sig: &[u8],
+        flags: interpreter::Flags,
+    ) -> Result<(), interpreter::Error> {
+        if flags.contains(interpreter::Flags::StrictEnc)
+            && !Self::is_compressed_or_uncompressed_pub_key(vch_sig)
+        {
+            return Err(interpreter::Error::PubKeyType);
+        };
+        Ok(())
+    }
+
+    fn is_sig_valid(
+        vch_sig: &[u8],
+        vch_pub_key: &[u8],
+        flags: interpreter::Flags,
+        script: &script::Code,
+        checker: &dyn interpreter::SignatureChecker,
+    ) -> Result<bool, interpreter::Error> {
+        // Note how this makes the exact order of pubkey/signature evaluation distinguishable by
+        // CHECKMULTISIG NOT if the STRICTENC flag is set. See the script_(in)valid tests for details.
+        match signature::Decoded::from_bytes(
+            vch_sig,
+            flags.contains(interpreter::Flags::LowS),
+            flags.contains(interpreter::Flags::StrictEnc),
+        ) {
+            signature::Validity::InvalidAbort(e) => Err(interpreter::Error::from(e)),
+            signature::Validity::InvalidContinue => {
+                // We still need to check the pubkey here, because it can cause an abort.
+                Self::check_pub_key_encoding(vch_pub_key, flags)?;
+                Ok(false)
+            }
+            signature::Validity::Valid(sig) => {
+                Self::check_pub_key_encoding(vch_pub_key, flags)?;
+                Ok(checker.check_sig(&sig, vch_pub_key, script))
+            }
+        }
+    }
+
+    fn cast_from_bool(b: bool) -> Vec<u8> {
+        static VCH_FALSE: [u8; 0] = [];
+        static VCH_TRUE: [u8; 1] = [1];
+        if b {
+            VCH_TRUE.to_vec()
+        } else {
+            VCH_FALSE.to_vec()
+        }
+    }
+
+    pub fn eval(
+        &self,
+        flags: interpreter::Flags,
+        script: &script::Code,
+        checker: &dyn interpreter::SignatureChecker,
+        mut state: interpreter::State,
+    ) -> Result<interpreter::State, interpreter::Error> {
+        let require_minimal = flags.contains(interpreter::Flags::MinimalData);
+
+        let parse_num = |v: &[u8], size: Option<usize>| -> Result<i64, interpreter::Error> {
+            num::parse(v, require_minimal, size).map_err(interpreter::Error::Num)
+        };
+
+        let pop_num = |stack: &mut interpreter::Stack<Vec<u8>>,
+                       size: Option<usize>|
+         -> Result<i64, interpreter::Error> {
+            stack.pop().and_then(|v| parse_num(&v, size))
+        };
+
+        let unfn_num = |stackin: &mut interpreter::Stack<Vec<u8>>,
+                        op: &dyn Fn(i64) -> Vec<u8>|
+         -> Result<(), interpreter::Error> {
+            stackin.unop(|vch| parse_num(&vch, None).map(op))
+        };
+
+        let unop_num = |stack: &mut interpreter::Stack<Vec<u8>>,
+                        op: &dyn Fn(i64) -> i64|
+         -> Result<(), interpreter::Error> {
+            unfn_num(stack, &|bn| num::serialize(op(bn)))
+        };
+
+        let binfn_num = |stack: &mut interpreter::Stack<Vec<u8>>,
+                         op: &dyn Fn(i64, i64) -> Vec<u8>|
+         -> Result<(), interpreter::Error> {
+            Self::binbasic_num(stack, require_minimal, |bn1, bn2| Ok(op(bn1, bn2)))
+                .map(|res| stack.push(res))
+        };
+
+        let binop_num = |stack: &mut interpreter::Stack<Vec<u8>>,
+                         op: &dyn Fn(i64, i64) -> i64|
+         -> Result<(), interpreter::Error> {
+            binfn_num(stack, &|bn1, bn2| num::serialize(op(bn1, bn2)))
+        };
+
+        let binrel = |stack: &mut interpreter::Stack<Vec<u8>>,
+                      op: &dyn Fn(i64, i64) -> bool|
+         -> Result<(), interpreter::Error> {
+            binfn_num(stack, &|bn1, bn2| Self::cast_from_bool(op(bn1, bn2)))
+        };
+
+        let unrel = |stack: &mut interpreter::Stack<Vec<u8>>,
+                     op: &dyn Fn(i64) -> bool|
+         -> Result<(), interpreter::Error> {
+            unfn_num(stack, &|bn| Self::cast_from_bool(op(bn)))
+        };
+
+        match self {
+            //
+            // Control
+            //
+            Self::OP_NOP => Ok(()),
+
+            // (lt -- lt bool)
+            Self::OP_CHECKLOCKTIMEVERIFY => {
+                // https://zips.z.cash/protocol/protocol.pdf#bips :
+                //
+                //   The following BIPs apply starting from the Zcash genesis block,
+                //   i.e. any activation rules or exceptions for particular blocks in
+                //   the Bitcoin block chain are to be ignored: [BIP-16], [BIP-30],
+                //   [BIP-65], [BIP-66].
+                //
+                // So BIP 65, which defines CHECKLOCKTIMEVERIFY, is in practice always
+                // enabled, and this `if` branch is dead code. In zcashd see
+                // https://github.com/zcash/zcash/blob/a3435336b0c561799ac6805a27993eca3f9656df/src/main.cpp#L3151
+                if flags.contains(interpreter::Flags::CHECKLOCKTIMEVERIFY) {
+                    // Note that elsewhere numeric opcodes are limited to
+                    // operands in the range -2**31+1 to 2**31-1, however it is
+                    // legal for opcodes to produce results exceeding that
+                    // range. This limitation is implemented by `ScriptNum`'s
+                    // default 4-byte limit.
+                    //
+                    // If we kept to that limit we'd have a year 2038 problem,
+                    // even though the `lock_time` field in transactions
+                    // themselves is u32 which only becomes meaningless
+                    // after the year 2106.
+                    //
+                    // Thus as a special case we tell `ScriptNum` to accept up
+                    // to 5-byte bignums, which are good until 2**39-1, well
+                    // beyond the 2**32-1 limit of the `lock_time` field itself.
+                    let lock_time = state.stack.rget(0).and_then(|v| parse_num(v, Some(5)))?;
+
+                    // In the rare event that the argument may be < 0 due to
+                    // some arithmetic being done first, you can always use
+                    // 0 MAX CHECKLOCKTIMEVERIFY.
+                    if 0 <= lock_time {
+                        // Actually compare the specified lock time with the transaction.
+                        if !checker.check_lock_time(lock_time) {
+                            Err(interpreter::Error::UnsatisfiedLockTime)
+                        } else {
+                            Ok(())
+                        }
+                    } else {
+                        Err(interpreter::Error::NegativeLockTime)
+                    }
+                } else if flags.contains(interpreter::Flags::DiscourageUpgradableNOPs) {
+                    Err(interpreter::Error::DiscourageUpgradableNOPs)
+                } else {
+                    Ok(())
+                }
+            }
+
+            Self::OP_NOP1
+            | Self::OP_NOP3
+            | Self::OP_NOP4
+            | Self::OP_NOP5
+            | Self::OP_NOP6
+            | Self::OP_NOP7
+            | Self::OP_NOP8
+            | Self::OP_NOP9
+            | Self::OP_NOP10 => {
+                // Do nothing, though if the caller wants to prevent people from using
+                // these NOPs (as part of a standard tx rule, for example) they can
+                // enable `DiscourageUpgradableNOPs` to turn these opcodes into errors.
+                if flags.contains(interpreter::Flags::DiscourageUpgradableNOPs) {
+                    Err(interpreter::Error::DiscourageUpgradableNOPs)
+                } else {
+                    Ok(())
+                }
+            }
+
+            Self::OP_VERIFY => {
+                // (true -- ) or
+                // (false -- false) and return
+                state.stack.pop().and_then(|v| {
+                    if interpreter::cast_to_bool(&v) {
+                        Ok(())
+                    } else {
+                        Err(interpreter::Error::Verify)
+                    }
+                })
+            }
+
+            Self::OP_RETURN => Err(interpreter::Error::OpReturn),
+
+            //
+            // Stack ops
+            //
+            Self::OP_TOALTSTACK => state.stack.pop().map(|v| state.altstack.push(v)),
+
+            Self::OP_FROMALTSTACK => state.altstack.pop().map(|v| state.stack.push(v)),
+
+            Self::OP_2DROP => state
+                .stack
+                .pop()
+                .and_then(|_| state.stack.pop())
+                .map(|_| ()),
+
+            // (x1 x2 -- x1 x2 x1 x2)
+            Self::OP_2DUP => state.stack.repush(1).and_then(|()| state.stack.repush(1)),
+
+            // (x1 x2 x3 -- x1 x2 x3 x1 x2 x3)
+            Self::OP_3DUP => {
+                state.stack.repush(2)?;
+                state.stack.repush(2)?;
+                state.stack.repush(2)
+            }
+
+            // (x1 x2 x3 x4 -- x1 x2 x3 x4 x1 x2)
+            Self::OP_2OVER => state.stack.repush(3).and_then(|()| state.stack.repush(3)),
+
+            // (x1 x2 x3 x4 x5 x6 -- x3 x4 x5 x6 x1 x2)
+            Self::OP_2ROT => state
+                .stack
+                .move_to_top(5)
+                .and_then(|()| state.stack.move_to_top(5)),
+
+            // (x1 x2 x3 x4 -- x3 x4 x1 x2)
+            Self::OP_2SWAP => state
+                .stack
+                .move_to_top(3)
+                .and_then(|()| state.stack.move_to_top(3)),
+
+            // (x - 0 | x x)
+            Self::OP_IFDUP => state.stack.rget(0).cloned().map(|v| {
+                if interpreter::cast_to_bool(&v) {
+                    state.stack.push(v)
+                }
+            }),
+
+            // -- stacksize
+            Self::OP_DEPTH => i64::try_from(state.stack.len())
+                .map_err(|err| interpreter::Error::StackSize(Some(err)))
+                .map(|n| state.stack.push(num::serialize(n))),
+
+            // (x -- )
+            Self::OP_DROP => state.stack.pop().map(|_| ()),
+
+            // (x -- x x)
+            Self::OP_DUP => state.stack.repush(0),
+
+            // (x1 x2 -- x2)
+            Self::OP_NIP => state.stack.rremove(1).map(|_| ()),
+
+            // (x1 x2 -- x1 x2 x1)
+            Self::OP_OVER => state.stack.repush(1),
+
+            // (xn ... x2 x1 x0 n - xn ... x2 x1 x0 xn)
+            // (xn ... x2 x1 x0 n - ... x2 x1 x0 xn)
+            Self::OP_PICK | Self::OP_ROLL => state.stack.check_len(2).and_then(|()| {
+                pop_num(&mut state.stack, None)
+                    .and_then(|i| {
+                        usize::try_from(i)
+                            .map_err(|_| interpreter::Error::InvalidStackOperation(None))
+                    })
+                    .and_then(|n| {
+                        if self == &Self::OP_ROLL {
+                            state.stack.move_to_top(n)
+                        } else {
+                            state.stack.repush(n)
+                        }
+                    })
+            }),
+
+            // (x1 x2 x3 -- x2 x3 x1)
+            Self::OP_ROT => state.stack.move_to_top(2),
+
+            // (x1 x2 -- x2 x1)
+            Self::OP_SWAP => state.stack.move_to_top(1),
+
+            // (x1 x2 -- x2 x1 x2)
+            Self::OP_TUCK => state.stack.rinsert(1, state.stack.rget(0)?.clone()),
+
+            // (in -- in size)
+            Self::OP_SIZE => state.stack.rget(0).cloned().map(|v| {
+                state.stack.push(num::serialize(
+                    i64::try_from(v.len()).expect("stack element size <= PushValue::MAX_SIZE"),
+                ))
+            }),
+
+            //
+            // Bitwise logic
+            //
+            // (x1 x2 - bool)
+            Self::OP_EQUAL => state
+                .stack
+                .binop(|x1, x2| Ok(Self::cast_from_bool(x1 == x2))),
+            Self::OP_EQUALVERIFY => state.stack.binfn(|x1, x2| {
+                if x1 == x2 {
+                    Ok(())
+                } else {
+                    Err(interpreter::Error::Verify)
+                }
+            }),
+
+            //
+            // Numeric
+            //
+
+            // (in -- out)
+            Self::OP_1ADD => unop_num(&mut state.stack, &|x| x + 1),
+            Self::OP_1SUB => unop_num(&mut state.stack, &|x| x - 1),
+            Self::OP_NEGATE => unop_num(&mut state.stack, &|x| -x),
+            Self::OP_ABS => unop_num(&mut state.stack, &|x| x.abs()),
+            Self::OP_NOT => unrel(&mut state.stack, &|x| x == 0),
+            Self::OP_0NOTEQUAL => unrel(&mut state.stack, &|x| x != 0),
+
+            // (x1 x2 -- out)
+            Self::OP_ADD => binop_num(&mut state.stack, &|x1, x2| x1 + x2),
+            Self::OP_SUB => binop_num(&mut state.stack, &|x1, x2| x1 - x2),
+            Self::OP_BOOLAND => binrel(&mut state.stack, &|x1, x2| x1 != 0 && x2 != 0),
+            Self::OP_BOOLOR => binrel(&mut state.stack, &|x1, x2| x1 != 0 || x2 != 0),
+            Self::OP_NUMEQUAL => binrel(&mut state.stack, &|x1, x2| x1 == x2),
+            Self::OP_NUMEQUALVERIFY => {
+                Self::binbasic_num(&mut state.stack, require_minimal, |x1, x2| {
+                    if x1 == x2 {
+                        Ok(())
+                    } else {
+                        Err(interpreter::Error::Verify)
+                    }
+                })
+            }
+            Self::OP_NUMNOTEQUAL => binrel(&mut state.stack, &|x1, x2| x1 != x2),
+            Self::OP_LESSTHAN => binrel(&mut state.stack, &|x1, x2| x1 < x2),
+            Self::OP_GREATERTHAN => binrel(&mut state.stack, &|x1, x2| x1 > x2),
+            Self::OP_LESSTHANOREQUAL => binrel(&mut state.stack, &|x1, x2| x1 <= x2),
+            Self::OP_GREATERTHANOREQUAL => binrel(&mut state.stack, &|x1, x2| x1 >= x2),
+            Self::OP_MIN => binop_num(&mut state.stack, &min),
+            Self::OP_MAX => binop_num(&mut state.stack, &max),
+
+            // (x min max -- out)
+            Self::OP_WITHIN => {
+                // We have to check them in this order to make sure we get any errors in the same order
+                // as the C++ impl.
+                let x = state.stack.rremove(2).and_then(|v| parse_num(&v, None))?;
+                let min = state.stack.rremove(1).and_then(|v| parse_num(&v, None))?;
+                let max = pop_num(&mut state.stack, None)?;
+                Ok(state.stack.push(Self::cast_from_bool(min <= x && x < max)))
+            }
+
+            //
+            // Crypto
+            //
+
+            // (in -- hash)
+            Self::OP_RIPEMD160
+            | Self::OP_SHA1
+            | Self::OP_SHA256
+            | Self::OP_HASH160
+            | Self::OP_HASH256 => {
+                let vch = state.stack.pop()?;
+                let mut vch_hash = vec![];
+                if self == &Self::OP_RIPEMD160 {
+                    vch_hash = Ripemd160::digest(vch).to_vec();
+                } else if self == &Self::OP_SHA1 {
+                    let mut hasher = Sha1::new();
+                    hasher.update(vch);
+                    vch_hash = hasher.finalize().to_vec();
+                } else if self == &Self::OP_SHA256 {
+                    vch_hash = Sha256::digest(vch).to_vec();
+                } else if self == &Self::OP_HASH160 {
+                    vch_hash = Ripemd160::digest(Sha256::digest(vch)).to_vec();
+                } else if self == &Self::OP_HASH256 {
+                    vch_hash = Sha256::digest(Sha256::digest(vch)).to_vec();
+                }
+                Ok(state.stack.push(vch_hash))
+            }
+
+            // (sig pubkey -- bool)
+            Self::OP_CHECKSIG | Self::OP_CHECKSIGVERIFY => {
+                let vch_pub_key = state.stack.pop()?;
+                let vch_sig = state.stack.pop()?;
+
+                Self::is_sig_valid(&vch_sig, &vch_pub_key, flags, script, checker).and_then(
+                    |success| {
+                        if self == &Self::OP_CHECKSIGVERIFY {
+                            if success {
+                                Ok(())
+                            } else {
+                                Err(interpreter::Error::Verify)
+                            }
+                        } else {
+                            Ok(state.stack.push(Self::cast_from_bool(success)))
+                        }
+                    },
+                )
+            }
+
+            // ([sig ...] num_of_signatures [pubkey ...] num_of_pubkeys -- bool)
+            Self::OP_CHECKMULTISIG | Self::OP_CHECKMULTISIGVERIFY => {
+                let mut keys_count = pop_num(&mut state.stack, None).and_then(|i| {
+                    u8::try_from(i).map_err(|err| interpreter::Error::PubKeyCount(Some(err)))
+                })?;
+                if keys_count > interpreter::MAX_PUBKEY_COUNT {
+                    return Err(interpreter::Error::PubKeyCount(None));
+                };
+                state.increment_op_count(keys_count)?;
+
+                // NB: This is guaranteed u8-safe, because we are limited to 20 keys and
+                //     20 signatures, plus a couple other fields. u8 also gives us total
+                //     conversions to the other types we deal with here (`usize` and `i64`).
+                let mut i: u8 = keys_count;
+                let mut ikey: u8 = 0;
+                assert!(i <= interpreter::MAX_PUBKEY_COUNT);
+
+                let mut sigs_count = state
+                    .stack
+                    .rget(i.into())
+                    .and_then(|v| parse_num(v, None))
+                    .and_then(|i| {
+                        u8::try_from(i).map_err(|err| interpreter::Error::SigCount(Some(err)))
+                    })?;
+                if sigs_count > keys_count {
+                    return Err(interpreter::Error::SigCount(None));
+                };
+                i += 1;
+                let mut isig = i;
+                i += sigs_count;
+                state.stack.check_len(usize::from(i) + 1)?;
+
+                let mut success = true;
+                while success && sigs_count > 0 {
+                    let vch_sig = state.stack.rget(usize::from(isig))?;
+                    let vch_pub_key = state.stack.rget(usize::from(ikey))?;
+
+                    // Check signature
+                    let ok: bool =
+                        Self::is_sig_valid(vch_sig, vch_pub_key, flags, script, checker)?;
+
+                    if ok {
+                        isig += 1;
+                        sigs_count -= 1;
+                    }
+                    ikey += 1;
+                    keys_count -= 1;
+
+                    // If there are more signatures left than keys left,
+                    // then too many signatures have failed. Exit early,
+                    // without checking any further signatures.
+                    if sigs_count > keys_count {
+                        success = false;
+                    };
+                }
+
+                // Clean up stack of actual arguments
+                for _ in 0..i {
+                    state.stack.pop()?;
+                }
+
+                // A bug causes CHECKMULTISIG to consume one extra argument
+                // whose contents were not checked in any way.
+                //
+                // Unfortunately this is a potential source of mutability,
+                // so optionally verify it is exactly equal to zero prior
+                // to removing it from the stack.
+                if flags.contains(interpreter::Flags::NullDummy) && !state.stack.rget(0)?.is_empty()
+                {
+                    return Err(interpreter::Error::SigNullDummy);
+                }
+                state.stack.pop()?;
+
+                if self == &Self::OP_CHECKMULTISIGVERIFY {
+                    if success {
+                        Ok(())
+                    } else {
+                        Err(interpreter::Error::Verify)
+                    }
+                } else {
+                    Ok(state.stack.push(Self::cast_from_bool(success)))
+                }
+            }
+        }
+        .map(|()| state)
     }
 }
 
@@ -285,6 +835,35 @@ pub enum Bad {
     OP_RESERVED1,
     OP_RESERVED2,
     Unknown(u8),
+}
+
+impl Bad {
+    /// Bad opcodes are a bit complicated.
+    ///
+    /// - They only fail if they are evaluated, so we can’t statically fail scripts that contain them
+    ///   (unlike [Disabled]).
+    /// - [Bad::OP_RESERVED] counts as a push value for the purposes of
+    ///   [interpreter::Flags::SigPushOnly] (but push-only sigs must necessarily evaluate
+    ///   all of their opcodes, so what we’re preserving here is that we get
+    ///   [script::Error::SigPushOnly] in this case instead of [script::Error::BadOpcode]).
+    /// - [Bad::OP_VERIF] and [Bad::OP_VERNOTIF] both _always_ get evaluated, so we need to special case
+    ///   them when checking whether to throw [script::Error::BadOpcode]
+    fn eval(
+        &self,
+        mut state: interpreter::State,
+    ) -> Result<interpreter::State, interpreter::Error> {
+        // Note how OP_RESERVED does not count towards the opcode limit.
+        if &Self::OP_RESERVED != self {
+            state.increment_op_count(1)?;
+        }
+        if matches!(self, Self::OP_VERIF | Self::OP_VERNOTIF)
+            || interpreter::should_exec(&state.vexec)
+        {
+            Err(interpreter::Error::BadOpcode)
+        } else {
+            Ok(state)
+        }
+    }
 }
 
 impl From<u8> for Bad {
@@ -365,13 +944,24 @@ impl PossiblyBad {
     }
 
     /// Statically analyze a possibly-bad opcode.
-    pub fn analyze(
-        &self,
-        flags: &interpreter::VerificationFlags,
-    ) -> Result<&Opcode, Vec<interpreter::Error>> {
+    pub fn analyze(&self, flags: &interpreter::Flags) -> Result<&Opcode, Vec<interpreter::Error>> {
         match self {
             PossiblyBad::Good(op) => op.analyze(flags).map(|()| op),
             PossiblyBad::Bad(_) => Err(vec![interpreter::Error::BadOpcode]),
+        }
+    }
+
+    /// Eval a single [`Opcode`] … which may be [`Bad`].
+    pub fn eval(
+        &self,
+        script: &script::Code,
+        flags: interpreter::Flags,
+        checker: &dyn interpreter::SignatureChecker,
+        state: interpreter::State,
+    ) -> Result<interpreter::State, interpreter::Error> {
+        match self {
+            Self::Bad(bad) => bad.eval(state),
+            Self::Good(opcode) => opcode.eval(flags, script, checker, state),
         }
     }
 }

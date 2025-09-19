@@ -161,7 +161,7 @@ impl Code<'_> {
     /// but not for scripts that are read from the chain, because it may fail on valid scripts.
     pub fn parse_strict<'a>(
         &'a self,
-        flags: &'a interpreter::VerificationFlags,
+        flags: &'a interpreter::Flags,
     ) -> impl Iterator<Item = Result<Opcode, Vec<Error>>> + 'a {
         self.parse().map(|mpb| {
             mpb.map_err(|e| vec![Error::Opcode(e)]).and_then(|pb| {
@@ -190,39 +190,30 @@ impl Code<'_> {
     /// This should behave the same as `interpreter::eval_script`.
     pub fn eval(
         &self,
-        flags: interpreter::VerificationFlags,
+        flags: interpreter::Flags,
         checker: &dyn interpreter::SignatureChecker,
         stack: interpreter::Stack<Vec<u8>>,
     ) -> Result<interpreter::Stack<Vec<u8>>, Error> {
         // There's a limit on how large scripts can be.
         if self.0.len() <= Code::MAX_SIZE {
-            let mut state = interpreter::State::initial(stack);
             self.parse()
-                .try_for_each(|mpb| {
+                .try_fold(interpreter::State::initial(stack), |state, mpb| {
                     mpb.map_err(Error::Opcode).and_then(|opcode| {
-                        interpreter::eval_possibly_bad(&opcode, self, flags, checker, &mut state)
+                        opcode
+                            .eval(self, flags, checker, state)
                             .map_err(|e| Error::Interpreter(Some(opcode), e))
                     })
                 })
-                .and_then(|()| {
-                    if !state.vexec().is_empty() {
-                        Err(Error::UnclosedConditional(state.vexec().len()))
+                .and_then(|final_state| {
+                    if !final_state.vexec().is_empty() {
+                        Err(Error::UnclosedConditional(final_state.vexec().len()))
                     } else {
-                        Ok(state.stack().clone())
+                        Ok(final_state.stack)
                     }
                 })
         } else {
             Err(Error::ScriptSize(Some(self.0.len())))
         }
-    }
-
-    /// Encode/decode small integers:
-    pub fn decode_op_n(opcode: opcode::push_value::SmallValue) -> u32 {
-        if opcode == OP_0 {
-            return 0;
-        }
-        assert!(opcode >= OP_1 && opcode <= OP_16);
-        (u8::from(opcode) - (u8::from(OP_1) - 1)).into()
     }
 
     /// Pre-version-0.6, Bitcoin always counted CHECKMULTISIGs
@@ -241,11 +232,13 @@ impl Code<'_> {
                         OP_CHECKSIG | OP_CHECKSIGVERIFY => 1,
                         OP_CHECKMULTISIG | OP_CHECKMULTISIGVERIFY => match last_opcode {
                             Some(opcode::PossiblyBad::Good(Opcode::PushValue(
-                                opcode::PushValue::SmallValue(pv),
+                                opcode::PushValue::SmallValue(sv),
                             )))
                                 // Even with an accurate count, 0 keys is counted as 20 for some
                                 // reason.
-                                if accurate && pv >= OP_1 && pv <= OP_16 => Self::decode_op_n(   pv),
+                                if accurate && OP_1 <= sv => {
+                                    u32::try_from(sv.to_num()).expect("`sv` is positive")
+                                }
                             // Apparently it’s too much work to figure out if it’s one of the few
                             // `LargeValue`s that’s valid, so we assume the worst.
                             Some(_) => u32::from(interpreter::MAX_PUBKEY_COUNT),
@@ -266,7 +259,7 @@ impl Code<'_> {
 
     /// Returns true iff this script is P2SH.
     pub fn is_pay_to_script_hash(&self) -> bool {
-        self.parse_strict(&interpreter::VerificationFlags::all())
+        self.parse_strict(&interpreter::Flags::all())
             .collect::<Result<Vec<_>, _>>()
             .map_or(false, |ops| match &ops[..] {
                 [ Opcode::Operation(OP_HASH160),
@@ -317,10 +310,10 @@ impl<'a> Raw<'a> {
     /// Validate a [`Raw`] script.
     pub fn eval(
         &self,
-        flags: interpreter::VerificationFlags,
+        flags: interpreter::Flags,
         checker: &dyn interpreter::SignatureChecker,
     ) -> Result<bool, (ComponentType, Error)> {
-        if flags.contains(interpreter::VerificationFlags::SigPushOnly) && !self.sig.is_push_only() {
+        if flags.contains(interpreter::Flags::SigPushOnly) && !self.sig.is_push_only() {
             Err((ComponentType::Sig, Error::SigPushOnly))
         } else {
             let data_stack = self
@@ -331,9 +324,11 @@ impl<'a> Raw<'a> {
                 .pub_key
                 .eval(flags, checker, data_stack.clone())
                 .map_err(|e| (ComponentType::PubKey, e))?;
-            if pub_key_stack.last().is_ok_and(interpreter::cast_to_bool) {
-                if flags.contains(interpreter::VerificationFlags::P2SH)
-                    && self.pub_key.is_pay_to_script_hash()
+            if pub_key_stack
+                .last()
+                .is_ok_and(|v| interpreter::cast_to_bool(v))
+            {
+                if flags.contains(interpreter::Flags::P2SH) && self.pub_key.is_pay_to_script_hash()
                 {
                     // script_sig must be literals-only or validation fails
                     if self.sig.is_push_only() {
@@ -344,7 +339,10 @@ impl<'a> Raw<'a> {
                                 Code(pub_key_2).eval(flags, checker, remaining_stack)
                             })
                             .map(|p2sh_stack| {
-                                if p2sh_stack.last().is_ok_and(interpreter::cast_to_bool) {
+                                if p2sh_stack
+                                    .last()
+                                    .is_ok_and(|v| interpreter::cast_to_bool(v))
+                                {
                                     Some(p2sh_stack)
                                 } else {
                                     None
@@ -364,9 +362,9 @@ impl<'a> Raw<'a> {
                             // The CLEANSTACK check is only performed after potential P2SH evaluation, as the
                             // non-P2SH evaluation of a P2SH script will obviously not result in a clean stack
                             // (the P2SH inputs remain).
-                            if flags.contains(interpreter::VerificationFlags::CleanStack) {
+                            if flags.contains(interpreter::Flags::CleanStack) {
                                 // Disallow CLEANSTACK without P2SH, because Bitcoin did.
-                                assert!(flags.contains(interpreter::VerificationFlags::P2SH));
+                                assert!(flags.contains(interpreter::Flags::P2SH));
                                 if result_stack.len() == 1 {
                                     Ok(true)
                                 } else {
