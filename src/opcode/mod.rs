@@ -11,7 +11,9 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use super::Opcode;
-use crate::{external::pubkey::PubKey, interpreter, num, script, signature};
+#[cfg(feature = "signature-validation")]
+use crate::{external::pubkey::PubKey, signature};
+use crate::{interpreter, num, script};
 use push_value::{
     LargeValue,
     SmallValue::{self, *},
@@ -36,6 +38,31 @@ pub enum Error {
         push_value::LargeValue::MAX_SIZE
     )]
     PushSize(Option<usize>),
+}
+
+/// Definitions needed for evaluation of script types.
+pub trait Evaluable {
+    /// The length in bytes of this script value. This can be more efficient than
+    /// `self.to_bytes().len()`.
+    fn byte_len(&self) -> usize;
+
+    /// Convert a script value into the bytes that would be included in a transaction.
+    fn to_bytes(&self) -> Vec<u8>;
+
+    fn restrict(pb: PossiblyBad) -> Result<Self, script::Error>
+    where
+        Self: Sized;
+
+    /// Evaluate the provided script value.
+    fn eval(
+        &self,
+        flags: interpreter::Flags,
+        script: &script::Code,
+        checker: &dyn interpreter::SignatureChecker,
+        state: interpreter::State,
+    ) -> Result<interpreter::State, interpreter::Error>;
+
+    fn extract_push_value(&self) -> Result<&PushValue, script::Error>;
 }
 
 /// Opcodes that represent constants to be pushed onto the stack.
@@ -106,7 +133,7 @@ impl PushValue {
         }
     }
 
-    pub fn eval(
+    pub fn eval_(
         &self,
         require_minimal: bool,
         mut stack: interpreter::Stack<Vec<u8>>,
@@ -117,6 +144,41 @@ impl PushValue {
             stack.push(self.value());
             Ok(stack)
         }
+    }
+}
+
+impl Evaluable for PushValue {
+    fn byte_len(&self) -> usize {
+        match self {
+            PushValue::LargeValue(pv) => pv.byte_len(),
+            PushValue::SmallValue(_) => 1,
+        }
+    }
+
+    fn to_bytes(&self) -> Vec<u8> {
+        Vec::<u8>::from(self)
+    }
+
+    fn restrict(pb: PossiblyBad) -> Result<Self, script::Error> {
+        Opcode::restrict(pb).and_then(|op| match op {
+            Opcode::PushValue(pv) => Ok(pv),
+            _ => Err(script::Error::SigPushOnly),
+        })
+    }
+
+    fn eval(
+        &self,
+        flags: interpreter::Flags,
+        _script: &script::Code,
+        _checker: &dyn interpreter::SignatureChecker,
+        mut state: interpreter::State,
+    ) -> Result<interpreter::State, interpreter::Error> {
+        state.stack = self.eval_(flags.contains(interpreter::Flags::MinimalData), state.stack)?;
+        Ok(state)
+    }
+
+    fn extract_push_value(&self) -> Result<&PushValue, script::Error> {
+        Ok(self)
     }
 }
 
@@ -310,6 +372,7 @@ impl Operation {
         })
     }
 
+    #[cfg(feature = "signature-validation")]
     fn is_compressed_or_uncompressed_pub_key(vch_pub_key: &[u8]) -> bool {
         match vch_pub_key.first() {
             Some(0x02 | 0x03) => vch_pub_key.len() == PubKey::COMPRESSED_SIZE,
@@ -318,6 +381,7 @@ impl Operation {
         }
     }
 
+    #[cfg(feature = "signature-validation")]
     fn check_pub_key_encoding(
         vch_sig: &[u8],
         flags: interpreter::Flags,
@@ -330,6 +394,7 @@ impl Operation {
         Ok(())
     }
 
+    #[cfg(feature = "signature-validation")]
     fn is_sig_valid(
         vch_sig: &[u8],
         vch_pub_key: &[u8],
@@ -355,6 +420,17 @@ impl Operation {
                 Ok(checker.check_sig(&sig, vch_pub_key, script))
             }
         }
+    }
+
+    #[cfg(not(feature = "signature-validation"))]
+    fn is_sig_valid(
+        _vch_sig: &[u8],
+        _vch_pub_key: &[u8],
+        _flags: interpreter::Flags,
+        _script: &script::Code,
+        _checker: &dyn interpreter::SignatureChecker,
+    ) -> Result<bool, interpreter::Error> {
+        Ok(false)
     }
 
     fn cast_from_bool(b: bool) -> Vec<u8> {
@@ -950,18 +1026,45 @@ impl PossiblyBad {
             PossiblyBad::Bad(_) => Err(vec![interpreter::Error::BadOpcode]),
         }
     }
+}
+
+impl Evaluable for PossiblyBad {
+    fn byte_len(&self) -> usize {
+        match self {
+            PossiblyBad::Good(op) => op.byte_len(),
+            PossiblyBad::Bad(_) => 1,
+        }
+    }
+
+    fn to_bytes(&self) -> Vec<u8> {
+        Vec::<u8>::from(self)
+    }
+
+    fn restrict(pb: PossiblyBad) -> Result<Self, script::Error> {
+        Ok(pb)
+    }
 
     /// Eval a single [`Opcode`] … which may be [`Bad`].
-    pub fn eval(
+    fn eval(
         &self,
-        script: &script::Code,
         flags: interpreter::Flags,
+        script: &script::Code,
         checker: &dyn interpreter::SignatureChecker,
         state: interpreter::State,
     ) -> Result<interpreter::State, interpreter::Error> {
         match self {
             Self::Bad(bad) => bad.eval(state),
             Self::Good(opcode) => opcode.eval(flags, script, checker, state),
+        }
+    }
+
+    fn extract_push_value(&self) -> Result<&PushValue, script::Error> {
+        match self {
+            PossiblyBad::Good(op) => op.extract_push_value(),
+            PossiblyBad::Bad(_) => Err(script::Error::Interpreter(
+                Some(self.clone()),
+                interpreter::Error::BadOpcode,
+            )),
         }
     }
 }
@@ -975,6 +1078,21 @@ impl From<Opcode> for PossiblyBad {
 impl From<Bad> for PossiblyBad {
     fn from(value: Bad) -> Self {
         PossiblyBad::Bad(value)
+    }
+}
+
+impl From<PushValue> for PossiblyBad {
+    fn from(value: PushValue) -> Self {
+        PossiblyBad::Good(Opcode::from(value))
+    }
+}
+
+impl From<&PossiblyBad> for Vec<u8> {
+    fn from(value: &PossiblyBad) -> Self {
+        match value {
+            PossiblyBad::Good(opcode) => opcode.into(),
+            PossiblyBad::Bad(bad) => vec![u8::from(*bad)],
+        }
     }
 }
 

@@ -4,7 +4,9 @@ use std::{num::TryFromIntError, slice::Iter};
 
 use thiserror::Error;
 
-use crate::{external::pubkey::PubKey, num, script, signature};
+#[cfg(feature = "signature-validation")]
+use crate::external::pubkey::PubKey;
+use crate::{num, script, signature};
 
 /// Any error that can happen during interpretation of a single opcode.
 #[allow(missing_docs)]
@@ -294,11 +296,6 @@ impl<T> Stack<T> {
         self.0.push(value)
     }
 
-    /// Returns true if there are no elements in the stack.
-    pub(crate) fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
     /// Returns the number of elements in the stack.
     pub(crate) fn len(&self) -> usize {
         self.0.len()
@@ -468,6 +465,7 @@ pub type SighashCalculator<'a> =
     &'a dyn Fn(&script::Code, &signature::HashType) -> Option<[u8; SIGHASH_SIZE]>;
 
 impl SignatureChecker for CallbackTransactionSignatureChecker<'_> {
+    #[cfg(feature = "signature-validation")]
     fn check_sig(
         &self,
         sig: &signature::Decoded,
@@ -480,6 +478,16 @@ impl SignatureChecker for CallbackTransactionSignatureChecker<'_> {
             && (self.sighash)(script_code, sig.sighash_type())
                 .map(|sighash| pubkey.verify(&sighash, sig.sig()))
                 .unwrap_or(false)
+    }
+
+    #[cfg(not(feature = "signature-validation"))]
+    fn check_sig(
+        &self,
+        _sig: &signature::Decoded,
+        _vch_pub_key: &[u8],
+        _script_code: &script::Code,
+    ) -> bool {
+        false
     }
 
     fn check_lock_time(&self, lock_time: i64) -> bool {
