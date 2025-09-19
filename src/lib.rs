@@ -587,6 +587,7 @@ pub mod testing {
         /// The combined script used for the static test case.
         pub static ref SCRIPT: script::Raw =
             script::Raw::from_raw_parts(SCRIPT_SIG.to_bytes(), SCRIPT_PUBKEY.to_bytes());
+        /// The same script as `SCRIPT`, but using the “authoring” types.
         pub static ref REAL_SCRIPT: Script =
             Script{ sig : SCRIPT_SIG.clone(), pub_key : SCRIPT_PUBKEY.clone() };
     }
