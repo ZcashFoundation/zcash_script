@@ -175,6 +175,13 @@ pub type Redeem = Component<Opcode>;
 /// `Script<opcode::PushValue, opcode::PossiblyBad>`, which can then be evaluated holistically.
 pub type FromChain = Component<opcode::PossiblyBad>;
 
+impl<T: Clone> Component<T> {
+    /// Convert a `Component` to a less restricted opcode type, infallibly.
+    pub fn weaken<U: From<T>>(&self) -> Component<U> {
+        Component(self.0.iter().cloned().map(|op| U::from(op)).collect())
+    }
+}
+
 impl<T: opcode::Evaluable> Component<T> {
     /// This parses an entire script.
     ///
@@ -190,14 +197,14 @@ impl<T: opcode::Evaluable> Component<T> {
     }
 }
 
-impl Component<opcode::PossiblyBad> {
-    /// Convert a `script::FromChain` to a more restricted opcode type, erroring if it’s not
+impl<T: Into<opcode::PossiblyBad> + Clone> Component<T> {
+    /// Convert a `Component` to a more restricted opcode type, erroring if it’s not
     /// possible.
-    pub fn refine<T: opcode::Evaluable>(&self) -> Result<Component<T>, Error> {
+    pub fn refine<U: opcode::Evaluable>(&self) -> Result<Component<U>, Error> {
         self.0
             .iter()
             .cloned()
-            .map(|pb| T::restrict(pb))
+            .map(|op| U::restrict(op.into()))
             .collect::<Result<_, _>>()
             .map(Component)
     }
