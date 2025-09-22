@@ -1,6 +1,8 @@
 //! Much of the code is common between the script components, so this provides operations on
 //! iterators that can be shared.
 
+use alloc::vec::Vec;
+
 use crate::{
     interpreter, opcode,
     script::{self, Evaluable},
