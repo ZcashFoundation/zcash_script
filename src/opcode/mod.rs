@@ -4,7 +4,6 @@ pub mod push_value;
 
 use std::cmp::{max, min};
 
-use enum_primitive::FromPrimitive;
 use ripemd::Ripemd160;
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
@@ -212,7 +211,6 @@ impl From<LargeValue> for PushValue {
     }
 }
 
-enum_from_primitive! {
 /// Control operations are evaluated regardless of whether the current branch is active.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[repr(u8)]
@@ -222,9 +220,25 @@ pub enum Control {
     OP_ELSE = 0x67,
     OP_ENDIF = 0x68,
 }
-}
 
 impl Control {
+    /// Decodes this opcode from its byte encoding.
+    fn decode(b: u8) -> Option<Self> {
+        match b {
+            0x63 => Some(Self::OP_IF),
+            0x64 => Some(Self::OP_NOTIF),
+            0x67 => Some(Self::OP_ELSE),
+            0x68 => Some(Self::OP_ENDIF),
+            _ => None,
+        }
+    }
+
+    /// Returns the byte encoding of this opcode.
+    pub(crate) fn encode(self) -> u8 {
+        // This is how you get the discriminant, but using `as` everywhere is too much code smell
+        self as u8
+    }
+
     /// <expression> if [statements] [else [statements]] endif
     pub fn eval(
         &self,
@@ -259,7 +273,6 @@ impl Control {
     }
 }
 
-enum_from_primitive! {
 /// Normal operations are only executed when they are on an active branch.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[repr(u8)]
@@ -345,9 +358,85 @@ pub enum Operation {
     OP_NOP9 = 0xb8,
     OP_NOP10 = 0xb9,
 }
-}
 
 impl Operation {
+    /// Decodes this opcode from its byte encoding.
+    fn decode(b: u8) -> Option<Self> {
+        match b {
+            0x61 => Some(Self::OP_NOP),
+            0x69 => Some(Self::OP_VERIFY),
+            0x6a => Some(Self::OP_RETURN),
+            0x6b => Some(Self::OP_TOALTSTACK),
+            0x6c => Some(Self::OP_FROMALTSTACK),
+            0x6d => Some(Self::OP_2DROP),
+            0x6e => Some(Self::OP_2DUP),
+            0x6f => Some(Self::OP_3DUP),
+            0x70 => Some(Self::OP_2OVER),
+            0x71 => Some(Self::OP_2ROT),
+            0x72 => Some(Self::OP_2SWAP),
+            0x73 => Some(Self::OP_IFDUP),
+            0x74 => Some(Self::OP_DEPTH),
+            0x75 => Some(Self::OP_DROP),
+            0x76 => Some(Self::OP_DUP),
+            0x77 => Some(Self::OP_NIP),
+            0x78 => Some(Self::OP_OVER),
+            0x79 => Some(Self::OP_PICK),
+            0x7a => Some(Self::OP_ROLL),
+            0x7b => Some(Self::OP_ROT),
+            0x7c => Some(Self::OP_SWAP),
+            0x7d => Some(Self::OP_TUCK),
+            0x82 => Some(Self::OP_SIZE),
+            0x87 => Some(Self::OP_EQUAL),
+            0x88 => Some(Self::OP_EQUALVERIFY),
+            0x8b => Some(Self::OP_1ADD),
+            0x8c => Some(Self::OP_1SUB),
+            0x8f => Some(Self::OP_NEGATE),
+            0x90 => Some(Self::OP_ABS),
+            0x91 => Some(Self::OP_NOT),
+            0x92 => Some(Self::OP_0NOTEQUAL),
+            0x93 => Some(Self::OP_ADD),
+            0x94 => Some(Self::OP_SUB),
+            0x9a => Some(Self::OP_BOOLAND),
+            0x9b => Some(Self::OP_BOOLOR),
+            0x9c => Some(Self::OP_NUMEQUAL),
+            0x9d => Some(Self::OP_NUMEQUALVERIFY),
+            0x9e => Some(Self::OP_NUMNOTEQUAL),
+            0x9f => Some(Self::OP_LESSTHAN),
+            0xa0 => Some(Self::OP_GREATERTHAN),
+            0xa1 => Some(Self::OP_LESSTHANOREQUAL),
+            0xa2 => Some(Self::OP_GREATERTHANOREQUAL),
+            0xa3 => Some(Self::OP_MIN),
+            0xa4 => Some(Self::OP_MAX),
+            0xa5 => Some(Self::OP_WITHIN),
+            0xa6 => Some(Self::OP_RIPEMD160),
+            0xa7 => Some(Self::OP_SHA1),
+            0xa8 => Some(Self::OP_SHA256),
+            0xa9 => Some(Self::OP_HASH160),
+            0xaa => Some(Self::OP_HASH256),
+            0xac => Some(Self::OP_CHECKSIG),
+            0xad => Some(Self::OP_CHECKSIGVERIFY),
+            0xae => Some(Self::OP_CHECKMULTISIG),
+            0xaf => Some(Self::OP_CHECKMULTISIGVERIFY),
+            0xb0 => Some(Self::OP_NOP1),
+            0xb1 => Some(Self::OP_CHECKLOCKTIMEVERIFY),
+            0xb2 => Some(Self::OP_NOP3),
+            0xb3 => Some(Self::OP_NOP4),
+            0xb4 => Some(Self::OP_NOP5),
+            0xb5 => Some(Self::OP_NOP6),
+            0xb6 => Some(Self::OP_NOP7),
+            0xb7 => Some(Self::OP_NOP8),
+            0xb8 => Some(Self::OP_NOP9),
+            0xb9 => Some(Self::OP_NOP10),
+            _ => None,
+        }
+    }
+
+    /// Returns the byte encoding of this opcode.
+    pub(crate) fn encode(self) -> u8 {
+        // This is how you get the discriminant, but using `as` everywhere is too much code smell
+        self as u8
+    }
+
     /// Statically analyze an operation.
     ///
     /// __NB__: [`Operation::OP_RETURN`] isn’t tracked by this function. That is functionally
@@ -921,23 +1010,9 @@ impl Operation {
 impl From<&PushValue> for Vec<u8> {
     fn from(value: &PushValue) -> Self {
         match value {
-            PushValue::SmallValue(v) => vec![(*v).into()],
+            PushValue::SmallValue(v) => vec![(*v).encode()],
             PushValue::LargeValue(v) => v.into(),
         }
-    }
-}
-
-impl From<Control> for u8 {
-    fn from(value: Control) -> Self {
-        // This is how you get the discriminant, but using `as` everywhere is too much code smell
-        value as u8
-    }
-}
-
-impl From<Operation> for u8 {
-    fn from(value: Operation) -> Self {
-        // This is how you get the discriminant, but using `as` everywhere is too much code smell
-        value as u8
     }
 }
 
@@ -982,8 +1057,9 @@ impl Bad {
     }
 }
 
-impl From<u8> for Bad {
-    fn from(value: u8) -> Self {
+impl Bad {
+    /// Decodes this opcode from its byte encoding.
+    fn decode(value: u8) -> Self {
         match value {
             0x50 => Bad::OP_RESERVED,
             0x62 => Bad::OP_VER,
@@ -994,11 +1070,10 @@ impl From<u8> for Bad {
             _ => Bad::Unknown(value),
         }
     }
-}
 
-impl From<Bad> for u8 {
-    fn from(value: Bad) -> Self {
-        match value {
+    /// Returns the byte encoding of this opcode.
+    pub(crate) fn encode(self) -> u8 {
+        match self {
             Bad::OP_RESERVED => 0x50,
             Bad::OP_VER => 0x62,
             Bad::OP_VERIF => 0x65,
@@ -1034,17 +1109,17 @@ impl PossiblyBad {
                     }),
                     &[],
                 ),
-                Some((leading_byte, remaining_code)) => (
-                    Disabled::from_u8(*leading_byte).map_or(
+                Some((&leading_byte, remaining_code)) => (
+                    Disabled::decode(leading_byte).map_or(
                         Ok(
-                            if let Some(sv) = push_value::SmallValue::from_u8(*leading_byte) {
+                            if let Some(sv) = push_value::SmallValue::decode(leading_byte) {
                                 Self::from(Opcode::from(PushValue::SmallValue(sv)))
-                            } else if let Some(ctl) = Control::from_u8(*leading_byte) {
+                            } else if let Some(ctl) = Control::decode(leading_byte) {
                                 Self::from(Opcode::Control(ctl))
-                            } else if let Some(op) = Operation::from_u8(*leading_byte) {
+                            } else if let Some(op) = Operation::decode(leading_byte) {
                                 Self::from(Opcode::Operation(op))
                             } else {
-                                Self::from(Bad::from(*leading_byte))
+                                Self::from(Bad::decode(leading_byte))
                             },
                         ),
                         |disabled| Err(Error::Disabled(Some(disabled))),
@@ -1138,12 +1213,11 @@ impl From<&PossiblyBad> for Vec<u8> {
     fn from(value: &PossiblyBad) -> Self {
         match value {
             PossiblyBad::Good(opcode) => opcode.into(),
-            PossiblyBad::Bad(bad) => vec![u8::from(*bad)],
+            PossiblyBad::Bad(bad) => vec![bad.encode()],
         }
     }
 }
 
-enum_from_primitive! {
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[repr(u8)]
 pub enum Disabled {
@@ -1169,11 +1243,174 @@ pub enum Disabled {
     //crypto
     OP_CODESEPARATOR = 0xab,
 }
+
+impl Disabled {
+    /// Decodes this opcode from its byte encoding.
+    fn decode(b: u8) -> Option<Self> {
+        match b {
+            0x7e => Some(Self::OP_CAT),
+            0x7f => Some(Self::OP_SUBSTR),
+            0x80 => Some(Self::OP_LEFT),
+            0x81 => Some(Self::OP_RIGHT),
+            0x83 => Some(Self::OP_INVERT),
+            0x84 => Some(Self::OP_AND),
+            0x85 => Some(Self::OP_OR),
+            0x86 => Some(Self::OP_XOR),
+            0x8d => Some(Self::OP_2MUL),
+            0x8e => Some(Self::OP_2DIV),
+            0x95 => Some(Self::OP_MUL),
+            0x96 => Some(Self::OP_DIV),
+            0x97 => Some(Self::OP_MOD),
+            0x98 => Some(Self::OP_LSHIFT),
+            0x99 => Some(Self::OP_RSHIFT),
+            0xab => Some(Self::OP_CODESEPARATOR),
+            _ => None,
+        }
+    }
+
+    /// Returns the byte encoding of this opcode.
+    #[cfg(any(test, feature = "test-dependencies"))]
+    pub(crate) fn encode(self) -> u8 {
+        // This is how you get the discriminant, but using `as` everywhere is too much code smell
+        self as u8
+    }
 }
 
-impl From<Disabled> for u8 {
-    fn from(value: Disabled) -> Self {
-        // This is how you get the discriminant, but using `as` everywhere is too much code smell
-        value as u8
+#[cfg(test)]
+mod tests {
+    use crate::{op, Opcode};
+
+    use super::{push_value::LargeValue, Control, Disabled, Operation, PushValue, SmallValue};
+
+    #[test]
+    fn round_trip_opcode_encodings() {
+        for op in [
+            op::_0,
+            op::_1NEGATE,
+            op::_1,
+            op::_2,
+            op::_3,
+            op::_4,
+            op::_5,
+            op::_6,
+            op::_7,
+            op::_8,
+            op::_9,
+            op::_10,
+            op::_11,
+            op::_12,
+            op::_13,
+            op::_14,
+            op::_15,
+            op::_16,
+            op::NOP,
+            op::IF,
+            op::NOTIF,
+            op::ELSE,
+            op::ENDIF,
+            op::VERIFY,
+            op::RETURN,
+            op::TOALTSTACK,
+            op::FROMALTSTACK,
+            op::_2DROP,
+            op::_2DUP,
+            op::_3DUP,
+            op::_2OVER,
+            op::_2ROT,
+            op::_2SWAP,
+            op::IFDUP,
+            op::DEPTH,
+            op::DROP,
+            op::DUP,
+            op::NIP,
+            op::OVER,
+            op::PICK,
+            op::ROLL,
+            op::ROT,
+            op::SWAP,
+            op::TUCK,
+            op::SIZE,
+            op::EQUAL,
+            op::EQUALVERIFY,
+            op::_1ADD,
+            op::_1SUB,
+            op::NEGATE,
+            op::ABS,
+            op::NOT,
+            op::_0NOTEQUAL,
+            op::ADD,
+            op::SUB,
+            op::BOOLAND,
+            op::BOOLOR,
+            op::NUMEQUAL,
+            op::NUMEQUALVERIFY,
+            op::NUMNOTEQUAL,
+            op::LESSTHAN,
+            op::GREATERTHAN,
+            op::LESSTHANOREQUAL,
+            op::GREATERTHANOREQUAL,
+            op::MIN,
+            op::MAX,
+            op::WITHIN,
+            op::RIPEMD160,
+            op::SHA1,
+            op::SHA256,
+            op::HASH160,
+            op::HASH256,
+            op::CHECKSIG,
+            op::CHECKSIGVERIFY,
+            op::CHECKMULTISIG,
+            op::CHECKMULTISIGVERIFY,
+            op::NOP1,
+            op::CHECKLOCKTIMEVERIFY,
+            op::NOP3,
+            op::NOP4,
+            op::NOP5,
+            op::NOP6,
+            op::NOP7,
+            op::NOP8,
+            op::NOP9,
+            op::NOP10,
+        ] {
+            match op {
+                Opcode::PushValue(pv) => match pv {
+                    PushValue::SmallValue(sv) => {
+                        assert_eq!(SmallValue::decode(sv.encode()), Some(sv));
+                    }
+                    // LargeValues don't encode to a single opcode.
+                    PushValue::LargeValue(lv) => {
+                        assert_eq!(LargeValue::from_slice(&Vec::from(&lv)), Some(lv));
+                    }
+                },
+                Opcode::Control(control) => {
+                    assert_eq!(Control::decode(control.encode()), Some(control));
+                }
+                Opcode::Operation(operation) => {
+                    assert_eq!(Operation::decode(operation.encode()), Some(operation));
+                }
+            }
+        }
+
+        // Disabled opcodes are not valid `Opcode`s.
+        for op in [
+            Disabled::OP_CAT,
+            Disabled::OP_SUBSTR,
+            Disabled::OP_LEFT,
+            Disabled::OP_RIGHT,
+            Disabled::OP_INVERT,
+            Disabled::OP_AND,
+            Disabled::OP_OR,
+            Disabled::OP_XOR,
+            Disabled::OP_2MUL,
+            Disabled::OP_2DIV,
+            Disabled::OP_MUL,
+            Disabled::OP_DIV,
+            Disabled::OP_MOD,
+            Disabled::OP_LSHIFT,
+            Disabled::OP_RSHIFT,
+            Disabled::OP_CODESEPARATOR,
+        ] {
+            assert_eq!(Disabled::decode(op.encode()), Some(op));
+        }
     }
 }
