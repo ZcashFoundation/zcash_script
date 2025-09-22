@@ -331,8 +331,8 @@ impl Code {
     /// CHECKMULTISIGs serialized in script_sigs are
     /// counted more accurately, assuming they are of the form
     ///  ... OP_N CHECKMULTISIG ...
-    pub fn get_sig_op_count(&self, accurate: bool) -> u32 {
-        iter::get_sig_op_count(self.parse(), accurate)
+    pub fn sig_op_count(&self, accurate: bool) -> u32 {
+        iter::sig_op_count(self.parse(), accurate)
     }
 }
 

@@ -1,12 +1,9 @@
 //! Much of the code is common between the script components, so this provides operations on
 //! iterators that can be shared.
 
-use core::iter;
-
 use crate::{
     interpreter, opcode,
     script::{self, Evaluable},
-    Opcode,
 };
 
 /// Evaluate an entire script.
@@ -104,41 +101,18 @@ pub fn eval<T: Into<opcode::PossiblyBad> + opcode::Evaluable + Clone>(
 /// Pre-version-0.6, Bitcoin always counted CHECKMULTISIGs as 20 sigops. With pay-to-script-hash,
 /// that changed: CHECKMULTISIGs serialized in script_sigs are counted more accurately, assuming
 /// they are of the form ... OP_N CHECKMULTISIG ...
-pub fn get_sig_op_count<T: Into<opcode::PossiblyBad>>(
-    iter: impl Iterator<Item = Result<T, opcode::Error>> + Copy,
+pub fn sig_op_count<T: Into<opcode::PossiblyBad> + opcode::Evaluable>(
+    mut iter: impl Iterator<Item = Result<T, opcode::Error>>,
     accurate: bool,
 ) -> u32 {
-    iter::once(Ok(None))
-        .chain(iter.map(|r| r.map(Some)))
-        .zip(iter)
-        .map(|ops| match ops {
-            (Ok(last_opcode), Ok(opcode)) => match opcode.into() {
-                opcode::PossiblyBad::Good(Opcode::Operation(op)) => match op {
-                    opcode::Operation::OP_CHECKSIG | opcode::Operation::OP_CHECKSIGVERIFY => 1,
-                    opcode::Operation::OP_CHECKMULTISIG
-                    | opcode::Operation::OP_CHECKMULTISIGVERIFY => {
-                        match last_opcode.map(|op| op.into()) {
-                            Some(opcode::PossiblyBad::Good(Opcode::PushValue(
-                                opcode::PushValue::SmallValue(sv),
-                            )))
-                                // Even with an accurate count, 0 keys is counted as 20 for some
-                                // reason.
-                                if accurate && opcode::push_value::SmallValue::OP_1 <= sv => {
-                                    u32::try_from(sv.to_num()).expect("`sv` is positive")
-                                }
-                            // Apparently it’s too much work to figure out if it’s one of the few
-                            // `LargeValue`s that’s valid, so we assume the worst.
-                            Some(_) => u32::from(interpreter::MAX_PUBKEY_COUNT),
-                            // We’re at the beginning of the script pubkey, so any pubkey count must
-                            // be part of the script sig – assume the worst.
-                            None => u32::from(interpreter::MAX_PUBKEY_COUNT),
-                        }
-                    }
-                    _ => 0,
-                },
-                _ => 0,
-            },
-            (_, _) => 0,
+    iter.try_fold((0, None), |(sum, last_opcode), opcode| {
+        opcode.map_err(|_| sum).map(|op| {
+            (
+                sum + op.sig_op_count(last_opcode),
+                if accurate { Some(op.into()) } else { None },
+            )
         })
-        .sum()
+    })
+    .map(|(sum, _)| sum)
+    .unwrap_or_else(|x| x)
 }

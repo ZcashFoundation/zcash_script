@@ -150,6 +150,13 @@ impl opcode::Evaluable for Opcode {
             _ => Err(script::Error::SigPushOnly),
         }
     }
+
+    fn sig_op_count(&self, last_opcode: Option<opcode::PossiblyBad>) -> u32 {
+        match self {
+            Self::Operation(op) => op.sig_op_count(last_opcode),
+            _ => 0,
+        }
+    }
 }
 
 impl From<opcode::PushValue> for Opcode {
@@ -831,7 +838,7 @@ mod tests {
                         )
                         .map_err(|(t, e)| (Some(t), Error::from(e)))
                 },
-                &|pubkey| Ok(pubkey.get_sig_op_count(false)),
+                &|pubkey| Ok(pubkey.sig_op_count(false)),
             )
         }
     }

@@ -63,6 +63,11 @@ pub trait Evaluable {
     ) -> Result<interpreter::State, interpreter::Error>;
 
     fn extract_push_value(&self) -> Result<&PushValue, script::Error>;
+
+    /// Upper bound on the signature operations performed by this opcode. In the case of
+    /// `OP_CHECKMULTISIG*`, it looks at the previous opcode (if provided) to possibly return a more
+    /// accurate bound.
+    fn sig_op_count(&self, last_opcode: Option<PossiblyBad>) -> u32;
 }
 
 /// Opcodes that represent constants to be pushed onto the stack.
@@ -179,6 +184,10 @@ impl Evaluable for PushValue {
 
     fn extract_push_value(&self) -> Result<&PushValue, script::Error> {
         Ok(self)
+    }
+
+    fn sig_op_count(&self, _last_opcode: Option<PossiblyBad>) -> u32 {
+        0
     }
 }
 
@@ -357,6 +366,28 @@ impl Operation {
             }
 
             _ => Ok(()),
+        }
+    }
+
+    pub fn sig_op_count(&self, last_opcode: Option<PossiblyBad>) -> u32 {
+        match self {
+            Self::OP_CHECKSIG | Self::OP_CHECKSIGVERIFY => 1,
+            Self::OP_CHECKMULTISIG | Self::OP_CHECKMULTISIGVERIFY => {
+                match last_opcode {
+                    // Even with an accurate count, 0 keys is counted as 20 for some reason.
+                    Some(PossiblyBad::Good(Opcode::PushValue(PushValue::SmallValue(sv))))
+                        if push_value::SmallValue::OP_1 <= sv =>
+                    {
+                        u32::try_from(sv.to_num()).expect("`sv` is positive")
+                    }
+                    // Apparently it’s too much work to figure out if it’s one of the few
+                    // `LargeValue`s that’s valid, so we assume the worst.
+                    Some(_) => u32::from(interpreter::MAX_PUBKEY_COUNT),
+                    // We don’t know what the previous opcode could be – assume the worst.
+                    None => u32::from(interpreter::MAX_PUBKEY_COUNT),
+                }
+            }
+            _ => 0,
         }
     }
 
@@ -1065,6 +1096,13 @@ impl Evaluable for PossiblyBad {
                 Some(self.clone()),
                 interpreter::Error::BadOpcode,
             )),
+        }
+    }
+
+    fn sig_op_count(&self, last_opcode: Option<PossiblyBad>) -> u32 {
+        match self {
+            Self::Good(op) => op.sig_op_count(last_opcode),
+            Self::Bad(_) => 0,
         }
     }
 }
