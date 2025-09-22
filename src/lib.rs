@@ -79,6 +79,30 @@ impl Opcode {
             Opcode::Control(_) => Ok(()),
         }
     }
+}
+
+impl opcode::Evaluable for Opcode {
+    fn byte_len(&self) -> usize {
+        match self {
+            Opcode::PushValue(pv) => pv.byte_len(),
+            Opcode::Control(_) => 1,
+            Opcode::Operation(_) => 1,
+        }
+    }
+
+    fn to_bytes(&self) -> Vec<u8> {
+        Vec::<u8>::from(self)
+    }
+
+    fn restrict(pb: opcode::PossiblyBad) -> Result<Self, script::Error> {
+        match pb {
+            opcode::PossiblyBad::Good(op) => Ok(op),
+            opcode::PossiblyBad::Bad(_) => Err(script::Error::Interpreter(
+                Some(pb),
+                interpreter::Error::BadOpcode,
+            )),
+        }
+    }
 
     fn eval(
         &self,
@@ -88,19 +112,19 @@ impl Opcode {
         mut state: interpreter::State,
     ) -> Result<interpreter::State, interpreter::Error> {
         match self {
-            Opcode::PushValue(pv) => {
+            Self::PushValue(pv) => {
                 if interpreter::should_exec(&state.vexec) {
-                    state.stack =
-                        pv.eval(flags.contains(interpreter::Flags::MinimalData), state.stack)?;
+                    pv.eval(flags, script, checker, state)
+                } else {
+                    Ok(state)
                 }
-                Ok(state)
             }
-            Opcode::Control(control) => {
+            Self::Control(control) => {
                 state.increment_op_count(1)?;
                 (state.stack, state.vexec) = control.eval(state.stack, state.vexec)?;
                 Ok(state)
             }
-            Opcode::Operation(normal) => {
+            Self::Operation(normal) => {
                 state.increment_op_count(1)?;
                 if interpreter::should_exec(&state.vexec) {
                     normal.eval(flags, script, checker, state)
@@ -118,6 +142,20 @@ impl Opcode {
                 Ok(final_state)
             }
         })
+    }
+
+    fn extract_push_value(&self) -> Result<&opcode::PushValue, script::Error> {
+        match self {
+            Self::PushValue(pv) => Ok(pv),
+            _ => Err(script::Error::SigPushOnly),
+        }
+    }
+
+    fn sig_op_count(&self, last_opcode: Option<opcode::PossiblyBad>) -> u32 {
+        match self {
+            Self::Operation(op) => op.sig_op_count(last_opcode),
+            _ => 0,
+        }
     }
 }
 
@@ -146,6 +184,32 @@ impl From<&Opcode> for Vec<u8> {
             Opcode::Control(v) => vec![(*v).into()],
             Opcode::Operation(v) => vec![(*v).into()],
         }
+    }
+}
+
+/// A Zcash script consists of a sig and a pubkey. The first type parameter is the type of opcodes
+/// in the script sig, and the second is the type of opcodes in the script pubkey.
+///
+/// - Script<opcode::PossiblyBad, opcode::PossiblyBad> – from the chain
+/// - Script<opcode::PushValue, Opcode> – authoring sig_push_only
+/// - Script<Opcode, Opcode> – authoring non-sig_push_only
+pub struct Script<Sig = opcode::PushValue, PubKey = Opcode> {
+    sig: script::Component<Sig>,
+    pub_key: script::Component<PubKey>,
+}
+
+impl<
+        Sig: Into<opcode::PossiblyBad> + opcode::Evaluable + Clone,
+        PubKey: Into<opcode::PossiblyBad> + opcode::Evaluable + Clone,
+    > Script<Sig, PubKey>
+{
+    /// Evaluate an entire script.
+    pub fn eval(
+        &self,
+        flags: interpreter::Flags,
+        checker: &dyn interpreter::SignatureChecker,
+    ) -> Result<bool, (script::ComponentType, script::Error)> {
+        script::iter::eval_script(&self.sig, &self.pub_key, flags, checker)
     }
 }
 
@@ -313,7 +377,7 @@ extern "C" fn sighash_callback(
     // And we don’t have access to the flags here to determine if it should be checked.
     if let Some(sighash) = HashType::from_bits(hash_type, false)
         .ok()
-        .and_then(|ht| callback(&script::Code(script_code_vec), &ht))
+        .and_then(|ht| callback(&script::Code(script_code_vec.to_vec()), &ht))
     {
         assert_eq!(sighash_out_len, sighash.len().try_into().unwrap());
         // SAFETY: `sighash_out` is a valid buffer created in
@@ -483,11 +547,12 @@ pub mod testing {
     use crate::{
         interpreter,
         pattern::*,
-        pv, script,
+        pv,
+        script::{self, Evaluable},
         signature::HashType,
         test_vectors::TestVector,
         zcash_script::{AnnError, Error},
-        Opcode,
+        Opcode, Script,
     };
     use hex::FromHex;
 
@@ -508,26 +573,29 @@ pub mod testing {
 
     lazy_static::lazy_static! {
         /// The P2SH redeem script used for the static test case.
-        pub static ref REDEEM_SCRIPT: Vec<Opcode> = check_multisig(
+        pub static ref REDEEM_SCRIPT: script::Redeem = script::Component(check_multisig(
             2,
             &[
                 &<[u8; 0x21]>::from_hex("03b2cc71d23eb30020a4893982a1e2d352da0d20ee657fa02901c432758909ed8f").expect("valid key"),
                 &<[u8; 0x21]>::from_hex("029d1e9a9354c0d2aee9ffd0f0cea6c39bbf98c4066cf143115ba2279d0ba7dabe").expect("valid key"),
                 &<[u8; 0x21]>::from_hex("03e32096b63fd57f3308149d238dcbb24d8d28aad95c0e4e74e3e5e6a11b61bcc4").expect("valid key")
             ],
-            false).expect("all keys are valid and there’s not more than 20 of them");
+            false).expect("all keys are valid and there’s not more than 20 of them"));
         /// The scriptPubkey used for the static test case.
-        pub static ref SCRIPT_PUBKEY: Vec<u8> = script::Code::serialize(&pay_to_script_hash(&REDEEM_SCRIPT));
+        pub static ref SCRIPT_PUBKEY: script::PubKey = script::Component(pay_to_script_hash(&REDEEM_SCRIPT));
         /// The scriptSig used for the static test case.
-        pub static ref SCRIPT_SIG: Vec<u8> = script::Code::serialize(&[
+        pub static ref SCRIPT_SIG: script::Sig = script::Component(vec![
             push_num(0),
             pv::push_value(&<[u8; 0x48]>::from_hex("3045022100d2ab3e6258fe244fa442cfb38f6cef9ac9a18c54e70b2f508e83fa87e20d040502200eead947521de943831d07a350e45af8e36c2166984a8636f0a8811ff03ed09401").expect("valid sig")).expect("fits into a PushValue"),
             pv::push_value(&<[u8; 0x47]>::from_hex("3044022013e15d865010c257eef133064ef69a780b4bc7ebe6eda367504e806614f940c3022062fdbc8c2d049f91db2042d6c9771de6f1ef0b3b1fea76c1ab5542e44ed29ed801").expect("valid sig")).expect("fits into a PushValue"),
             push_script(&REDEEM_SCRIPT).expect("fits into a PushValue"),
-        ].map(Opcode::PushValue));
+        ]);
         /// The combined script used for the static test case.
-        pub static ref SCRIPT: script::Raw<'static> =
-            script::Raw::from_raw_parts(&SCRIPT_SIG, &SCRIPT_PUBKEY);
+        pub static ref SCRIPT: script::Raw =
+            script::Raw::from_raw_parts(SCRIPT_SIG.to_bytes(), SCRIPT_PUBKEY.to_bytes());
+        /// The same script as `SCRIPT`, but using the “authoring” types.
+        pub static ref AUTHORED_SCRIPT: Script =
+            Script{ sig : SCRIPT_SIG.clone(), pub_key : SCRIPT_PUBKEY.clone() };
     }
 
     /// The correct sighash for the static test case.
@@ -618,9 +686,10 @@ mod tests {
     };
     use crate::{
         interpreter::{self, CallbackTransactionSignatureChecker},
-        script,
+        script, Script,
     };
 
+    #[cfg(feature = "signature-validation")]
     #[test]
     fn it_works() {
         let lock_time: u32 = 2410374;
@@ -722,6 +791,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "signature-validation")]
     #[test]
     fn test_vectors_for_rust() {
         for tv in test_vectors() {
@@ -748,6 +818,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "signature-validation")]
     #[test]
     fn test_vectors_for_pure_rust() {
         for tv in test_vectors() {
@@ -766,7 +837,7 @@ mod tests {
                         )
                         .map_err(|(t, e)| (Some(t), Error::from(e)))
                 },
-                &|pubkey| Ok(pubkey.get_sig_op_count(false)),
+                &|pubkey| Ok(pubkey.sig_op_count(false)),
             )
         }
     }
@@ -776,6 +847,7 @@ mod tests {
             cases: 20_000, .. ProptestConfig::default()
         })]
 
+        #[cfg(feature = "signature-validation")]
         #[test]
         fn test_arbitrary_scripts(
             lock_time in prop::num::u32::ANY,
@@ -785,7 +857,7 @@ mod tests {
             flag_bits in prop::bits::u32::masked(interpreter::Flags::all().bits()),
         ) {
             let flags = repair_flags(interpreter::Flags::from_bits_truncate(flag_bits));
-            let script = script::Raw::from_raw_parts(&sig, &pub_key);
+            let script = script::Raw::from_raw_parts(sig, pub_key);
             let ret = check_verify_callback(
                 &CxxInterpreter {
                     sighash: &sighash,
@@ -811,6 +883,58 @@ mod tests {
             );
         }
 
+        #[test]
+        /// These tests are more subtle than the others, because while the implementations should
+        /// always succeed or fail in the same cases, they don’t always fail the same way. See the
+        /// comments in the definition for details.
+        fn test_arbitrary_scripts_new_api(
+            lock_time in prop::num::u32::ANY,
+            is_final in prop::bool::ANY,
+            pub_key_ in prop::collection::vec(0..=0xffu8, 0..=OVERFLOW_SCRIPT_SIZE),
+            sig_ in prop::collection::vec(0..=0xffu8, 1..=OVERFLOW_SCRIPT_SIZE),
+            flag_bits in prop::bits::u32::masked(interpreter::Flags::all().bits()),
+        ) {
+            let flags = repair_flags(interpreter::Flags::from_bits_truncate(flag_bits));
+            let script = script::Raw::from_raw_parts(sig_.clone(), pub_key_.clone());
+            let cxx_ret = CxxInterpreter {
+                    sighash: &sighash,
+                    lock_time,
+                    is_final,
+            }.verify_callback(&script, flags);
+            match (script::Code(sig_).to_component(), script::Code(pub_key_).to_component()) {
+                // Parsing of the script components succeeded, so we can evaluate & compare as
+                // normal.
+                (Ok(sig), Ok(pub_key)) => {
+                    let rust_ret = Script {sig, pub_key}.eval(flags, &CallbackTransactionSignatureChecker {
+                        sighash: &sighash,
+                        lock_time: lock_time.into(),
+                        is_final,
+                    });
+                    prop_assert_eq!(
+                        cxx_ret.clone().map_err(normalize_err),
+                        rust_ret.clone().map_err(|(_, e)| Error::Script(e).normalize()),
+                        "\n• original Rust result: {:?}\n• parsed script: {:?}",
+                        rust_ret,
+                        annotate_script(&script, &flags)
+                    )
+                }
+                // Parsing of at least one script component failed. This checks that C++ evaluation
+                // also failed. If the C++ failure was also a parse failure, it compares them as
+                // normal.
+                (Err(oerr), _) | (Ok(_), Err(oerr)) => {
+                    if matches!(cxx_ret, Ok(_) | Err((_, Error::Script(script::Error::Opcode(_))))) {
+                        let rust_ret = Err(Error::Script(script::Error::Opcode(oerr)));
+                        prop_assert_eq!(
+                            cxx_ret.clone().map_err(normalize_err),
+                            rust_ret.clone().map_err(|e| e.normalize()),
+                            "\n• original Rust result: {:?}\n• parsed script: {:?}",
+                            rust_ret,
+                            annotate_script(&script, &flags),
+                        )
+                    }
+                }
+            }
+        }
         /// Similar to `test_arbitrary_scripts`, but ensures the `sig` only contains pushes.
         #[test]
         fn test_restricted_sig_scripts(
@@ -824,7 +948,7 @@ mod tests {
         ) {
             let flags = repair_flags(interpreter::Flags::from_bits_truncate(flag_bits))
                 | interpreter::Flags::SigPushOnly;
-            let script = script::Raw::from_raw_parts(&sig, &pub_key);
+            let script = script::Raw::from_raw_parts(sig, pub_key);
             let ret = check_verify_callback(
                 &CxxInterpreter {
                     sighash: &sighash,

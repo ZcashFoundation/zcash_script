@@ -1,19 +1,14 @@
 //! Managing sequences of opcodes.
 
-use std::iter;
-
 use thiserror::Error;
 
 use crate::{
     interpreter, op,
-    opcode::{
-        self,
-        push_value::{LargeValue::*, SmallValue::*},
-        Operation::*,
-        PushValue,
-    },
+    opcode::{self, push_value::LargeValue::*, Operation::*, PushValue},
     signature, Opcode,
 };
+
+pub(crate) mod iter;
 
 /// Errors that can occur during script verification.
 #[allow(missing_docs)]
@@ -46,6 +41,9 @@ pub enum Error {
 
     #[error("{} closed before the end of the script", match .0 { 1 => "1 conditional opcode wasn’t", n => "{n} conditional opcodes weren’t"})]
     UnclosedConditional(usize),
+
+    #[error("the script is P2SH, but there was no redeem script left on the stack")]
+    MissingRedeemScript,
 
     #[error("clean stack requirement not met")]
     CleanStack,
@@ -104,6 +102,9 @@ impl Error {
             Self::UnclosedConditional(_) => {
                 Self::Interpreter(None, interpreter::Error::UnbalancedConditional)
             }
+            Self::MissingRedeemScript => {
+                Self::Interpreter(None, interpreter::Error::InvalidStackOperation(None))
+            }
             _ => self.clone(),
         }
     }
@@ -112,6 +113,142 @@ impl Error {
 impl From<opcode::Error> for Error {
     fn from(value: opcode::Error) -> Self {
         Error::Opcode(value)
+    }
+}
+
+/// Evaluation functions for script components.
+pub trait Evaluable {
+    /// Get the byte length of this script sig.
+    fn byte_len(&self) -> usize;
+
+    /// Convert a sequence of `Opcode`s to the bytes that would be included in a transaction.
+    fn to_bytes(&self) -> Vec<u8>;
+
+    /// Evaluate this script component.
+    fn eval(
+        &self,
+        flags: interpreter::Flags,
+        checker: &dyn interpreter::SignatureChecker,
+        stack: interpreter::Stack<Vec<u8>>,
+    ) -> Result<interpreter::Stack<Vec<u8>>, Error>;
+
+    /// Returns true iff this script is P2SH.
+    fn is_pay_to_script_hash(&self) -> bool;
+
+    /// Called by `IsStandardTx` and P2SH/BIP62 VerifyScript (which makes it consensus-critical).
+    fn is_push_only(&self) -> bool;
+}
+
+/// A script component is used as either the script sig or script pubkey in a script. Depending on
+/// `T` (which generally needs an `opcode::Evaluable` instance), it has different properties:
+///
+/// - `PossiblyBad` – used for scripts that need to go through consensus-compatible verification
+///   (that is, read from the chain)
+/// - `Opcode` – used for script pubkey and non-push-only script sigs that are authored to be placed
+///   on the chain
+/// - `PushValue` – used for push-only script sigs that are authored to be placed on the chain
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Component<T>(pub Vec<T>);
+
+/// A script sig has only `PushValue` elements.
+pub type Sig = Component<PushValue>;
+
+/// A script pubkey has any `Opcode`.
+pub type PubKey = Component<Opcode>;
+
+/// A redeem script has any `Opcode`.
+pub type Redeem = Component<Opcode>;
+
+/// A script component (sig or pubkey) that came from the chain.
+///
+/// This is used to preserve particular bits that authored scripts don’t allow.
+///
+/// **NB**: `Code(script_bytes).to_component().map_err(Error::Opcode).and_then(Component::eval))`
+///         has the same _semantics_ as `Code(script_bytes).eval(_)`, but it won’t have the same
+///         error message because `to_component` will return a parse error anywhere in the script
+///         before `Component::eval` is called, while `Code::eval` interleaves the parsing and
+///         evaluation, like the C++ implementation.
+///
+/// Unlike `Raw`, this allows the chain data to be combined with authored data in, for example,
+/// `Script<opcode::PushValue, opcode::PossiblyBad>`, which can then be evaluated holistically.
+pub type FromChain = Component<opcode::PossiblyBad>;
+
+impl<T: opcode::Evaluable> Component<T> {
+    /// This parses an entire script.
+    ///
+    /// **NB**: If `T` is not `opcode::PossiblyBad`, this is stricter than the incremental parsing
+    ///         that is done during `verify_script`, because it fails on unknown opcodes no matter
+    ///         where they occur (when normally they only fail if they would be evaluated).
+    pub fn parse(raw_script: &Code) -> Result<Self, Error> {
+        raw_script
+            .parse()
+            .map(|mpb| mpb.map_err(Error::Opcode).and_then(T::restrict))
+            .collect::<Result<_, _>>()
+            .map(Component)
+    }
+}
+
+impl<T: Into<opcode::PossiblyBad> + opcode::Evaluable + Clone> Evaluable for Component<T> {
+    fn byte_len(&self) -> usize {
+        self.0.iter().map(T::byte_len).sum()
+    }
+
+    /// Convert a sequence of `Opcode`s to the bytes that would be included in a transaction.
+    fn to_bytes(&self) -> Vec<u8> {
+        self.0.iter().flat_map(|elem| elem.to_bytes()).collect()
+    }
+
+    fn eval(
+        &self,
+        flags: interpreter::Flags,
+        checker: &dyn interpreter::SignatureChecker,
+        stack: interpreter::Stack<Vec<u8>>,
+    ) -> Result<interpreter::Stack<Vec<u8>>, Error> {
+        // There's a limit on how large scripts can be.
+        match self.byte_len() {
+            ..=Code::MAX_SIZE => iter::eval(
+                self.0.iter().cloned().map(Ok),
+                flags,
+                &Code(self.to_bytes()),
+                stack,
+                checker,
+            ),
+            n => Err(Error::ScriptSize(Some(n))),
+        }
+    }
+
+    /// Returns true iff this script is P2SH.
+    fn is_pay_to_script_hash(&self) -> bool {
+        match &self
+            .0
+            .iter()
+            .map(|op| op.clone().into())
+            .collect::<Vec<_>>()[..]
+        {
+            [opcode::PossiblyBad::Good(Opcode::Operation(OP_HASH160)), opcode::PossiblyBad::Good(Opcode::PushValue(PushValue::LargeValue(
+                PushdataBytelength(v),
+            ))), opcode::PossiblyBad::Good(Opcode::Operation(OP_EQUAL))] => v.len() == 0x14,
+            _ => false,
+        }
+    }
+
+    /// Called by `IsStandardTx` and P2SH/BIP62 VerifyScript (which makes it consensus-critical).
+    fn is_push_only(&self) -> bool {
+        self.0.iter().all(|op| {
+            matches!(
+                op.extract_push_value(),
+                Ok(_)
+                    | Err(
+                        // NB: The C++ impl only checks the push size during interpretation, so
+                        // we need to pass this check for too-big `PushValue`s.
+                        Error::Opcode(opcode::Error::PushSize(_))
+                            | Error::Interpreter(
+                                Some(opcode::PossiblyBad::Bad(opcode::Bad::OP_RESERVED)),
+                                interpreter::Error::BadOpcode
+                            )
+                    )
+            )
+        })
     }
 }
 
@@ -146,9 +283,9 @@ pub enum ComponentType {
 
 /// Serialized script, used inside transaction inputs and outputs
 #[derive(Clone, Debug)]
-pub struct Code<'a>(pub &'a [u8]);
+pub struct Code(pub Vec<u8>);
 
-impl Code<'_> {
+impl Code {
     /// Maximum script length in bytes
     pub const MAX_SIZE: usize = 10_000;
 
@@ -179,7 +316,12 @@ impl Code<'_> {
 
     /// Produce an [`Opcode`] iterator from [`Code`].
     pub fn parse(&self) -> Parser<'_> {
-        Parser(self.0)
+        Parser(&self.0)
+    }
+
+    /// Convert this into a `Component`, which can then be combined in authored scripts in `Script`.
+    pub fn to_component(&self) -> Result<Component<opcode::PossiblyBad>, opcode::Error> {
+        self.parse().collect::<Result<_, _>>().map(Component)
     }
 
     /// Convert a sequence of `Opcode`s to the bytes that would be included in a transaction.
@@ -187,91 +329,54 @@ impl Code<'_> {
         script.iter().flat_map(Vec::from).collect()
     }
 
-    /// This should behave the same as `interpreter::eval_script`.
-    pub fn eval(
-        &self,
-        flags: interpreter::Flags,
-        checker: &dyn interpreter::SignatureChecker,
-        stack: interpreter::Stack<Vec<u8>>,
-    ) -> Result<interpreter::Stack<Vec<u8>>, Error> {
-        // There's a limit on how large scripts can be.
-        if self.0.len() <= Code::MAX_SIZE {
-            self.parse()
-                .try_fold(interpreter::State::initial(stack), |state, mpb| {
-                    mpb.map_err(Error::Opcode).and_then(|opcode| {
-                        opcode
-                            .eval(self, flags, checker, state)
-                            .map_err(|e| Error::Interpreter(Some(opcode), e))
-                    })
-                })
-                .and_then(|final_state| {
-                    if !final_state.vexec().is_empty() {
-                        Err(Error::UnclosedConditional(final_state.vexec().len()))
-                    } else {
-                        Ok(final_state.stack)
-                    }
-                })
-        } else {
-            Err(Error::ScriptSize(Some(self.0.len())))
-        }
-    }
-
     /// Pre-version-0.6, Bitcoin always counted CHECKMULTISIGs
     /// as 20 sigops. With pay-to-script-hash, that changed:
     /// CHECKMULTISIGs serialized in script_sigs are
     /// counted more accurately, assuming they are of the form
     ///  ... OP_N CHECKMULTISIG ...
-    pub fn get_sig_op_count(&self, accurate: bool) -> u32 {
-        let parser = self.parse();
-        match iter::once(Ok(None))
-            .chain(parser.map(|r| r.map(Some)))
-            .zip(parser)
-            .try_fold(0, |n, ops| match ops {
-                (Ok(last_opcode), Ok(opcode)) => Ok(n + match opcode {
-                    opcode::PossiblyBad::Good(Opcode::Operation(op)) => match op {
-                        OP_CHECKSIG | OP_CHECKSIGVERIFY => 1,
-                        OP_CHECKMULTISIG | OP_CHECKMULTISIGVERIFY => match last_opcode {
-                            Some(opcode::PossiblyBad::Good(Opcode::PushValue(
-                                opcode::PushValue::SmallValue(sv),
-                            )))
-                                // Even with an accurate count, 0 keys is counted as 20 for some
-                                // reason.
-                                if accurate && OP_1 <= sv => {
-                                    u32::try_from(sv.to_num()).expect("`sv` is positive")
-                                }
-                            // Apparently it’s too much work to figure out if it’s one of the few
-                            // `LargeValue`s that’s valid, so we assume the worst.
-                            Some(_) => u32::from(interpreter::MAX_PUBKEY_COUNT),
-                            // We’re at the beginning of the script pubkey, so any pubkey count must
-                            // be part of the script sig – assume the worst.
-                            None => u32::from(interpreter::MAX_PUBKEY_COUNT),
-                        },
-                        _ => 0,
-                    },
-                    _ => 0,
-                }),
-                (_, _) => Err(n),
-            }) {
-            Err(n) => n,
-            Ok(n) => n,
+    pub fn sig_op_count(&self, accurate: bool) -> u32 {
+        iter::sig_op_count(self.parse(), accurate)
+    }
+}
+
+impl Evaluable for Code {
+    /// Get the byte length of this script sig.
+    fn byte_len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Convert a sequence of `Opcode`s to the bytes that would be included in a transaction.
+    fn to_bytes(&self) -> Vec<u8> {
+        self.0.clone()
+    }
+
+    fn eval(
+        &self,
+        flags: interpreter::Flags,
+        checker: &dyn interpreter::SignatureChecker,
+        stack: interpreter::Stack<Vec<u8>>,
+    ) -> Result<interpreter::Stack<Vec<u8>>, Error> {
+        match self.byte_len() {
+            ..=Code::MAX_SIZE => iter::eval(
+                self.parse().map(|res| res.map_err(Error::Opcode)),
+                flags,
+                self,
+                stack,
+                checker,
+            ),
+            n => Err(Error::ScriptSize(Some(n))),
         }
     }
 
     /// Returns true iff this script is P2SH.
-    pub fn is_pay_to_script_hash(&self) -> bool {
+    fn is_pay_to_script_hash(&self) -> bool {
         self.parse_strict(&interpreter::Flags::all())
             .collect::<Result<Vec<_>, _>>()
-            .map_or(false, |ops| match &ops[..] {
-                [ Opcode::Operation(OP_HASH160),
-                  Opcode::PushValue(PushValue::LargeValue(PushdataBytelength(v))),
-                  Opcode::Operation(OP_EQUAL)
-                ] => v.len() == 0x14,
-                _ => false
-            })
+            .map_or(false, |ops| Component(ops).is_pay_to_script_hash())
     }
 
     /// Called by `IsStandardTx` and P2SH/BIP62 VerifyScript (which makes it consensus-critical).
-    pub fn is_push_only(&self) -> bool {
+    fn is_push_only(&self) -> bool {
         self.parse().all(|op| {
             matches!(
                 op,
@@ -286,16 +391,16 @@ impl Code<'_> {
 }
 
 /// A script represented by two byte sequences – one is the sig, the other is the pubkey.
-pub struct Raw<'a> {
+pub struct Raw {
     /// The script signature from the spending transaction.
-    pub sig: Code<'a>,
+    pub sig: Code,
     /// The script pubkey from the funding transaction.
-    pub pub_key: Code<'a>,
+    pub pub_key: Code,
 }
 
-impl<'a> Raw<'a> {
+impl Raw {
     /// Create a [`Raw`] script from the slices extracted from transactions.
-    pub fn from_raw_parts(sig: &'a [u8], pub_key: &'a [u8]) -> Self {
+    pub fn from_raw_parts(sig: Vec<u8>, pub_key: Vec<u8>) -> Self {
         Raw {
             sig: Code(sig),
             pub_key: Code(pub_key),
@@ -313,72 +418,6 @@ impl<'a> Raw<'a> {
         flags: interpreter::Flags,
         checker: &dyn interpreter::SignatureChecker,
     ) -> Result<bool, (ComponentType, Error)> {
-        if flags.contains(interpreter::Flags::SigPushOnly) && !self.sig.is_push_only() {
-            Err((ComponentType::Sig, Error::SigPushOnly))
-        } else {
-            let data_stack = self
-                .sig
-                .eval(flags, checker, interpreter::Stack::new())
-                .map_err(|e| (ComponentType::Sig, e))?;
-            let pub_key_stack = self
-                .pub_key
-                .eval(flags, checker, data_stack.clone())
-                .map_err(|e| (ComponentType::PubKey, e))?;
-            if pub_key_stack
-                .last()
-                .is_ok_and(|v| interpreter::cast_to_bool(v))
-            {
-                if flags.contains(interpreter::Flags::P2SH) && self.pub_key.is_pay_to_script_hash()
-                {
-                    // script_sig must be literals-only or validation fails
-                    if self.sig.is_push_only() {
-                        data_stack
-                            .split_last()
-                            .map_err(|e| Error::Interpreter(None, e))
-                            .and_then(|(pub_key_2, remaining_stack)| {
-                                Code(pub_key_2).eval(flags, checker, remaining_stack)
-                            })
-                            .map(|p2sh_stack| {
-                                if p2sh_stack
-                                    .last()
-                                    .is_ok_and(|v| interpreter::cast_to_bool(v))
-                                {
-                                    Some(p2sh_stack)
-                                } else {
-                                    None
-                                }
-                            })
-                            .map_err(|e| (ComponentType::Redeem, e))
-                    } else {
-                        Err((ComponentType::Sig, Error::SigPushOnly))
-                    }
-                } else {
-                    Ok(Some(pub_key_stack))
-                }
-                .and_then(|mresult_stack| {
-                    match mresult_stack {
-                        None => Ok(false),
-                        Some(result_stack) => {
-                            // The CLEANSTACK check is only performed after potential P2SH evaluation, as the
-                            // non-P2SH evaluation of a P2SH script will obviously not result in a clean stack
-                            // (the P2SH inputs remain).
-                            if flags.contains(interpreter::Flags::CleanStack) {
-                                // Disallow CLEANSTACK without P2SH, because Bitcoin did.
-                                assert!(flags.contains(interpreter::Flags::P2SH));
-                                if result_stack.len() == 1 {
-                                    Ok(true)
-                                } else {
-                                    Err((ComponentType::Redeem, Error::CleanStack))
-                                }
-                            } else {
-                                Ok(true)
-                            }
-                        }
-                    }
-                })
-            } else {
-                Ok(false)
-            }
-        }
+        iter::eval_script(&self.sig, &self.pub_key, flags, checker)
     }
 }

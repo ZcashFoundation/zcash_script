@@ -3,9 +3,11 @@
 //! This is in a separate module so we can minimize the code that has access to the internals,
 //! making it easier to ensure that we check the encoding correctly.
 
+#[cfg(feature = "signature-validation")]
 use secp256k1::ecdsa;
 use thiserror::Error;
 
+#[cfg(feature = "signature-validation")]
 use crate::external::pubkey::PubKey;
 
 /// Things that can go wrong when constructing a `HashType` from bit flags.
@@ -181,6 +183,7 @@ pub enum Validity {
     Valid(Decoded),
 }
 
+#[cfg(feature = "signature-validation")]
 /// This contains a validated ECDSA signature and the Zcash hash type. It’s an opaque value, so we
 /// can ensure all values are valid (e.g., signature is “low-S” if required, and the hash type was
 /// created without any extra bits, if required).
@@ -190,6 +193,13 @@ pub struct Decoded {
     hash_type: HashType,
 }
 
+/// There’s not such thing as a decoded signature unless the `signature-validation` feature is
+/// enabled.
+#[cfg(not(feature = "signature-validation"))]
+#[derive(Clone)]
+pub struct Decoded {}
+
+#[cfg(feature = "signature-validation")]
 impl Decoded {
     /// Checks the properties of individual integers in a DER signature.
     fn is_valid_integer(int_bytes: &[u8]) -> Result<(), InvalidDerInteger> {

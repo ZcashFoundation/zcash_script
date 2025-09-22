@@ -28,6 +28,16 @@ impl LargeValue {
 
     pub const MAX_SIZE: usize = 520; // bytes
 
+    /// The number of bytes this requires in a script.
+    pub fn byte_len(&self) -> usize {
+        1 + match self {
+            PushdataBytelength(data) => data.as_slice().len(),
+            OP_PUSHDATA1(data) => 1 + data.as_slice().len(),
+            OP_PUSHDATA2(data) => 2 + data.as_slice().len(),
+            OP_PUSHDATA4(data) => 4 + data.as_slice().len(),
+        }
+    }
+
     /// Returns a [`LargeValue`] as minimally-encoded as possible. That is, values that
     /// should be minimally-encoded as [`SmallValue`]s will be [`LargeValue`].
     pub fn from_slice(v: &[u8]) -> Option<LargeValue> {
