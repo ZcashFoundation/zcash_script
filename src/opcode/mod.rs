@@ -1093,7 +1093,9 @@ impl Bad {
 /// branch, so this type allows us to hold onto the bad opcodes when parsing.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum PossiblyBad {
+    /// An opcode that can be evaluated.
     Good(Opcode),
+    /// An opcode that is valid in a script, but fails if evaluated.
     Bad(Bad),
 }
 
