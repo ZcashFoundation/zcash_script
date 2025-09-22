@@ -70,12 +70,12 @@ pub fn standard(script_code: &script::PubKey) -> Option<ScriptKind> {
                                 let pubkey_bytes = data.value();
                                 // Equivalent to `CPubKey::GetLen`
                                 let expected_len = match pubkey_bytes.first() {
-                                    Some(2 | 3) => PubKey::COMPRESSED_SIZE,
-                                    Some(4 | 6 | 7) => PubKey::SIZE,
-                                    _ => 0,
+                                    Some(2 | 3) => Some(PubKey::COMPRESSED_SIZE),
+                                    Some(4 | 6 | 7) => Some(PubKey::SIZE),
+                                    _ => None,
                                 };
                                 // Equivalent to `CPubKey::ValidSize`
-                                (!pubkey_bytes.is_empty() && expected_len == pubkey_bytes.len())
+                                (expected_len == Some(pubkey_bytes.len()))
                                     .then(|| pubkey_bytes.try_into().expect("bounds checked"))
                             }
                             _ => None,
