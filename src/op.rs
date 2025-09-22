@@ -5,32 +5,34 @@
 use crate::{
     opcode::{Control::*, Operation::*},
     pv,
-    Opcode::{self, Control, Operation, PushValue},
+    Opcode::{self, Control, Operation},
 };
 
-pub const _0: Opcode = PushValue(pv::_0);
-pub const _1NEGATE: Opcode = PushValue(pv::_1NEGATE);
-pub const _1: Opcode = PushValue(pv::_1);
-pub const _2: Opcode = PushValue(pv::_2);
-pub const _3: Opcode = PushValue(pv::_3);
-pub const _4: Opcode = PushValue(pv::_4);
-pub const _5: Opcode = PushValue(pv::_5);
-pub const _6: Opcode = PushValue(pv::_6);
-pub const _7: Opcode = PushValue(pv::_7);
-pub const _8: Opcode = PushValue(pv::_8);
-pub const _9: Opcode = PushValue(pv::_9);
-pub const _10: Opcode = PushValue(pv::_10);
-pub const _11: Opcode = PushValue(pv::_11);
-pub const _12: Opcode = PushValue(pv::_12);
-pub const _13: Opcode = PushValue(pv::_13);
-pub const _14: Opcode = PushValue(pv::_14);
-pub const _15: Opcode = PushValue(pv::_15);
-pub const _16: Opcode = PushValue(pv::_16);
+pub use crate::opcode::{PossiblyBad, PushValue};
+
+pub const _0: Opcode = Opcode::PushValue(pv::_0);
+pub const _1NEGATE: Opcode = Opcode::PushValue(pv::_1NEGATE);
+pub const _1: Opcode = Opcode::PushValue(pv::_1);
+pub const _2: Opcode = Opcode::PushValue(pv::_2);
+pub const _3: Opcode = Opcode::PushValue(pv::_3);
+pub const _4: Opcode = Opcode::PushValue(pv::_4);
+pub const _5: Opcode = Opcode::PushValue(pv::_5);
+pub const _6: Opcode = Opcode::PushValue(pv::_6);
+pub const _7: Opcode = Opcode::PushValue(pv::_7);
+pub const _8: Opcode = Opcode::PushValue(pv::_8);
+pub const _9: Opcode = Opcode::PushValue(pv::_9);
+pub const _10: Opcode = Opcode::PushValue(pv::_10);
+pub const _11: Opcode = Opcode::PushValue(pv::_11);
+pub const _12: Opcode = Opcode::PushValue(pv::_12);
+pub const _13: Opcode = Opcode::PushValue(pv::_13);
+pub const _14: Opcode = Opcode::PushValue(pv::_14);
+pub const _15: Opcode = Opcode::PushValue(pv::_15);
+pub const _16: Opcode = Opcode::PushValue(pv::_16);
 
 /// Produces a minimally-encoded data value. It fails if the slice is larger than
 /// `MAX_SCRIPT_ELEMENT_SIZE`.
 pub fn push_value(value: &[u8]) -> Option<Opcode> {
-    pv::push_value(value).map(PushValue)
+    pv::push_value(value).map(Opcode::PushValue)
 }
 
 pub const NOP: Opcode = Operation(OP_NOP);

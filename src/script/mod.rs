@@ -190,6 +190,19 @@ impl<T: opcode::Evaluable> Component<T> {
     }
 }
 
+impl Component<opcode::PossiblyBad> {
+    /// Convert a `script::FromChain` to a more restricted opcode type, erroring if it’s not
+    /// possible.
+    pub fn refine<T: opcode::Evaluable>(&self) -> Result<Component<T>, Error> {
+        self.0
+            .iter()
+            .cloned()
+            .map(|pb| T::restrict(pb))
+            .collect::<Result<_, _>>()
+            .map(Component)
+    }
+}
+
 impl<T: Into<opcode::PossiblyBad> + opcode::Evaluable + Clone> Evaluable for Component<T> {
     fn byte_len(&self) -> usize {
         self.0.iter().map(T::byte_len).sum()
