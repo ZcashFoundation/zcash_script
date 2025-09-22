@@ -28,7 +28,7 @@ use std::os::raw::{c_int, c_uint, c_void};
 
 use tracing::warn;
 
-use interpreter::{CallbackTransactionSignatureChecker, SighashCalculator};
+use interpreter::SighashCalculator;
 use signature::HashType;
 pub use zcash_script::{AnnError, Error, RustInterpreter, ZcashScript};
 
@@ -481,6 +481,30 @@ pub struct ComparisonInterpreter<T, U> {
     second: U,
 }
 
+/// Creates an `interpreter::SignatureChecker`. The actual type depends on whether the
+/// `signature-validation` feature is enabled. If it’s not, it will create a checker that always
+/// fails.
+#[cfg(feature = "signature-validation")]
+pub fn create_signature_checker(
+    sighash: interpreter::SighashCalculator,
+    lock_time: i64,
+    is_final: bool,
+) -> impl interpreter::SignatureChecker + '_ {
+    interpreter::CallbackTransactionSignatureChecker {
+        sighash,
+        lock_time,
+        is_final,
+    }
+}
+#[cfg(not(feature = "signature-validation"))]
+pub fn create_signature_checker(
+    _sighash: interpreter::SighashCalculator,
+    _lock_time: i64,
+    _is_final: bool,
+) -> impl interpreter::SignatureChecker {
+    interpreter::NullSignatureChecker()
+}
+
 /// An interpreter that compares the results of the C++ and Rust implementations. In the case where
 /// they differ, a warning will be logged, and the C++ interpreter will be treated as the correct
 /// result.
@@ -488,18 +512,19 @@ pub fn cxx_rust_comparison_interpreter(
     sighash: SighashCalculator,
     lock_time: u32,
     is_final: bool,
-) -> ComparisonInterpreter<CxxInterpreter, RustInterpreter<CallbackTransactionSignatureChecker>> {
+) -> ComparisonInterpreter<CxxInterpreter, RustInterpreter<impl interpreter::SignatureChecker + '_>>
+{
     ComparisonInterpreter {
         first: CxxInterpreter {
             sighash,
             lock_time,
             is_final,
         },
-        second: RustInterpreter::new(CallbackTransactionSignatureChecker {
+        second: RustInterpreter::new(create_signature_checker(
             sighash,
-            lock_time: lock_time.into(),
+            lock_time.into(),
             is_final,
-        }),
+        )),
     }
 }
 
@@ -673,21 +698,23 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "signature-validation")]
     use proptest::prelude::{prop, prop_assert_eq, proptest, ProptestConfig};
 
     use super::{
-        check_verify_callback, normalize_err,
+        check_verify_callback, create_signature_checker, normalize_err,
         test_vectors::test_vectors,
-        testing::{
-            annotate_script, invalid_sighash, missing_sighash, repair_flags, run_test_vector,
-            sighash, OVERFLOW_SCRIPT_SIZE, SCRIPT,
-        },
-        CxxInterpreter, Error, RustInterpreter, ZcashScript,
+        testing::{invalid_sighash, missing_sighash, run_test_vector, SCRIPT},
+        CxxInterpreter, RustInterpreter, ZcashScript,
     };
-    use crate::{
-        interpreter::{self, CallbackTransactionSignatureChecker},
-        script, Script,
+    #[cfg(feature = "signature-validation")]
+    use super::{
+        testing::{annotate_script, repair_flags, sighash, OVERFLOW_SCRIPT_SIZE},
+        Error,
     };
+    use crate::interpreter;
+    #[cfg(feature = "signature-validation")]
+    use crate::{script, Script};
 
     #[cfg(feature = "signature-validation")]
     #[test]
@@ -702,7 +729,7 @@ mod tests {
                 lock_time,
                 is_final,
             },
-            &RustInterpreter::new(CallbackTransactionSignatureChecker {
+            &RustInterpreter::new(interpreter::CallbackTransactionSignatureChecker {
                 sighash: &sighash,
                 lock_time: lock_time.into(),
                 is_final,
@@ -729,11 +756,11 @@ mod tests {
                 lock_time,
                 is_final,
             },
-            &RustInterpreter::new(CallbackTransactionSignatureChecker {
-                sighash: &invalid_sighash,
-                lock_time: lock_time.into(),
+            &RustInterpreter::new(create_signature_checker(
+                &invalid_sighash,
+                lock_time.into(),
                 is_final,
-            }),
+            )),
             &SCRIPT,
             flags,
         );
@@ -757,11 +784,11 @@ mod tests {
                 lock_time,
                 is_final,
             },
-            &RustInterpreter::new(CallbackTransactionSignatureChecker {
-                sighash: &missing_sighash,
-                lock_time: lock_time.into(),
+            &RustInterpreter::new(create_signature_checker(
+                &missing_sighash,
+                lock_time.into(),
                 is_final,
-            }),
+            )),
             &SCRIPT,
             flags,
         );
@@ -799,7 +826,7 @@ mod tests {
                 &tv,
                 false,
                 &|script, flags| {
-                    RustInterpreter::new(CallbackTransactionSignatureChecker {
+                    RustInterpreter::new(interpreter::CallbackTransactionSignatureChecker {
                         sighash: &missing_sighash,
                         lock_time: 0,
                         is_final: false,
@@ -807,7 +834,7 @@ mod tests {
                     .verify_callback(&script, flags)
                 },
                 &|pubkey| {
-                    RustInterpreter::new(CallbackTransactionSignatureChecker {
+                    RustInterpreter::new(interpreter::CallbackTransactionSignatureChecker {
                         sighash: &missing_sighash,
                         lock_time: 0,
                         is_final: false,
@@ -829,7 +856,7 @@ mod tests {
                     script
                         .eval(
                             flags,
-                            &CallbackTransactionSignatureChecker {
+                            &interpreter::CallbackTransactionSignatureChecker {
                                 sighash: &missing_sighash,
                                 lock_time: 0,
                                 is_final: false,
@@ -842,12 +869,12 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "signature-validation")]
     proptest! {
         #![proptest_config(ProptestConfig {
             cases: 20_000, .. ProptestConfig::default()
         })]
 
-        #[cfg(feature = "signature-validation")]
         #[test]
         fn test_arbitrary_scripts(
             lock_time in prop::num::u32::ANY,
@@ -865,7 +892,7 @@ mod tests {
                     is_final,
                 },
                 &RustInterpreter::new(
-                    CallbackTransactionSignatureChecker {
+                    interpreter::CallbackTransactionSignatureChecker {
                         sighash: &sighash,
                         lock_time: lock_time.into(),
                         is_final,
@@ -905,7 +932,7 @@ mod tests {
                 // Parsing of the script components succeeded, so we can evaluate & compare as
                 // normal.
                 (Ok(sig), Ok(pub_key)) => {
-                    let rust_ret = Script {sig, pub_key}.eval(flags, &CallbackTransactionSignatureChecker {
+                    let rust_ret = Script {sig, pub_key}.eval(flags, &interpreter::CallbackTransactionSignatureChecker {
                         sighash: &sighash,
                         lock_time: lock_time.into(),
                         is_final,
@@ -935,6 +962,7 @@ mod tests {
                 }
             }
         }
+
         /// Similar to `test_arbitrary_scripts`, but ensures the `sig` only contains pushes.
         #[test]
         fn test_restricted_sig_scripts(
@@ -956,7 +984,7 @@ mod tests {
                     is_final,
                 },
                 &RustInterpreter::new(
-                    CallbackTransactionSignatureChecker {
+                    interpreter::CallbackTransactionSignatureChecker {
                         sighash: &sighash,
                         lock_time: lock_time.into(),
                         is_final,

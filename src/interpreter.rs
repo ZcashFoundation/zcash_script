@@ -114,6 +114,7 @@ impl From<signature::Error> for Error {
     }
 }
 
+#[cfg(feature = "signature-validation")]
 /// Threshold for lock_time: below this value it is interpreted as block number,
 /// otherwise as UNIX timestamp.
 const LOCKTIME_THRESHOLD: i64 = 500_000_000; // Tue Nov  5 00:53:20 1985 UTC
@@ -193,11 +194,10 @@ pub trait SignatureChecker {
 }
 
 /// A signature checker that always fails. This is helpful in testing cases that don’t involve
-/// `CHECK*SIG`. The name comes from the C++ impl, where there is no separation between this and the
-/// trait.
-pub struct BaseSignatureChecker();
+/// `CHECK*SIG`.
+pub struct NullSignatureChecker();
 
-impl SignatureChecker for BaseSignatureChecker {
+impl SignatureChecker for NullSignatureChecker {
     fn check_sig(
         &self,
         _script_sig: &signature::Decoded,
@@ -212,6 +212,7 @@ impl SignatureChecker for BaseSignatureChecker {
     }
 }
 
+#[cfg(feature = "signature-validation")]
 /// A signature checker that uses a callback to get necessary information about the transaction
 /// involved.
 #[derive(Copy, Clone)]
@@ -464,8 +465,8 @@ pub const SIGHASH_SIZE: usize = 32;
 pub type SighashCalculator<'a> =
     &'a dyn Fn(&script::Code, &signature::HashType) -> Option<[u8; SIGHASH_SIZE]>;
 
+#[cfg(feature = "signature-validation")]
 impl SignatureChecker for CallbackTransactionSignatureChecker<'_> {
-    #[cfg(feature = "signature-validation")]
     fn check_sig(
         &self,
         sig: &signature::Decoded,
@@ -478,16 +479,6 @@ impl SignatureChecker for CallbackTransactionSignatureChecker<'_> {
             && (self.sighash)(script_code, sig.sighash_type())
                 .map(|sighash| pubkey.verify(&sighash, sig.sig()))
                 .unwrap_or(false)
-    }
-
-    #[cfg(not(feature = "signature-validation"))]
-    fn check_sig(
-        &self,
-        _sig: &signature::Decoded,
-        _vch_pub_key: &[u8],
-        _script_code: &script::Code,
-    ) -> bool {
-        false
     }
 
     fn check_lock_time(&self, lock_time: i64) -> bool {
