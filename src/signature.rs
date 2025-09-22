@@ -3,6 +3,9 @@
 //! This is in a separate module so we can minimize the code that has access to the internals,
 //! making it easier to ensure that we check the encoding correctly.
 
+use alloc::borrow::ToOwned;
+use alloc::vec::Vec;
+
 #[cfg(feature = "signature-validation")]
 use secp256k1::ecdsa;
 use thiserror::Error;

@@ -1,8 +1,11 @@
 #![allow(non_camel_case_types)]
 
+use alloc::borrow::ToOwned;
+use alloc::vec::Vec;
+
 pub mod push_value;
 
-use std::cmp::{max, min};
+use core::cmp::{max, min};
 
 use ripemd::Ripemd160;
 use sha1::Sha1;
@@ -1278,6 +1281,8 @@ impl Disabled {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec::Vec;
+
     use crate::{op, Opcode};
 
     use super::{push_value::LargeValue, Control, Disabled, Operation, PushValue, SmallValue};
