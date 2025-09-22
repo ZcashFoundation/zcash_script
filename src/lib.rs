@@ -112,19 +112,19 @@ impl opcode::Evaluable for Opcode {
         mut state: interpreter::State,
     ) -> Result<interpreter::State, interpreter::Error> {
         match self {
-            Opcode::PushValue(pv) => {
+            Self::PushValue(pv) => {
                 if interpreter::should_exec(&state.vexec) {
-                    state.stack =
-                        pv.eval_(flags.contains(interpreter::Flags::MinimalData), state.stack)?;
+                    pv.eval(flags, script, checker, state)
+                } else {
+                    Ok(state)
                 }
-                Ok(state)
             }
-            Opcode::Control(control) => {
+            Self::Control(control) => {
                 state.increment_op_count(1)?;
                 (state.stack, state.vexec) = control.eval(state.stack, state.vexec)?;
                 Ok(state)
             }
-            Opcode::Operation(normal) => {
+            Self::Operation(normal) => {
                 state.increment_op_count(1)?;
                 if interpreter::should_exec(&state.vexec) {
                     normal.eval(flags, script, checker, state)
@@ -146,7 +146,7 @@ impl opcode::Evaluable for Opcode {
 
     fn extract_push_value(&self) -> Result<&opcode::PushValue, script::Error> {
         match self {
-            Opcode::PushValue(pv) => Ok(pv),
+            Self::PushValue(pv) => Ok(pv),
             _ => Err(script::Error::SigPushOnly),
         }
     }
@@ -187,13 +187,12 @@ impl From<&Opcode> for Vec<u8> {
     }
 }
 
-/// A Zcash script consists of a sig and a pubkey.
+/// A Zcash script consists of a sig and a pubkey. The first type parameter is the type of opcodes
+/// in the script sig, and the second is the type of opcodes in the script pubkey.
 ///
 /// - Script<opcode::PossiblyBad, opcode::PossiblyBad> – from the chain
-/// - Script<opcode::PushValue, opcode::Structured> – authoring sig_push_only
-/// - Script<opcode::Structured, opcode::Structured> – authoring non-sig_push_only
-///
-/// Until `Structured` is added, we use `Opcode` in its place.
+/// - Script<opcode::PushValue, Opcode> – authoring sig_push_only
+/// - Script<Opcode, Opcode> – authoring non-sig_push_only
 pub struct Script<Sig = opcode::PushValue, PubKey = Opcode> {
     sig: script::Component<Sig>,
     pub_key: script::Component<PubKey>,
@@ -574,7 +573,7 @@ pub mod testing {
 
     lazy_static::lazy_static! {
         /// The P2SH redeem script used for the static test case.
-        pub static ref REDEEM_SCRIPT: script::PubKey = script::Component(check_multisig(
+        pub static ref REDEEM_SCRIPT: script::Redeem = script::Component(check_multisig(
             2,
             &[
                 &<[u8; 0x21]>::from_hex("03b2cc71d23eb30020a4893982a1e2d352da0d20ee657fa02901c432758909ed8f").expect("valid key"),
@@ -595,7 +594,7 @@ pub mod testing {
         pub static ref SCRIPT: script::Raw =
             script::Raw::from_raw_parts(SCRIPT_SIG.to_bytes(), SCRIPT_PUBKEY.to_bytes());
         /// The same script as `SCRIPT`, but using the “authoring” types.
-        pub static ref REAL_SCRIPT: Script =
+        pub static ref AUTHORED_SCRIPT: Script =
             Script{ sig : SCRIPT_SIG.clone(), pub_key : SCRIPT_PUBKEY.clone() };
     }
 
@@ -903,7 +902,8 @@ mod tests {
                     is_final,
             }.verify_callback(&script, flags);
             match (script::Code(sig_).to_component(), script::Code(pub_key_).to_component()) {
-                // Parsing of the script components succeeded, so we can evaluate & compare as normal.
+                // Parsing of the script components succeeded, so we can evaluate & compare as
+                // normal.
                 (Ok(sig), Ok(pub_key)) => {
                     let rust_ret = Script {sig, pub_key}.eval(flags, &CallbackTransactionSignatureChecker {
                         sighash: &sighash,
@@ -918,10 +918,9 @@ mod tests {
                         annotate_script(&script, &flags)
                     )
                 }
-                // Parsing of at least one script component failed. If C++ evaluation failed with a
-                // parse error or succeeded, we compare as normal. If it failed in some other way,
-                // it could be due to parse/eval interleaving, so we can’t compare the results and
-                // effectively discard the test case.
+                // Parsing of at least one script component failed. This checks that C++ evaluation
+                // also failed. If the C++ failure was also a parse failure, it compares them as
+                // normal.
                 (Err(oerr), _) | (Ok(_), Err(oerr)) => {
                     if matches!(cxx_ret, Ok(_) | Err((_, Error::Script(script::Error::Opcode(_))))) {
                         let rust_ret = Err(Error::Script(script::Error::Opcode(oerr)));

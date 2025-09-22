@@ -193,7 +193,8 @@ pub struct Decoded {
     hash_type: HashType,
 }
 
-/// There’s not such thing as a decoded signature unless the `eval` feature is enabled.
+/// There’s not such thing as a decoded signature unless the `signature-validation` feature is
+/// enabled.
 #[cfg(not(feature = "signature-validation"))]
 #[derive(Clone)]
 pub struct Decoded {}

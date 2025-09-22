@@ -28,6 +28,7 @@ impl LargeValue {
 
     pub const MAX_SIZE: usize = 520; // bytes
 
+    /// The number of bytes this requires in a script.
     pub fn byte_len(&self) -> usize {
         1 + match self {
             PushdataBytelength(data) => data.as_slice().len(),

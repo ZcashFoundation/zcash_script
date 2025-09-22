@@ -156,6 +156,9 @@ pub type Sig = Component<PushValue>;
 /// A script pubkey has any `Opcode`.
 pub type PubKey = Component<Opcode>;
 
+/// A redeem script has any `Opcode`.
+pub type Redeem = Component<Opcode>;
+
 /// A script component (sig or pubkey) that came from the chain.
 ///
 /// This is used to preserve particular bits that authored scripts don’t allow.
@@ -171,11 +174,11 @@ pub type PubKey = Component<Opcode>;
 pub type FromChain = Component<opcode::PossiblyBad>;
 
 impl<T: opcode::Evaluable> Component<T> {
-    /// This parses an entire script. This is stricter than the incremental parsing that is done
-    /// during `verify_script`, because it fails on unknown opcodes no matter where they occur.
-    /// I.e., this is useful for validating and analyzing scripts before they are put into a
-    /// transaction, but not for scripts that are read from the chain, because it may fail on valid
-    /// scripts.
+    /// This parses an entire script.
+    ///
+    /// **NB**: If `T` is not `opcode::PossiblyBad`, this is stricter than the incremental parsing
+    ///         that is done during `verify_script`, because it fails on unknown opcodes no matter
+    ///         where they occur (when normally they only fail if they would be evaluated).
     pub fn parse(raw_script: &Code) -> Result<Self, Error> {
         raw_script
             .parse()
@@ -344,7 +347,7 @@ impl Evaluable for Code {
 
     /// Convert a sequence of `Opcode`s to the bytes that would be included in a transaction.
     fn to_bytes(&self) -> Vec<u8> {
-        self.0.to_vec()
+        self.0.clone()
     }
 
     fn eval(

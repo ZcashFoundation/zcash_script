@@ -49,6 +49,9 @@ pub trait Evaluable {
     /// Convert a script value into the bytes that would be included in a transaction.
     fn to_bytes(&self) -> Vec<u8>;
 
+    /// Constrain an arbitrary `PossiblyBad` to the type the `impl` is defined on. This is used when
+    /// parsing an arbitrary opcode – we first parse to the most general type `opcode::PossiblyBad`,
+    /// and then ensure that it’s of the required type.
     fn restrict(pb: PossiblyBad) -> Result<Self, script::Error>
     where
         Self: Sized;
@@ -62,6 +65,8 @@ pub trait Evaluable {
         state: interpreter::State,
     ) -> Result<interpreter::State, interpreter::Error>;
 
+    /// If the opcode is a `PushValue`, return that. Otherwise error. This is used to identify
+    /// push-only script sigs.
     fn extract_push_value(&self) -> Result<&PushValue, script::Error>;
 
     /// Upper bound on the signature operations performed by this opcode. In the case of
@@ -138,7 +143,11 @@ impl PushValue {
         }
     }
 
-    pub fn eval_(
+    /// The internal implementation of `Evaluable::eval`. `eval` has larger parameters, because it
+    /// needs to be general. This only has the parameters required by the implementation. The
+    /// `Evalable` `impl` extracts the necessary components from the larger parameters and passes
+    /// them through.
+    fn eval_(
         &self,
         require_minimal: bool,
         mut stack: interpreter::Stack<Vec<u8>>,
@@ -1015,7 +1024,7 @@ impl PossiblyBad {
     ///
     /// This always returns the unparsed bytes, because parsing failures don’t invalidate the
     /// remainder of the stream (if any).
-    pub fn parse(script: &[u8]) -> (Result<PossiblyBad, Error>, &[u8]) {
+    pub fn parse(script: &[u8]) -> (Result<Self, Error>, &[u8]) {
         match push_value::LargeValue::parse(script) {
             None => match script.split_first() {
                 None => (
@@ -1029,13 +1038,13 @@ impl PossiblyBad {
                     Disabled::from_u8(*leading_byte).map_or(
                         Ok(
                             if let Some(sv) = push_value::SmallValue::from_u8(*leading_byte) {
-                                PossiblyBad::from(Opcode::from(PushValue::SmallValue(sv)))
+                                Self::from(Opcode::from(PushValue::SmallValue(sv)))
                             } else if let Some(ctl) = Control::from_u8(*leading_byte) {
-                                PossiblyBad::from(Opcode::Control(ctl))
+                                Self::from(Opcode::Control(ctl))
                             } else if let Some(op) = Operation::from_u8(*leading_byte) {
-                                PossiblyBad::from(Opcode::Operation(op))
+                                Self::from(Opcode::Operation(op))
                             } else {
-                                PossiblyBad::from(Bad::from(*leading_byte))
+                                Self::from(Bad::from(*leading_byte))
                             },
                         ),
                         |disabled| Err(Error::Disabled(Some(disabled))),
@@ -1044,7 +1053,7 @@ impl PossiblyBad {
                 ),
             },
             Some((res, remaining_code)) => (
-                res.map(|v| PossiblyBad::from(Opcode::from(PushValue::LargeValue(v)))),
+                res.map(|v| Self::from(Opcode::from(PushValue::LargeValue(v)))),
                 remaining_code,
             ),
         }
@@ -1053,8 +1062,8 @@ impl PossiblyBad {
     /// Statically analyze a possibly-bad opcode.
     pub fn analyze(&self, flags: &interpreter::Flags) -> Result<&Opcode, Vec<interpreter::Error>> {
         match self {
-            PossiblyBad::Good(op) => op.analyze(flags).map(|()| op),
-            PossiblyBad::Bad(_) => Err(vec![interpreter::Error::BadOpcode]),
+            Self::Good(op) => op.analyze(flags).map(|()| op),
+            Self::Bad(_) => Err(vec![interpreter::Error::BadOpcode]),
         }
     }
 }
@@ -1062,8 +1071,8 @@ impl PossiblyBad {
 impl Evaluable for PossiblyBad {
     fn byte_len(&self) -> usize {
         match self {
-            PossiblyBad::Good(op) => op.byte_len(),
-            PossiblyBad::Bad(_) => 1,
+            Self::Good(op) => op.byte_len(),
+            Self::Bad(_) => 1,
         }
     }
 
@@ -1091,8 +1100,8 @@ impl Evaluable for PossiblyBad {
 
     fn extract_push_value(&self) -> Result<&PushValue, script::Error> {
         match self {
-            PossiblyBad::Good(op) => op.extract_push_value(),
-            PossiblyBad::Bad(_) => Err(script::Error::Interpreter(
+            Self::Good(op) => op.extract_push_value(),
+            Self::Bad(_) => Err(script::Error::Interpreter(
                 Some(self.clone()),
                 interpreter::Error::BadOpcode,
             )),
@@ -1109,19 +1118,19 @@ impl Evaluable for PossiblyBad {
 
 impl From<Opcode> for PossiblyBad {
     fn from(value: Opcode) -> Self {
-        PossiblyBad::Good(value)
+        Self::Good(value)
     }
 }
 
 impl From<Bad> for PossiblyBad {
     fn from(value: Bad) -> Self {
-        PossiblyBad::Bad(value)
+        Self::Bad(value)
     }
 }
 
 impl From<PushValue> for PossiblyBad {
     fn from(value: PushValue) -> Self {
-        PossiblyBad::Good(Opcode::from(value))
+        Self::Good(Opcode::from(value))
     }
 }
 
