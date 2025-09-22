@@ -1,6 +1,8 @@
 //! Execution of opcodes
 
-use std::{num::TryFromIntError, slice::Iter};
+use alloc::vec::Vec;
+use core::num::TryFromIntError;
+use core::slice::Iter;
 
 use thiserror::Error;
 

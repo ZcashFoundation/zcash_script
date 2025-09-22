@@ -1,13 +1,18 @@
 //! Zcash transparent script implementations.
 
+#![no_std]
 #![doc(html_logo_url = "https://www.zfnd.org/images/zebra-icon.png")]
 #![doc(html_root_url = "https://docs.rs/zcash_script/0.3.2")]
 #![allow(clippy::unit_arg)]
 #![allow(non_snake_case)]
 #![allow(unsafe_code)]
 #![deny(missing_docs)]
+
 #[macro_use]
-extern crate enum_primitive;
+extern crate alloc;
+
+#[cfg(feature = "std")]
+extern crate std;
 
 pub mod cxx;
 mod external;
@@ -19,17 +24,25 @@ pub mod pattern;
 pub mod pv;
 pub mod script;
 pub mod signature;
+pub mod solver;
 mod zcash_script;
 
 #[cfg(any(test, feature = "test-dependencies"))]
 pub mod test_vectors;
 
+use alloc::vec::Vec;
+
+#[cfg(feature = "std")]
 use std::os::raw::{c_int, c_uint, c_void};
 
+#[cfg(feature = "std")]
 use tracing::warn;
 
 use interpreter::SighashCalculator;
+
+#[cfg(feature = "std")]
 use signature::HashType;
+
 pub use zcash_script::{AnnError, Error, RustInterpreter, ZcashScript};
 
 /// Script opcodes
@@ -181,8 +194,8 @@ impl From<&Opcode> for Vec<u8> {
     fn from(value: &Opcode) -> Self {
         match value {
             Opcode::PushValue(v) => v.into(),
-            Opcode::Control(v) => vec![(*v).into()],
-            Opcode::Operation(v) => vec![(*v).into()],
+            Opcode::Control(v) => vec![(*v).encode()],
+            Opcode::Operation(v) => vec![(*v).encode()],
         }
     }
 }
@@ -345,6 +358,7 @@ impl From<cxx::ScriptError> for Error {
     }
 }
 
+#[cfg(feature = "std")]
 fn cxx_result(err_code: cxx::ScriptError) -> Result<bool, (Option<script::ComponentType>, Error)> {
     match err_code {
         cxx::ScriptError_t_SCRIPT_ERR_OK => Ok(true),
@@ -354,6 +368,7 @@ fn cxx_result(err_code: cxx::ScriptError) -> Result<bool, (Option<script::Compon
 }
 
 /// The sighash callback to use with zcash_script.
+#[cfg(feature = "std")]
 extern "C" fn sighash_callback(
     sighash_out: *mut u8,
     sighash_out_len: c_uint,
@@ -387,6 +402,7 @@ extern "C" fn sighash_callback(
 }
 
 /// This steals a bit of the wrapper code from zebra_script, to provide the API that they want.
+#[cfg(feature = "std")]
 impl ZcashScript for CxxInterpreter<'_> {
     fn verify_callback(
         &self,
@@ -445,6 +461,7 @@ impl ZcashScript for CxxInterpreter<'_> {
 /// Runs both the C++ and Rust implementations `ZcashScript::legacy_sigop_count_script` and returns
 /// both results. This is more useful for testing than the impl that logs a warning if the results
 /// differ and always returns the C++ result.
+#[cfg(feature = "std")]
 fn check_legacy_sigop_count_script<T: ZcashScript, U: ZcashScript>(
     first: &T,
     second: &U,
@@ -476,6 +493,7 @@ pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
 
 /// A tag to indicate that both the C++ and Rust implementations of zcash_script should be used,
 /// with their results compared.
+#[cfg(feature = "std")]
 pub struct ComparisonInterpreter<T, U> {
     first: T,
     second: U,
@@ -484,7 +502,7 @@ pub struct ComparisonInterpreter<T, U> {
 /// An interpreter that compares the results of the C++ and Rust implementations. In the case where
 /// they differ, a warning will be logged, and the C++ interpreter will be treated as the correct
 /// result.
-#[cfg(feature = "signature-validation")]
+#[cfg(all(feature = "signature-validation", feature = "std"))]
 pub fn cxx_rust_comparison_interpreter(
     sighash: SighashCalculator,
     lock_time: u32,
@@ -514,6 +532,7 @@ pub fn normalize_err(err: AnnError) -> Error {
 
 /// This implementation is functionally equivalent to the `T` impl, but it also runs a second (`U`)
 /// impl and logs a warning if they disagree.
+#[cfg(feature = "std")]
 impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U> {
     fn legacy_sigop_count_script(&self, script: &script::Code) -> Result<u32, Error> {
         let (cxx, rust) = check_legacy_sigop_count_script(&self.first, &self.second, script);
@@ -548,6 +567,8 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U>
 /// Utilities useful for tests in other modules and crates.
 #[cfg(any(test, feature = "test-dependencies"))]
 pub mod testing {
+    use alloc::vec::Vec;
+
     use crate::{
         interpreter,
         pattern::*,
