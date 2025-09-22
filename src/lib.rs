@@ -481,50 +481,29 @@ pub struct ComparisonInterpreter<T, U> {
     second: U,
 }
 
-/// Creates an `interpreter::SignatureChecker`. The actual type depends on whether the
-/// `signature-validation` feature is enabled. If it’s not, it will create a checker that always
-/// fails.
-#[cfg(feature = "signature-validation")]
-pub fn create_signature_checker(
-    sighash: interpreter::SighashCalculator,
-    lock_time: i64,
-    is_final: bool,
-) -> impl interpreter::SignatureChecker + '_ {
-    interpreter::CallbackTransactionSignatureChecker {
-        sighash,
-        lock_time,
-        is_final,
-    }
-}
-#[cfg(not(feature = "signature-validation"))]
-pub fn create_signature_checker(
-    _sighash: interpreter::SighashCalculator,
-    _lock_time: i64,
-    _is_final: bool,
-) -> impl interpreter::SignatureChecker {
-    interpreter::NullSignatureChecker()
-}
-
 /// An interpreter that compares the results of the C++ and Rust implementations. In the case where
 /// they differ, a warning will be logged, and the C++ interpreter will be treated as the correct
 /// result.
+#[cfg(feature = "signature-validation")]
 pub fn cxx_rust_comparison_interpreter(
     sighash: SighashCalculator,
     lock_time: u32,
     is_final: bool,
-) -> ComparisonInterpreter<CxxInterpreter, RustInterpreter<impl interpreter::SignatureChecker + '_>>
-{
+) -> ComparisonInterpreter<
+    CxxInterpreter,
+    RustInterpreter<interpreter::CallbackTransactionSignatureChecker>,
+> {
     ComparisonInterpreter {
         first: CxxInterpreter {
             sighash,
             lock_time,
             is_final,
         },
-        second: RustInterpreter::new(create_signature_checker(
+        second: RustInterpreter::new(interpreter::CallbackTransactionSignatureChecker {
             sighash,
-            lock_time.into(),
+            lock_time: lock_time.into(),
             is_final,
-        )),
+        }),
     }
 }
 
@@ -702,7 +681,7 @@ mod tests {
     use proptest::prelude::{prop, prop_assert_eq, proptest, ProptestConfig};
 
     use super::{
-        check_verify_callback, create_signature_checker, normalize_err,
+        check_verify_callback, normalize_err,
         test_vectors::test_vectors,
         testing::{invalid_sighash, missing_sighash, run_test_vector, SCRIPT},
         CxxInterpreter, RustInterpreter, ZcashScript,
@@ -716,88 +695,128 @@ mod tests {
     #[cfg(feature = "signature-validation")]
     use crate::{script, Script};
 
+    #[test]
+    fn it_works_in_cxx() {
+        let lock_time: u32 = 2410374;
+        let is_final: bool = true;
+        let flags = interpreter::Flags::P2SH | interpreter::Flags::CHECKLOCKTIMEVERIFY;
+
+        let ret = CxxInterpreter {
+            sighash: &sighash,
+            lock_time,
+            is_final,
+        }
+        .verify_callback(&SCRIPT, flags);
+
+        assert_eq!(ret, Ok(true));
+    }
+
     #[cfg(feature = "signature-validation")]
     #[test]
-    fn it_works() {
+    fn it_works_in_rust() {
         let lock_time: u32 = 2410374;
         let is_final: bool = true;
         let flags = interpreter::Flags::P2SH | interpreter::Flags::CHECKLOCKTIMEVERIFY;
 
-        let ret = check_verify_callback(
-            &CxxInterpreter {
-                sighash: &sighash,
-                lock_time,
-                is_final,
-            },
-            &RustInterpreter::new(interpreter::CallbackTransactionSignatureChecker {
-                sighash: &sighash,
-                lock_time: lock_time.into(),
-                is_final,
-            }),
-            &SCRIPT,
-            flags,
-        );
-
-        assert_eq!(
-            ret.0.clone().map_err(normalize_err),
-            ret.1.map_err(normalize_err)
-        );
-        assert!(ret.0.is_ok());
+        let ret = RustInterpreter::new(interpreter::CallbackTransactionSignatureChecker {
+            sighash: &sighash,
+            lock_time: lock_time.into(),
+            is_final,
+        })
+        .verify_callback(&SCRIPT, flags);
+        assert_eq!(ret, Ok(true));
     }
 
     #[test]
-    fn it_fails_on_invalid_sighash() {
-        let lock_time: u32 = 2410374;
-        let is_final: bool = true;
+    fn it_fails_with_null_checker() {
         let flags = interpreter::Flags::P2SH | interpreter::Flags::CHECKLOCKTIMEVERIFY;
-        let ret = check_verify_callback(
-            &CxxInterpreter {
-                sighash: &invalid_sighash,
-                lock_time,
-                is_final,
-            },
-            &RustInterpreter::new(create_signature_checker(
-                &invalid_sighash,
-                lock_time.into(),
-                is_final,
-            )),
-            &SCRIPT,
-            flags,
-        );
 
-        assert_eq!(
-            ret.0.map_err(normalize_err),
-            ret.1.clone().map_err(normalize_err)
-        );
-        assert_eq!(ret.1, Ok(false));
+        let ret = RustInterpreter::new(interpreter::NullSignatureChecker())
+            .verify_callback(&SCRIPT, flags);
+        assert_eq!(ret, Ok(false));
     }
 
     #[test]
-    fn it_fails_on_missing_sighash() {
+    fn it_fails_on_invalid_sighash_in_cxx() {
+        let lock_time: u32 = 2410374;
+        let is_final: bool = true;
+        let flags = interpreter::Flags::P2SH | interpreter::Flags::CHECKLOCKTIMEVERIFY;
+        let ret = CxxInterpreter {
+            sighash: &invalid_sighash,
+            lock_time,
+            is_final,
+        }
+        .verify_callback(&SCRIPT, flags);
+
+        assert_eq!(ret, Ok(false));
+    }
+
+    #[cfg(feature = "signature-validation")]
+    #[test]
+    fn it_fails_on_invalid_sighash_in_rust() {
+        let lock_time: u32 = 2410374;
+        let is_final: bool = true;
+        let flags = interpreter::Flags::P2SH | interpreter::Flags::CHECKLOCKTIMEVERIFY;
+        let ret = RustInterpreter::new(interpreter::CallbackTransactionSignatureChecker {
+            sighash: &invalid_sighash,
+            lock_time: lock_time.into(),
+            is_final,
+        })
+        .verify_callback(&SCRIPT, flags);
+
+        assert_eq!(ret, Ok(false));
+    }
+
+    #[test]
+    fn it_fails_on_invalid_sighash_with_null_checker() {
+        let flags = interpreter::Flags::P2SH | interpreter::Flags::CHECKLOCKTIMEVERIFY;
+        let ret = RustInterpreter::new(interpreter::NullSignatureChecker())
+            .verify_callback(&SCRIPT, flags);
+
+        assert_eq!(ret, Ok(false));
+    }
+
+    #[test]
+    fn it_fails_on_missing_sighash_in_cxx() {
         let lock_time: u32 = 2410374;
         let is_final: bool = true;
         let flags = interpreter::Flags::P2SH | interpreter::Flags::CHECKLOCKTIMEVERIFY;
 
-        let ret = check_verify_callback(
-            &CxxInterpreter {
-                sighash: &missing_sighash,
-                lock_time,
-                is_final,
-            },
-            &RustInterpreter::new(create_signature_checker(
-                &missing_sighash,
-                lock_time.into(),
-                is_final,
-            )),
-            &SCRIPT,
-            flags,
-        );
+        let ret = CxxInterpreter {
+            sighash: &missing_sighash,
+            lock_time,
+            is_final,
+        }
+        .verify_callback(&SCRIPT, flags);
 
-        assert_eq!(
-            ret.0.map_err(normalize_err),
-            ret.1.clone().map_err(normalize_err)
-        );
-        assert_eq!(ret.1, Ok(false));
+        assert_eq!(ret, Ok(false));
+    }
+
+    #[cfg(feature = "signature-validation")]
+    #[test]
+    fn it_fails_on_missing_sighash_in_rust() {
+        let lock_time: u32 = 2410374;
+        let is_final: bool = true;
+        let flags = interpreter::Flags::P2SH | interpreter::Flags::CHECKLOCKTIMEVERIFY;
+
+        let ret = RustInterpreter::new(interpreter::CallbackTransactionSignatureChecker {
+            sighash: &missing_sighash,
+            lock_time: lock_time.into(),
+            is_final,
+        })
+        .verify_callback(&SCRIPT, flags);
+
+        assert_eq!(ret, Ok(false));
+    }
+
+    #[test]
+    fn it_fails_on_missing_sighash_with_null_checker() {
+        let flags = interpreter::Flags::P2SH | interpreter::Flags::CHECKLOCKTIMEVERIFY;
+
+        let ret = RustInterpreter::new(interpreter::NullSignatureChecker())
+            .verify_callback(&SCRIPT, flags);
+
+        assert_eq!(ret, Ok(false));
     }
 
     #[test]

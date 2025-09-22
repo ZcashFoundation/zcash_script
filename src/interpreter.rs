@@ -212,9 +212,9 @@ impl SignatureChecker for NullSignatureChecker {
     }
 }
 
-#[cfg(feature = "signature-validation")]
 /// A signature checker that uses a callback to get necessary information about the transaction
 /// involved.
+#[cfg(feature = "signature-validation")]
 #[derive(Copy, Clone)]
 pub struct CallbackTransactionSignatureChecker<'a> {
     /// The callback to be used to calculate the sighash.
