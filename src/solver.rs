@@ -9,14 +9,14 @@ use crate::{
     script, Opcode,
 };
 
-/// Parses a `script::PubKey` and detects standard scripts.
+/// Parses a [`script::PubKey`] or [`script::Redeem`] and detects standard scripts.
 ///
 /// If successful, returns the script kind, and any relevant properties parsed from the
 /// script. For example, for a P2SH script, the result will contain the script hash; for
 /// P2PKH it will contain the key hash, etc.
 ///
 /// Returns `None` if the script is non-standard.
-pub fn standard(script_code: &script::PubKey) -> Option<ScriptKind> {
+pub fn standard(script_code: &script::Component<Opcode>) -> Option<ScriptKind> {
     match &script_code.0[..] {
         // Pay-to-Script-Hash (P2SH)
         [op::HASH160, Opcode::PushValue(PushValue::LargeValue(PushdataBytelength(v))), op::EQUAL] => {
