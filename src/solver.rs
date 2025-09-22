@@ -61,7 +61,7 @@ pub fn standard(script_code: &script::PubKey) -> Option<ScriptKind> {
         [Opcode::PushValue(PushValue::SmallValue(required)), pubkeys @ .., Opcode::PushValue(PushValue::SmallValue(keys)), op::CHECKMULTISIG] =>
         {
             match (u8::try_from(required.to_num()), u8::try_from(keys.to_num())) {
-                (Ok(required @ 0..=16), Ok(keys @ 0..=16)) => {
+                (Ok(required @ 1..=16), Ok(keys @ 1..=16)) => {
                     // The remaining opcodes must be `PushData`s that are valid lengths for pubkeys.
                     let pubkeys = pubkeys
                         .iter()
