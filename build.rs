@@ -41,6 +41,7 @@ fn bindgen_headers() -> Result<()> {
                 .parse()
                 .expect("Cargo ‘rust-version’ is a valid value"),
         )
+        .use_core()
         // Finish the builder and generate the bindings.
         .generate()
         .map_err(|_| Error::GenerateBindings)?;
