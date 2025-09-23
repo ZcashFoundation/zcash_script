@@ -288,15 +288,14 @@ pub mod testing {
         None
     }
 
+    type AnnOpcode = Result<Opcode, Vec<script::Error>>;
+
     /// Returns a script annotated with errors that could occur during evaluation.
     pub fn annotate_script(
         script: &script::Raw,
         flags: &interpreter::Flags,
-    ) -> (
-        Vec<Result<Opcode, Vec<script::Error>>>,
-        Vec<Result<Opcode, Vec<script::Error>>>,
-    ) {
-        script.map(&|c| c.parse_strict(&flags).collect::<Vec<_>>())
+    ) -> (Vec<AnnOpcode>, Vec<AnnOpcode>) {
+        script.map(&|c| c.parse_strict(flags).collect::<Vec<_>>())
     }
 
     /// Run a single test case against some function.
@@ -308,11 +307,7 @@ pub mod testing {
     pub fn run_test_vector(
         tv: &TestVector,
         try_normalized_error: bool,
-        interpreter_fn: &dyn Fn(
-            &script::Raw,
-            interpreter::Flags,
-        )
-            -> Result<bool, (Option<script::ComponentType>, script::Error)>,
+        interpreter_fn: &dyn Fn(&script::Raw, interpreter::Flags) -> Result<bool, script::AnnError>,
         sigop_count_fn: &dyn Fn(&script::Code) -> Result<u32, script::Error>,
     ) {
         match tv.run(&|script, flags| interpreter_fn(script, flags), &|pubkey| {
@@ -320,13 +315,11 @@ pub mod testing {
         }) {
             Ok(()) => (),
             Err((actual_res, actual_count)) => {
-                if try_normalized_error
+                if !(try_normalized_error
                     && tv.result.clone().normalized()
                         == actual_res.clone().map_err(|(_, e)| e.normalize())
-                    && tv.sigop_count == actual_count
+                    && tv.sigop_count == actual_count)
                 {
-                    ()
-                } else {
                     panic!(
                         "Either {:?} didn’t match the result or {} didn’t match the sigop_count in
 

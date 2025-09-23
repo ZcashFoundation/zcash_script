@@ -145,19 +145,9 @@ impl TestVector {
     /// A successful run is uninteresting, but a failure returns the actual `Result` in `Err`.
     pub fn run(
         &self,
-        interpreter_fn: &dyn Fn(
-            &script::Raw,
-            interpreter::Flags,
-        )
-            -> Result<bool, (Option<script::ComponentType>, script::Error)>,
+        interpreter_fn: &dyn Fn(&script::Raw, interpreter::Flags) -> Result<bool, script::AnnError>,
         sigop_count_fn: &dyn Fn(&script::Code) -> u32,
-    ) -> Result<
-        (),
-        (
-            Result<bool, (Option<script::ComponentType>, script::Error)>,
-            u32,
-        ),
-    > {
+    ) -> Result<(), (Result<bool, script::AnnError>, u32)> {
         match (
             self.script_sig
                 .iter()
