@@ -23,6 +23,7 @@ pub mod pattern;
 pub mod pv;
 pub mod script;
 pub mod signature;
+pub mod solver;
 
 #[cfg(any(test, feature = "test-dependencies"))]
 pub mod test_vectors;
