@@ -49,7 +49,7 @@ bitflags = "2.8"
 hex = ">= 0.4.3"
 
 # Errors
-thiserror = "2"
+thiserror = { version = "2", default-features = false }
 
 # Logging
 tracing = { version = "0.1", default-features = false }
