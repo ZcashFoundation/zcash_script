@@ -1,3 +1,5 @@
+//! The individual opcodes that form a script.
+
 #![allow(non_camel_case_types)]
 
 use alloc::borrow::ToOwned;
@@ -21,6 +23,8 @@ use push_value::{
     SmallValue::{self, *},
 };
 
+/// Errors that occur while parsing an opcode.
+#[allow(missing_docs)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Error)]
 pub enum Error {
     #[error("expected {expected_bytes} bytes, but only {available_bytes} bytes available")]
@@ -216,6 +220,7 @@ impl From<LargeValue> for PushValue {
 
 /// Control operations are evaluated regardless of whether the current branch is active.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[allow(missing_docs)]
 #[repr(u8)]
 pub enum Control {
     OP_IF = 0x63,
@@ -278,6 +283,7 @@ impl Control {
 
 /// Normal operations are only executed when they are on an active branch.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[allow(missing_docs)]
 #[repr(u8)]
 pub enum Operation {
     // control
@@ -470,6 +476,8 @@ impl Operation {
         }
     }
 
+    /// The number of signature operations represented by this opcode. If the `last_opcode` is
+    /// provided, we can sometimes give a more accurate value.
     pub fn sig_op_count(&self, last_opcode: Option<PossiblyBad>) -> u32 {
         match self {
             Self::OP_CHECKSIG | Self::OP_CHECKSIGVERIFY => 1,
@@ -575,6 +583,7 @@ impl Operation {
         }
     }
 
+    /// Evaluate a single operation.
     pub fn eval(
         &self,
         flags: interpreter::Flags,
@@ -1021,6 +1030,7 @@ impl From<&PushValue> for Vec<u8> {
 
 /// Opcodes that fail if they’re on an active branch.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[allow(missing_docs)]
 pub enum Bad {
     OP_RESERVED,
     OP_VER,
@@ -1223,7 +1233,9 @@ impl From<&PossiblyBad> for Vec<u8> {
     }
 }
 
+/// Opcodes that are invalid in a script, regardless of whether they would ever be evaluated.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[allow(missing_docs)]
 #[repr(u8)]
 pub enum Disabled {
     // splice ops

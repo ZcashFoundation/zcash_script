@@ -7,9 +7,15 @@
 # match the specific version required by Zebra while using the latest version in CI to catch any
 # breaking changes in newer releases.
 
-[package]
-name = "zcash_script"
-version = "0.3.2"
+[workspace]
+resolver = "2"
+members = [
+    "fuzz",
+    "libzcash_script",
+    "zcash_script",
+]
+
+[workspace.package]
 rust-version = "1.81"
 authors = [
     "Electric Coin Company <info@electriccoin.co>",
@@ -18,125 +24,20 @@ authors = [
     "Zcash Foundation <zebra@zfnd.org>",
 ]
 license = "Apache-2.0"
-readme = "README.md"
-build = "build.rs"
 edition = "2021"
-description = "ffi bindings to zcashd's zcash_script library"
-documentation = "https://docs.rs/zcash_script"
 repository = "https://github.com/ZcashFoundation/zcash_script"
-include = [
-    "Cargo.toml",
-    "/LICENSE",
-    "/README.md",
-    "build.rs",
-    "src/*.rs",
-    "src/*/*.rs",
-    "/depend/check_uint128_t.c",
-    "/depend/zcash/src/amount.cpp",
-    "/depend/zcash/src/amount.h",
-    "/depend/zcash/src/compat/byteswap.h",
-    "/depend/zcash/src/compat/endian.h",
-    "/depend/zcash/src/consensus/consensus.h",
-    "/depend/zcash/src/crypto/common.h",
-    "/depend/zcash/src/crypto/ripemd160.cpp",
-    "/depend/zcash/src/crypto/ripemd160.h",
-    "/depend/zcash/src/crypto/sha1.cpp",
-    "/depend/zcash/src/crypto/sha1.h",
-    "/depend/zcash/src/crypto/sha256.cpp",
-    "/depend/zcash/src/crypto/sha256.h",
-    "/depend/zcash/src/hash.h",
-    "/depend/zcash/src/key_constants.h",
-    "/depend/zcash/src/prevector.h",
-    "/depend/zcash/src/primitives/transaction.h",
-    "/depend/zcash/src/pubkey.cpp",
-    "/depend/zcash/src/pubkey.h",
-    "/depend/zcash/src/script/interpreter.cpp",
-    "/depend/zcash/src/script/interpreter.h",
-    "/depend/zcash/src/script/script_error.cpp",
-    "/depend/zcash/src/script/script_error.h",
-    "/depend/zcash/src/script/script.cpp",
-    "/depend/zcash/src/script/script.h",
-    "/depend/zcash/src/script/zcash_script.cpp",
-    "/depend/zcash/src/script/zcash_script.h",
-    "/depend/zcash/src/secp256k1/",
-    "/depend/zcash/src/serialize.h",
-    "/depend/zcash/src/tinyformat.h",
-    "/depend/zcash/src/uint256.cpp",
-    "/depend/zcash/src/uint256.h",
-    "/depend/zcash/src/util/strencodings.cpp",
-    "/depend/zcash/src/util/strencodings.h",
-    "/depend/zcash/src/version.h",
-]
 
-[lib]
-name = "zcash_script"
-path = "src/lib.rs"
+[workspace.dependencies]
+libzcash_script = { version = "0.0.0", path = "libzcash_script" }
+zcash_script = { version = "0.3.2", path = "zcash_script" }
 
-[features]
-default = ["std", "signature-validation"]
-signature-validation = ["dep:secp256k1"]
-std = []
-external-secp = []
-test-dependencies = ["dep:hex", "dep:lazy_static"]
-
-[dependencies]
-bitflags = "2.8"
+# See Note [explicit >= version requirements]
+bindgen = { version = ">= 0.69.5", default-features = false, features = ["runtime"] }
 bounded-vec = "0.9"
-hex = { version = ">= 0.4.3", optional = true } # See Note [explicit >= version requirements]
-lazy_static = { version = "1.5.0", optional = true }
-ripemd = { version = "0.1", default-features = false }
-# This needs to match the version used by ECC crates (which are being used in
-# Zebra).
-secp256k1 = { version = "0.29", optional = true, default-features = false, features = ["alloc"] }
-sha-1 = { version = "0.10", default-features = false }
-sha2 = { version = "0.10", default-features = false }
-tracing = { version = "0.1", default-features = false }
-thiserror = "2.0"
-
-[build-dependencies]
-bindgen = { version = ">= 0.69.5", default-features = false, features = ["runtime"] } # See Note [explicit >= version requirements]
 # See Note [explicit >= version requirements]
 cc = { version = ">= 1.2.11", features = ["parallel"] }
-
-[dev-dependencies]
 hex = ">= 0.4.3" # See Note [explicit >= version requirements]
-lazy_static = "1.5.0"
-proptest = "1.6"
-
-[target.'cfg(linux)'.dev-dependencies]
 libfuzzer-sys = "0.4"
-
-[[package.metadata.release.pre-release-replacements]]
-file = "CHANGELOG.md"
-search = "Unreleased"
-replace="{{version}}"
-
-[[package.metadata.release.pre-release-replacements]]
-file = "src/lib.rs"
-search = "#!\\[doc\\(html_root_url.*"
-replace = "#![doc(html_root_url = \"https://docs.rs/{{crate_name}}/{{version}}\")]"
-exactly = 1
-
-[[package.metadata.release.pre-release-replacements]]
-file = "CHANGELOG.md"
-search = "\\.\\.\\.HEAD"
-replace="...{{tag_name}}"
-exactly = 1
-
-[[package.metadata.release.pre-release-replacements]]
-file = "CHANGELOG.md"
-search = "ReleaseDate"
-replace="{{date}}"
-exactly=1
-
-[[package.metadata.release.pre-release-replacements]]
-file="CHANGELOG.md"
-search="<!-- next-header -->"
-replace="<!-- next-header -->\n\n## [Unreleased] - ReleaseDate"
-exactly=1
-
-[[package.metadata.release.pre-release-replacements]]
-file="CHANGELOG.md"
-search="<!-- next-url -->"
-replace="<!-- next-url -->\n[Unreleased]: https://github.com/ZcashFoundation/{{crate_name}}/compare/{{tag_name}}...HEAD"
-exactly=1
+# This needs to match the version used by ECC crates (which are being used in
+# Zebra).
+secp256k1 = { version = "0.29", default-features = false, features = ["alloc"] }

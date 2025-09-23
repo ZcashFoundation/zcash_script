@@ -118,6 +118,11 @@ impl From<opcode::Error> for Error {
     }
 }
 
+/// An [`Error`] annotated with a [`ComponentType`].
+///
+/// TODO: Once C++ support is removed, the `Option` can go away.
+pub type AnnError = (Option<ComponentType>, Error);
+
 /// Evaluation functions for script components.
 pub trait Evaluable {
     /// Get the byte length of this script sig.

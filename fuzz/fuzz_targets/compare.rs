@@ -1,14 +1,13 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-extern crate zcash_script;
 
+use libzcash_script::{check_verify_callback, normalize_err, CxxInterpreter, RustInterpreter};
 use zcash_script::{
-    check_verify_callback,
     interpreter::{self, CallbackTransactionSignatureChecker},
-    normalize_err, script,
+    script,
     signature::HashType,
-    testing, CxxInterpreter, RustInterpreter,
+    testing,
 };
 
 fn missing_sighash(_script_code: &script::Code, _hash_type: &HashType) -> Option<[u8; 32]> {

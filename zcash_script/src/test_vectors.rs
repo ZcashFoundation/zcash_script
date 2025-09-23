@@ -69,9 +69,9 @@ impl Entry {
                 Ok(Self::val_to_pv(
                     &[0x30, 4 + r_len + s_len, 0x02, r_len]
                         .into_iter()
-                        .chain(r.into_iter())
-                        .chain([0x02, s_len].into_iter())
-                        .chain(s.into_iter())
+                        .chain(r)
+                        .chain([0x02, s_len])
+                        .chain(s)
                         .chain(iter::once(*hash_type))
                         .collect::<Vec<_>>(),
                 ))
@@ -145,19 +145,9 @@ impl TestVector {
     /// A successful run is uninteresting, but a failure returns the actual `Result` in `Err`.
     pub fn run(
         &self,
-        interpreter_fn: &dyn Fn(
-            &script::Raw,
-            interpreter::Flags,
-        )
-            -> Result<bool, (Option<script::ComponentType>, script::Error)>,
+        interpreter_fn: &dyn Fn(&script::Raw, interpreter::Flags) -> Result<bool, script::AnnError>,
         sigop_count_fn: &dyn Fn(&script::Code) -> u32,
-    ) -> Result<
-        (),
-        (
-            Result<bool, (Option<script::ComponentType>, script::Error)>,
-            u32,
-        ),
-    > {
+    ) -> Result<(), (Result<bool, script::AnnError>, u32)> {
         match (
             self.script_sig
                 .iter()
