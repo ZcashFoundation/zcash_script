@@ -7,6 +7,6 @@
 
 Zcash Script implementations.
 
-This contains two crates
+This contains two crates:
 - [zcash_script](./zcash_script) – a pure Rust implementation
-- [libzcash_script](./libzcash_script) – an FFI around the zcash_script C++ library
+- [libzcash_script](./libzcash_script) – an FFI around (a modified version of) the libzcash_script C++ library
