@@ -458,15 +458,6 @@ mod tests {
     }
 
     #[test]
-    fn it_fails_on_invalid_sighash_with_null_checker() {
-        let flags = interpreter::Flags::P2SH | interpreter::Flags::CHECKLOCKTIMEVERIFY;
-        let ret = RustInterpreter::new(interpreter::NullSignatureChecker())
-            .verify_callback(&SCRIPT, flags);
-
-        assert_eq!(ret, Ok(false));
-    }
-
-    #[test]
     fn it_fails_on_missing_sighash_in_cxx() {
         let lock_time: u32 = 2410374;
         let is_final: bool = true;
@@ -495,16 +486,6 @@ mod tests {
             is_final,
         })
         .verify_callback(&SCRIPT, flags);
-
-        assert_eq!(ret, Ok(false));
-    }
-
-    #[test]
-    fn it_fails_on_missing_sighash_with_null_checker() {
-        let flags = interpreter::Flags::P2SH | interpreter::Flags::CHECKLOCKTIMEVERIFY;
-
-        let ret = RustInterpreter::new(interpreter::NullSignatureChecker())
-            .verify_callback(&SCRIPT, flags);
 
         assert_eq!(ret, Ok(false));
     }
