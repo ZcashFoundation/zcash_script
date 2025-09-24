@@ -16,7 +16,7 @@ extern crate std;
 
 mod external;
 pub mod interpreter;
-mod num;
+pub mod num;
 pub mod op;
 pub mod opcode;
 pub mod pattern;
