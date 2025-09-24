@@ -9,7 +9,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-libzcash_script.workspace = true
+libzcash_script = { workspace = true, features = ["test-dependencies"] }
 zcash_script = { workspace = true, features = ["test-dependencies"] }
 
 [[bin]]

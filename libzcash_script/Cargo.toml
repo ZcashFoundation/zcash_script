@@ -63,6 +63,7 @@ default = ["std", "signature-validation"]
 signature-validation = ["zcash_script/signature-validation"]
 std = ["zcash_script/std"]
 external-secp = []
+test-dependencies = []
 
 [dependencies]
 zcash_script.workspace = true

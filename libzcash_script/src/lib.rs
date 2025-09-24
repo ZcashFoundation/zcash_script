@@ -29,6 +29,33 @@ mod ztrait;
 
 pub use ztrait::{AnnError, Error, RustInterpreter, ZcashScript};
 
+/// Code shared between testing and production, but that we only want to make public via `testing`.
+mod internal {
+    use super::*;
+
+    /// Runs two implementations of `ZcashScript::verify_callback` with the same arguments and
+    /// returns both results. This is more useful for testing than the impl that logs a warning if
+    /// the results differ and always returns the `T` result.
+    pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
+        first: &T,
+        second: &U,
+        script: &script::Raw,
+        flags: interpreter::Flags,
+    ) -> (Result<bool, AnnError>, Result<bool, AnnError>) {
+        (
+            first.verify_callback(script, flags),
+            second.verify_callback(script, flags),
+        )
+    }
+
+    /// Convert errors that don’t exist in the C++ code into the cases that do.
+    pub fn normalize_err(err: AnnError) -> Error {
+        err.1.normalize()
+    }
+}
+
+use internal::*;
+
 /// An interpreter that calls the original C++ implementation via FFI.
 pub struct CxxInterpreter<'a> {
     /// A callback to determine the sighash for a particular UTXO.
@@ -276,24 +303,6 @@ fn check_legacy_sigop_count_script<T: ZcashScript, U: ZcashScript>(
     )
 }
 
-// FIXME: This shouldn’t be public, but is currently used by both `ZcashScript for
-//        ComparisonInterpreter` and the fuzz tests, so it can’t easily be non-`pub` or moved to
-//        `testing`.
-/// Runs two implementations of `ZcashScript::verify_callback` with the same arguments and returns
-/// both results. This is more useful for testing than the impl that logs a warning if the results
-/// differ and always returns the `T` result.
-pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
-    first: &T,
-    second: &U,
-    script: &script::Raw,
-    flags: interpreter::Flags,
-) -> (Result<bool, AnnError>, Result<bool, AnnError>) {
-    (
-        first.verify_callback(script, flags),
-        second.verify_callback(script, flags),
-    )
-}
-
 /// A tag to indicate that both the C++ and Rust implementations of zcash_script should be used,
 /// with their results compared.
 #[cfg(feature = "std")]
@@ -326,11 +335,6 @@ pub fn cxx_rust_comparison_interpreter(
             is_final,
         }),
     }
-}
-
-/// Convert errors that don’t exist in the C++ code into the cases that do.
-pub fn normalize_err(err: AnnError) -> Error {
-    err.1.normalize()
 }
 
 /// This implementation is functionally equivalent to the `T` impl, but it also runs a second (`U`)
@@ -367,6 +371,12 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U>
     }
 }
 
+/// Utilities useful for tests in other modules and crates.
+#[cfg(any(test, feature = "test-dependencies"))]
+pub mod testing {
+    pub use super::internal::*;
+}
+
 #[cfg(test)]
 mod tests {
     use alloc::format;
@@ -383,7 +393,8 @@ mod tests {
     };
 
     use super::{
-        check_verify_callback, normalize_err, CxxInterpreter, Error, RustInterpreter, ZcashScript,
+        testing::{check_verify_callback, normalize_err},
+        CxxInterpreter, Error, RustInterpreter, ZcashScript,
     };
 
     #[test]
@@ -582,7 +593,7 @@ mod tests {
                 ret.1.clone().map_err(normalize_err),
                 "\n• original Rust result: {:?}\n• parsed script: {:?}",
                 ret.1,
-                testing::annotate_script(&script, &flags)
+                script.annotate(&flags),
             );
         }
 
@@ -618,7 +629,7 @@ mod tests {
                         rust_ret.clone().map_err(|(_, e)| Error::Script(e).normalize()),
                         "\n• original Rust result: {:?}\n• parsed script: {:?}",
                         rust_ret,
-                        testing::annotate_script(&script, &flags)
+                        script.annotate(&flags),
                     )
                 }
                 // Parsing of at least one script component failed. This checks that C++ evaluation
@@ -632,7 +643,7 @@ mod tests {
                             rust_ret.clone().map_err(|e| e.normalize()),
                             "\n• original Rust result: {:?}\n• parsed script: {:?}",
                             rust_ret,
-                            testing::annotate_script(&script, &flags),
+                            script.annotate(&flags),
                         )
                     }
                 }

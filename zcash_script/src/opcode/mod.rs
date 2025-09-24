@@ -92,7 +92,7 @@ pub enum PushValue {
 
 impl PushValue {
     /// Produce a minimal `PushValue` for the given data.
-    pub fn from_slice(v: &[u8]) -> Option<PushValue> {
+    pub(crate) fn from_slice(v: &[u8]) -> Option<PushValue> {
         match v {
             [] => Some(PushValue::SmallValue(OP_0)),
             [0x81] => Some(PushValue::SmallValue(OP_1NEGATE)),
@@ -117,7 +117,10 @@ impl PushValue {
     }
 
     /// Statically analyze a push value.
-    pub fn analyze(&self, flags: &interpreter::Flags) -> Result<(), Vec<interpreter::Error>> {
+    pub(crate) fn analyze(
+        &self,
+        flags: &interpreter::Flags,
+    ) -> Result<(), Vec<interpreter::Error>> {
         if flags.contains(interpreter::Flags::MinimalData) && !self.is_minimal_push() {
             Err(vec![interpreter::Error::MinimalData])
         } else {
@@ -142,7 +145,7 @@ impl PushValue {
     }
 
     /// Returns false if there is a smaller possible encoding of the provided value.
-    pub fn is_minimal_push(&self) -> bool {
+    pub(crate) fn is_minimal_push(&self) -> bool {
         match self {
             PushValue::LargeValue(lv) => lv.is_minimal_push(),
             PushValue::SmallValue(_) => true,
@@ -151,9 +154,9 @@ impl PushValue {
 
     /// The internal implementation of `Evaluable::eval`. `eval` has larger parameters, because it
     /// needs to be general. This only has the parameters required by the implementation. The
-    /// `Evalable` `impl` extracts the necessary components from the larger parameters and passes
+    /// `Evaluable` `impl` extracts the necessary components from the larger parameters and passes
     /// them through.
-    fn eval_(
+    fn eval_internal(
         &self,
         require_minimal: bool,
         mut stack: interpreter::Stack<Vec<u8>>,
@@ -193,7 +196,8 @@ impl Evaluable for PushValue {
         _checker: &dyn interpreter::SignatureChecker,
         mut state: interpreter::State,
     ) -> Result<interpreter::State, interpreter::Error> {
-        state.stack = self.eval_(flags.contains(interpreter::Flags::MinimalData), state.stack)?;
+        state.stack =
+            self.eval_internal(flags.contains(interpreter::Flags::MinimalData), state.stack)?;
         Ok(state)
     }
 
@@ -248,7 +252,7 @@ impl Control {
     }
 
     /// <expression> if [statements] [else [statements]] endif
-    pub fn eval(
+    pub(crate) fn eval(
         &self,
         mut stack: interpreter::Stack<Vec<u8>>,
         mut vexec: interpreter::Stack<bool>,
@@ -450,7 +454,10 @@ impl Operation {
     ///
     /// __NB__: [`Operation::OP_RETURN`] isn’t tracked by this function. That is functionally
     ///         more like a `break` then an error.
-    pub fn analyze(&self, flags: &interpreter::Flags) -> Result<(), Vec<interpreter::Error>> {
+    pub(crate) fn analyze(
+        &self,
+        flags: &interpreter::Flags,
+    ) -> Result<(), Vec<interpreter::Error>> {
         match self {
             Self::OP_CHECKLOCKTIMEVERIFY
                 if !flags.contains(interpreter::Flags::CHECKLOCKTIMEVERIFY)
@@ -478,7 +485,7 @@ impl Operation {
 
     /// The number of signature operations represented by this opcode. If the `last_opcode` is
     /// provided, we can sometimes give a more accurate value.
-    pub fn sig_op_count(&self, last_opcode: Option<PossiblyBad>) -> u32 {
+    pub(crate) fn sig_op_count(&self, last_opcode: Option<PossiblyBad>) -> u32 {
         match self {
             Self::OP_CHECKSIG | Self::OP_CHECKSIGVERIFY => 1,
             Self::OP_CHECKMULTISIG | Self::OP_CHECKMULTISIGVERIFY => {
@@ -584,7 +591,7 @@ impl Operation {
     }
 
     /// Evaluate a single operation.
-    pub fn eval(
+    pub(crate) fn eval(
         &self,
         flags: interpreter::Flags,
         script: &script::Code,
@@ -1114,7 +1121,7 @@ impl PossiblyBad {
     ///
     /// This always returns the unparsed bytes, because parsing failures don’t invalidate the
     /// remainder of the stream (if any).
-    pub fn parse(script: &[u8]) -> (Result<Self, Error>, &[u8]) {
+    pub(crate) fn parse(script: &[u8]) -> (Result<Self, Error>, &[u8]) {
         match push_value::LargeValue::parse(script) {
             None => match script.split_first() {
                 None => (
@@ -1150,7 +1157,10 @@ impl PossiblyBad {
     }
 
     /// Statically analyze a possibly-bad opcode.
-    pub fn analyze(&self, flags: &interpreter::Flags) -> Result<&Opcode, Vec<interpreter::Error>> {
+    pub(crate) fn analyze(
+        &self,
+        flags: &interpreter::Flags,
+    ) -> Result<&Opcode, Vec<interpreter::Error>> {
         match self {
             Self::Good(op) => op.analyze(flags).map(|()| op),
             Self::Bad(_) => Err(vec![interpreter::Error::BadOpcode]),
