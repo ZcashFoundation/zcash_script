@@ -1,0 +1,84 @@
+[package]
+name = "zcash_script"
+version = "0.3.2"
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+readme = "README.md"
+edition.workspace = true
+description = "ffi bindings to zcashd's zcash_script library"
+documentation = "https://docs.rs/zcash_script"
+repository.workspace = true
+include = [
+    "Cargo.toml",
+    "/LICENSE",
+    "/README.md",
+    "src/*.rs",
+    "src/*/*.rs",
+]
+
+[lib]
+name = "zcash_script"
+path = "src/lib.rs"
+
+[features]
+default = ["std", "signature-validation"]
+## Whether to allow signature validation (and lock time verification). If disabled, the
+## `CallbackTransactionSignatureChecker` will be unavailable, and only the `NullSignatureChecker`
+## can be used.
+signature-validation = ["dep:secp256k1"]
+std = []
+test-dependencies = ["dep:hex", "dep:lazy_static"]
+
+[dependencies]
+bitflags.workspace = true
+bounded-vec.workspace = true
+hex = { workspace = true, optional = true }
+lazy_static = { workspace = true, optional = true }
+ripemd.workspace = true
+secp256k1 = { workspace = true, optional = true }
+sha1.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+hex.workspace = true
+lazy_static.workspace = true
+
+[target.'cfg(linux)'.dev-dependencies]
+libfuzzer-sys.workspace = true
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "Unreleased"
+replace="{{version}}"
+
+[[package.metadata.release.pre-release-replacements]]
+file = "src/lib.rs"
+search = "#!\\[doc\\(html_root_url.*"
+replace = "#![doc(html_root_url = \"https://docs.rs/{{crate_name}}/{{version}}\")]"
+exactly = 1
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "\\.\\.\\.HEAD"
+replace="...{{tag_name}}"
+exactly = 1
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "ReleaseDate"
+replace="{{date}}"
+exactly=1
+
+[[package.metadata.release.pre-release-replacements]]
+file="CHANGELOG.md"
+search="<!-- next-header -->"
+replace="<!-- next-header -->\n\n## [Unreleased] - ReleaseDate"
+exactly=1
+
+[[package.metadata.release.pre-release-replacements]]
+file="CHANGELOG.md"
+search="<!-- next-url -->"
+replace="<!-- next-url -->\n[Unreleased]: https://github.com/ZcashFoundation/{{crate_name}}/compare/{{tag_name}}...HEAD"
+exactly=1
