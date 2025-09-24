@@ -118,10 +118,12 @@ impl From<opcode::Error> for Error {
     }
 }
 
+type AnnOpcode = Result<Opcode, Vec<Error>>;
+
 /// An [`Error`] annotated with a [`ComponentType`].
 ///
 /// TODO: Once C++ support is removed, the `Option` can go away.
-pub type AnnError = (Option<ComponentType>, Error);
+pub(crate) type AnnError = (Option<ComponentType>, Error);
 
 /// Evaluation functions for script components.
 pub trait Evaluable {
@@ -314,35 +316,29 @@ pub struct Code(pub Vec<u8>);
 
 impl Code {
     /// Maximum script length in bytes
-    pub const MAX_SIZE: usize = 10_000;
-
-    /// This parses an entire script. This is stricter than the incremental parsing that is done
-    /// during [`Self::eval`], because it fails on statically-identifiable interpretation errors no matter
-    /// where they occur (that is, even on branches that may not be evaluated on a particular run).
-    ///
-    /// This is useful for validating and analyzing scripts before they are put into a transaction,
-    /// but not for scripts that are read from the chain, because it may fail on valid scripts.
-    pub fn parse_strict<'a>(
-        &'a self,
-        flags: &'a interpreter::Flags,
-    ) -> impl Iterator<Item = Result<Opcode, Vec<Error>>> + 'a {
-        self.parse().map(|mpb| {
-            mpb.map_err(|e| vec![Error::Opcode(e)]).and_then(|pb| {
-                pb.analyze(flags)
-                    .map_err(|ierrs| {
-                        ierrs
-                            .into_iter()
-                            .map(|ie| Error::Interpreter(Some(pb.clone()), ie))
-                            .collect()
-                    })
-                    .cloned()
-            })
-        })
-    }
+    pub(crate) const MAX_SIZE: usize = 10_000;
 
     /// Produce an [`Opcode`] iterator from [`Code`].
     pub fn parse(&self) -> Parser<'_> {
         Parser(&self.0)
+    }
+
+    /// Returns a script annotated with errors that could occur during evaluation.
+    pub fn annotate(&self, flags: &interpreter::Flags) -> Vec<AnnOpcode> {
+        self.parse()
+            .map(|mpb| {
+                mpb.map_err(|e| vec![Error::Opcode(e)]).and_then(|pb| {
+                    pb.analyze(flags)
+                        .map_err(|ierrs| {
+                            ierrs
+                                .into_iter()
+                                .map(|ie| Error::Interpreter(Some(pb.clone()), ie))
+                                .collect()
+                        })
+                        .cloned()
+                })
+            })
+            .collect::<Vec<_>>()
     }
 
     /// Convert this into a `Component`, which can then be combined in authored scripts in `Script`.
@@ -396,7 +392,7 @@ impl Evaluable for Code {
 
     /// Returns true iff this script is P2SH.
     fn is_pay_to_script_hash(&self) -> bool {
-        self.parse_strict(&interpreter::Flags::all())
+        self.parse()
             .collect::<Result<Vec<_>, _>>()
             .map_or(false, |ops| Component(ops).is_pay_to_script_hash())
     }
@@ -434,8 +430,13 @@ impl Raw {
     }
 
     /// Apply a function to both components of a script, returning the tuple of results.
-    pub fn map<T>(&self, f: &dyn Fn(&Code) -> T) -> (T, T) {
+    pub(crate) fn map<T>(&self, f: impl Fn(&Code) -> T) -> (T, T) {
         (f(&self.sig), f(&self.pub_key))
+    }
+
+    /// Returns a script annotated with errors that could occur during evaluation.
+    pub fn annotate(&self, flags: &interpreter::Flags) -> (Vec<AnnOpcode>, Vec<AnnOpcode>) {
+        self.map(|c| c.annotate(flags))
     }
 
     /// Validate a [`Raw`] script.

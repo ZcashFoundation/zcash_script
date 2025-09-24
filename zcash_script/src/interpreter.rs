@@ -86,7 +86,7 @@ pub enum Error {
 
 impl Error {
     /// Convert errors that don’t exist in the C++ code into the cases that do.
-    pub fn normalize(&self) -> Self {
+    pub(crate) fn normalize(&self) -> Self {
         match self {
             Self::InvalidStackOperation(Some(_)) => Self::InvalidStackOperation(None),
             Self::SignatureEncoding(sig_err) => match sig_err {
@@ -122,10 +122,10 @@ impl From<signature::Error> for Error {
 const LOCKTIME_THRESHOLD: i64 = 500_000_000; // Tue Nov  5 00:53:20 1985 UTC
 
 /// The maximum number of operations allowed in a script component.
-pub const MAX_OP_COUNT: u8 = 201;
+pub(crate) const MAX_OP_COUNT: u8 = 201;
 
 /// The maximum number of pubkeys (and signatures, by implication) allowed in CHECKMULTISIG.
-pub const MAX_PUBKEY_COUNT: u8 = 20;
+pub(crate) const MAX_PUBKEY_COUNT: u8 = 20;
 
 bitflags::bitflags! {
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -230,7 +230,7 @@ pub struct CallbackTransactionSignatureChecker<'a> {
 
 /// Treat a stack entry as a generalized boolean. Anything other than 0 and -0 (minimal encoding not
 /// required) is treated as `true`.
-pub fn cast_to_bool(vch: &[u8]) -> bool {
+pub(crate) fn cast_to_bool(vch: &[u8]) -> bool {
     for i in 0..vch.len() {
         if vch[i] != 0 {
             // Can be negative zero
@@ -245,24 +245,24 @@ pub fn cast_to_bool(vch: &[u8]) -> bool {
 
 /// Script is a stack machine (like Forth) that evaluates a predicate returning a bool indicating
 /// valid or not.  There are no loops.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Stack<T>(Vec<T>);
 
 // NB: This isn’t in `impl Stack`, because that requires us to specify type parameters, even though
 //     this value doesn’t care about them.
 /// The maximum number of elements allowed in the _combined_ stack and altstack.
-pub const MAX_STACK_DEPTH: usize = 1000;
+pub(crate) const MAX_STACK_DEPTH: usize = 1000;
 
 /// Wraps a Vec (or whatever underlying implementation we choose in a way that matches the C++ impl
 /// and provides us some decent chaining)
 impl<T> Stack<T> {
     /// Creates an empty stack.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Stack(vec![])
     }
 
     /// Fail if the Stack doesn’t contain at least `min` elements.
-    pub fn check_len(&self, min: usize) -> Result<(), Error> {
+    pub(crate) fn check_len(&self, min: usize) -> Result<(), Error> {
         let len = self.0.len();
         if min <= len {
             Ok(())
@@ -282,20 +282,20 @@ impl<T> Stack<T> {
 
     /// Gets an element from the stack without removing it., counting from the right. I.e.,
     /// `rget(0)` returns the top element.
-    pub fn rget(&self, i: usize) -> Result<&T, Error> {
+    pub(crate) fn rget(&self, i: usize) -> Result<&T, Error> {
         let idx = self.rindex(i)?;
         self.0.get(idx).ok_or(Error::InvalidStackOperation(None))
     }
 
     /// Removes and returns the top element from the stack.
-    pub fn pop(&mut self) -> Result<T, Error> {
+    pub(crate) fn pop(&mut self) -> Result<T, Error> {
         self.0
             .pop()
             .ok_or(Error::InvalidStackOperation(Some((0, self.0.len()))))
     }
 
     /// Adds a new element to the top of the stack.
-    pub fn push(&mut self, value: T) {
+    pub(crate) fn push(&mut self, value: T) {
         self.0.push(value)
     }
 
@@ -310,7 +310,7 @@ impl<T> Stack<T> {
     }
 
     /// Returns a mutable reference to the last element of the stack.
-    pub fn last_mut(&mut self) -> Result<&mut T, Error> {
+    pub(crate) fn last_mut(&mut self) -> Result<&mut T, Error> {
         let len = self.0.len();
         self.0
             .last_mut()
@@ -318,19 +318,19 @@ impl<T> Stack<T> {
     }
 
     /// Returns a reference to the last element of the stack.
-    pub fn last(&self) -> Result<&T, Error> {
+    pub(crate) fn last(&self) -> Result<&T, Error> {
         self.0
             .last()
             .ok_or(Error::InvalidStackOperation(Some((0, self.0.len()))))
     }
 
     /// Removes an element from the stack, counting from the right.
-    pub fn rremove(&mut self, start: usize) -> Result<T, Error> {
+    pub(crate) fn rremove(&mut self, start: usize) -> Result<T, Error> {
         self.rindex(start).map(|rstart| self.0.remove(rstart))
     }
 
     /// Inserts an element at the given index, counting from the right.
-    pub fn rinsert(&mut self, i: usize, element: T) -> Result<(), Error> {
+    pub(crate) fn rinsert(&mut self, i: usize, element: T) -> Result<(), Error> {
         let ri = self.rindex(i)?;
         self.0.insert(ri, element);
         Ok(())
@@ -339,26 +339,29 @@ impl<T> Stack<T> {
     // higher-level operations
 
     /// Perform a unary operation on the top stack element.
-    pub fn unop(&mut self, op: impl FnOnce(T) -> Result<T, Error>) -> Result<(), Error> {
+    pub(crate) fn unop(&mut self, op: impl FnOnce(T) -> Result<T, Error>) -> Result<(), Error> {
         self.pop().and_then(op).map(|res| self.push(res))
     }
 
     /// Call a binary function on the top two stack elements.
-    pub fn binfn<R>(&mut self, op: impl FnOnce(T, T) -> Result<R, Error>) -> Result<R, Error> {
+    pub(crate) fn binfn<R>(
+        &mut self,
+        op: impl FnOnce(T, T) -> Result<R, Error>,
+    ) -> Result<R, Error> {
         let x2 = self.pop()?;
         let x1 = self.pop()?;
         op(x1, x2)
     }
 
     /// Perform a binary operation on the top two stack elements.
-    pub fn binop(&mut self, op: impl FnOnce(T, T) -> Result<T, Error>) -> Result<(), Error> {
+    pub(crate) fn binop(&mut self, op: impl FnOnce(T, T) -> Result<T, Error>) -> Result<(), Error> {
         self.binfn(op).map(|res| self.push(res))
     }
 }
 
 impl<T: Clone> Stack<T> {
     /// Returns the last element of the stack as well as the remainder of the stack.
-    pub fn split_last(&self) -> Result<(&T, Stack<T>), Error> {
+    pub(crate) fn split_last(&self) -> Result<(&T, Stack<T>), Error> {
         self.0
             .split_last()
             .ok_or(Error::InvalidStackOperation(Some((0, self.0.len()))))
@@ -366,12 +369,12 @@ impl<T: Clone> Stack<T> {
     }
 
     /// Copies the element at `i` (from the right) onto the top of the stack.
-    pub fn repush(&mut self, i: usize) -> Result<(), Error> {
+    pub(crate) fn repush(&mut self, i: usize) -> Result<(), Error> {
         self.rget(i).cloned().map(|v| self.push(v))
     }
 
     /// Moves the element at `i` (from the right) onto the top of the stack.
-    pub fn move_to_top(&mut self, i: usize) -> Result<(), Error> {
+    pub(crate) fn move_to_top(&mut self, i: usize) -> Result<(), Error> {
         self.rremove(i).map(|v| self.push(v.clone()))
     }
 }
@@ -379,34 +382,29 @@ impl<T: Clone> Stack<T> {
 /// This holds the various components that need to be carried between individual opcode evaluations.
 ///
 /// **NB**: This intentionally doesn’t provide a `Clone` impl, to prevent resuse of old state.
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct State {
     /// The primary evaluation stack.
-    pub stack: Stack<Vec<u8>>,
+    pub(crate) stack: Stack<Vec<u8>>,
     /// A secondary stack that elements can be moved to temporarily.
-    pub altstack: Stack<Vec<u8>>,
+    pub(crate) altstack: Stack<Vec<u8>>,
     /// We keep track of how many operations have executed so far to prevent expensive-to-verify
     /// scripts
     op_count: u8,
     /// This keeps track of the conditional flags at each nesting level during execution. If we're
     /// in a branch of execution where *any* of these conditionals are false, we ignore opcodes
     /// unless those opcodes direct control flow (OP_IF, OP_ELSE, etc.).
-    pub vexec: Stack<bool>,
+    pub(crate) vexec: Stack<bool>,
 }
 
 impl State {
-    /// Creates a new empty state.
-    pub fn new() -> Self {
-        Self::initial(Stack::new())
-    }
-
     /// Creates a state with an initial stack, but other components empty.
-    pub fn initial(stack: Stack<Vec<u8>>) -> Self {
+    pub(crate) fn initial(stack: Stack<Vec<u8>>) -> Self {
         Self::from_parts(stack, Stack::new(), 0, Stack::new())
     }
 
     /// Bumps the current `op_count` by one and errors if it exceeds `MAX_OP_COUNT`.
-    pub fn increment_op_count(&mut self, by: u8) -> Result<(), Error> {
+    pub(crate) fn increment_op_count(&mut self, by: u8) -> Result<(), Error> {
         self.op_count += by;
         if self.op_count <= MAX_OP_COUNT {
             Ok(())
@@ -416,7 +414,7 @@ impl State {
     }
 
     /// Create an arbitrary state.
-    pub fn from_parts(
+    pub(crate) fn from_parts(
         stack: Stack<Vec<u8>>,
         altstack: Stack<Vec<u8>>,
         op_count: u8,
@@ -431,31 +429,20 @@ impl State {
     }
 
     /// Extract the altstack from the state.
-    pub fn altstack(&self) -> &Stack<Vec<u8>> {
+    pub(crate) fn altstack(&self) -> &Stack<Vec<u8>> {
         &self.altstack
-    }
-
-    /// Extract the op_count from the state (in most cases, you can use `increment_op_count`
-    /// instead).
-    pub fn op_count(&self) -> u8 {
-        self.op_count
-    }
-
-    /// Extract the current conditional state from the overall state.
-    pub fn vexec(&self) -> &Stack<bool> {
-        &self.vexec
     }
 }
 
 /// Are we in an executing branch of the script?
-pub fn should_exec(vexec: &Stack<bool>) -> bool {
+pub(crate) fn should_exec(vexec: &Stack<bool>) -> bool {
     vexec.iter().all(|value| *value)
 }
 
 /// All signature hashes are 32 bytes, since they are either:
 /// - a SHA-256 output (for v1 or v2 transactions).
 /// - a BLAKE2b-256 output (for v3 and above transactions).
-pub const SIGHASH_SIZE: usize = 32;
+pub(crate) const SIGHASH_SIZE: usize = 32;
 
 /// A function which is called to obtain the sighash.
 ///    - script_code: the scriptCode being validated. Note that this not always

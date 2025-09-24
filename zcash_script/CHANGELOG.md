@@ -8,47 +8,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+This is a significant change, with a new Rust API that isn’t made to be swappable with the C++ API. The previous `ZcashScript`-based API is in the new `libzcash_script` crate.
+
 ### Removed
 
-- The C++ implementation and `ZcashScript` trait, etc. have moved to the new libzcash_script crate
-- `HashType` and `SignedOutputs` are no longer re-exported at the top level, access them via `signature::`
-- `script_error::ScriptError` no longer has a defined primitive representation, as the variants have changed and the use of the representation had already been removed
-- `interpreter::CallbackTransactionSignatureChecker::verify_signature` was an internal function that was accidentally exposed
-- removed re-exports from `interpreter`, these can still be accessed via
-  `interpreter::` and if they make more sense elsewhere, they should be moved
-  - `CallbackTransactionSignatureChecker`,
-  - `DefaultStepEvaluator`,
-  - `HashType`,
-  - `SignedOutputs`, and
-  - `VerificationFlags`;
-- removed access to some internals
-  - `CallbackTransactionSignatureChecker::verify_signature`,
-  - `DefaultStepEvaluator` fields,
-  - `HashType::from_bits`,
-  - `Stack` operations,
-  - `StepResults` fields,
-  - `interpreter::eval_script`,
-  - `interpreter::eval_step`,
-  - `interpreter::verify_script`, and
-  - `stepwise_verify`.
-- `ScriptError::Ok` has been removed, as it was never used
+- The `cxx` module, `ZcashScript` trait, `ComparisonInterpreter`, `CxxInterpreter` structs, `Error` enum, `cxx_rust_comparison_interpreter` function, and `external-secp` feature have all moved to the new `libzcash_script` crate
+- `check_verify_callback` has moved to the `testing` module in the new `libzcash_script` crate
+- `normalize_error` has been removed, but there is a similar new function `testing::normalize_err` in the new `libzcash_script` crate
+- `rust_interpreter` has been removed, but there is a similar `RustInterpreter` struct in the new `libzcash_script` crate
+- `interpreter::State` no longer implements `Clone`
+- All of the stepwise functionality (`ComparisonStepEvaluator`, `StepResults`, `StepwiseInterpreter`, `interpreter::DefaultStepEvaluator` (its re-export `DefaultStepEvaluator`), `stepwise_verify`, `interpreter::eval_step`, and `interpreter::StepFn`) has been removed
+- The `interpreter::Stack` and `interpreter::State` operations have been removed
+- `interpreter::CallbackTransactionSignatureChecker::verify_signature` has been removed
+- `interpreter::CallbackTransactionSignatureChecker` is no longer re-exported as `CallbackTransactionSignatureChecker`
+- `interpreter::SignatureChecker::check_sig` and `interpreter::SignatureChecker::check_lock_time` no longer have default impls
+
 
 ### Changed
 
-- `HashType`, `InvalidHashType`, and `SignedOutputs` have moved from `interpreter` to `signature`
-- the `SigHashType`, `SigDER`, and `SigHighS` `ScriptError` variants have been moved to the new `signature::Error`, and are grouped under the new `ScriptError::SignatureEncoding`
-- `interpreter::SighashCalculator` now takes `&HashType` instead of `HashType`
-- `interpreter::Signature` is now `signature::Decoded`
-- `interpreter::SignatureChecker::check_sig` takes a `&signature::Decoded` instead of a `&[u8]`
-- `signature::HashType` now has private fields, but there are corresponding getter methods
-- `ScriptError::UnknownError` has been replaced by `ScriptError::ExternalError`
-- `BadOpcode` and `DisabledOpcode` in `ScriptError` now take parameters
+- `interpreter::HashType` (its re-export `HashType`), `interpreter::InvalidHashType`, `interpreter::SignedOutputs` (and its re-export `SignedOutputs`) are now available only from the `signature` module
+- `interpreter::BaseSignatureChecker` is now named `interpreter::NullSignatureChecker`
+- `interpreter::eval_script` has been replaced by the `script::Code::eval` method
+- `interpreter::verify_script` has been replaced by the `script::Raw::eval` method
+- `interpterer::VerificationFlags` (and its re-export `VerificationFlags`) is now available only as `interpreter::Flags`
+- `script_error::ScriptNumError` is now `num::Error`
+- `script_error::ScriptError` is now `script::Error`, and its constructors have been split between that type, `opcode::Error`, `interpreter::Error`, and `signature::Error`. Many of the constructors of these types have changed – taking parameters, or combined or split into different specific cases.
 
 ### Added
 
-- `signature::Decoded` operations `from_bytes`, `sig`, and `sighash`
-- `pv::` containing all `PushValue` opcodes
-- `op::` containing all `Opcode`s (including `PushValues`)
+- `interpreter::Error`, `opcode::Error`, and `signature::Error` have been added as subsets of `script::Error`
+- script types `Script` and `script::Raw` have been added
+- `script::Component` has been added
+- The `pv` and `op` modules have been added
+- The `pattern` module has been added with a number of functions for building scripts components
+- The `script::Evaluable` and `opcode::Evaluable` traits have been added, with implementations for the relevant types
+- script and component types have an `annotate` method for collecting potential issues with a script
 
 ## [0.3.2](https://github.com/ZcashFoundation/zcash_script/compare/v0.3.1...v0.3.2) - 2025-06-24
 
