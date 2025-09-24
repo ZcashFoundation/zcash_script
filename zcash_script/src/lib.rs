@@ -68,8 +68,8 @@ impl Opcode {
     /// Statically analyze an opcode. That is, this identifies potential runtime errors without
     /// needing to evaluate the script.
     ///
-    /// __NB__: [`opcode::Operation::OP_RETURN`] isn’t tracked by this function because it’s
-    ///         functionally more like a `break` then an error.
+    /// __NB__: [`op::RETURN`] isn’t tracked by this function because it’s functionally more like a
+    ///         `break` then an error.
     pub fn analyze(&self, flags: &interpreter::Flags) -> Result<(), Vec<interpreter::Error>> {
         match self {
             Opcode::PushValue(pv) => pv.analyze(flags),

@@ -296,8 +296,8 @@ impl<'a> Iterator for Parser<'a> {
     }
 }
 
-/// When an entire [`Script`] is validated, this is used to tag errors with which component they
-/// came from.
+/// When an entire [`crate::Script`] is validated, this is used to tag errors with which component
+/// they came from.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ComponentType {
     /// The script sig.
@@ -317,9 +317,8 @@ impl Code {
     pub const MAX_SIZE: usize = 10_000;
 
     /// This parses an entire script. This is stricter than the incremental parsing that is done
-    /// during [`interpreter::verify_script`], because it fails on statically-identifiable
-    /// interpretation errors no matter where they occur (that is, even on branches that may not be
-    /// evaluated on a particular run).
+    /// during [`Self::eval`], because it fails on statically-identifiable interpretation errors no matter
+    /// where they occur (that is, even on branches that may not be evaluated on a particular run).
     ///
     /// This is useful for validating and analyzing scripts before they are put into a transaction,
     /// but not for scripts that are read from the chain, because it may fail on valid scripts.

@@ -151,9 +151,9 @@ impl PushValue {
 
     /// The internal implementation of `Evaluable::eval`. `eval` has larger parameters, because it
     /// needs to be general. This only has the parameters required by the implementation. The
-    /// `Evalable` `impl` extracts the necessary components from the larger parameters and passes
+    /// `Evaluable` `impl` extracts the necessary components from the larger parameters and passes
     /// them through.
-    fn eval_(
+    fn eval_internal(
         &self,
         require_minimal: bool,
         mut stack: interpreter::Stack<Vec<u8>>,
@@ -193,7 +193,8 @@ impl Evaluable for PushValue {
         _checker: &dyn interpreter::SignatureChecker,
         mut state: interpreter::State,
     ) -> Result<interpreter::State, interpreter::Error> {
-        state.stack = self.eval_(flags.contains(interpreter::Flags::MinimalData), state.stack)?;
+        state.stack =
+            self.eval_internal(flags.contains(interpreter::Flags::MinimalData), state.stack)?;
         Ok(state)
     }
 
