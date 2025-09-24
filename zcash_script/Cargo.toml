@@ -23,6 +23,9 @@ path = "src/lib.rs"
 
 [features]
 default = ["std", "signature-validation"]
+## Whether to allow signature validation (and lock time verification). If disabled, the
+## `CallbackTransactionSignatureChecker` will be unavailable, and only the `NullSignatureChecker`
+## can be used.
 signature-validation = ["dep:secp256k1"]
 std = []
 test-dependencies = ["dep:hex", "dep:lazy_static"]
