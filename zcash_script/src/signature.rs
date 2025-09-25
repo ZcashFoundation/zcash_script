@@ -3,15 +3,14 @@
 //! This is in a separate module so we can minimize the code that has access to the internals,
 //! making it easier to ensure that we check the encoding correctly.
 
-use alloc::borrow::ToOwned;
-use alloc::vec::Vec;
+use alloc::{borrow::ToOwned, string::String, vec::Vec};
 
 #[cfg(feature = "signature-validation")]
 use secp256k1::ecdsa;
 use thiserror::Error;
 
 #[cfg(feature = "signature-validation")]
-use crate::external::pubkey::PubKey;
+use crate::{external::pubkey::PubKey, script::Asm};
 
 /// Things that can go wrong when constructing a `HashType` from bit flags.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Error)]
@@ -172,6 +171,28 @@ impl HashType {
     /// Allows anyone to add transparent inputs to this transaction.
     pub fn anyone_can_pay(&self) -> bool {
         self.anyone_can_pay
+    }
+}
+
+impl Asm for HashType {
+    fn to_asm(&self, _attempt_sighash_decode: bool) -> String {
+        let signed_outputs = match self.signed_outputs {
+            SignedOutputs::All => "ALL",
+            SignedOutputs::Single => "SINGLE",
+            SignedOutputs::None => "NONE",
+        };
+        let anyone_can_pay = if self.anyone_can_pay {
+            "|ANYONECANPAY"
+        } else {
+            ""
+        };
+        format!("{}{}", signed_outputs, anyone_can_pay)
+    }
+}
+
+impl std::fmt::Display for HashType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_asm(false))
     }
 }
 
