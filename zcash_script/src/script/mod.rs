@@ -311,7 +311,7 @@ pub enum ComponentType {
 }
 
 /// Serialized script, used inside transaction inputs and outputs
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Code(pub Vec<u8>);
 
 impl Code {
