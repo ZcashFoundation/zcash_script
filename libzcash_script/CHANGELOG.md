@@ -7,8 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
-### Added
-- This was extracted from zcash_script 0.3.2.
+
+## [0.1.0] - 2025-09-25
+
+This crate was extracted from `zcash_script 0.3.2` and then modified to align with
+`zcash_script 0.4.0`.
 
 <!-- next-url -->
-[Unreleased]: https://github.com/ZcashFoundation/zcash_script
+[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/libzcash_script-v0.1.0...HEAD
+[0.1.0]: https://github.com/ZcashFoundation/zcash_script/releases/tag/libzcash_script-v0.1.0
