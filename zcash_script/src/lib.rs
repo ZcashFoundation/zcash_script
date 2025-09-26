@@ -25,6 +25,9 @@ pub mod script;
 pub mod signature;
 pub mod solver;
 
+#[cfg(feature = "descriptor")]
+pub mod descriptor;
+
 #[cfg(any(test, feature = "test-dependencies"))]
 pub mod test_vectors;
 
