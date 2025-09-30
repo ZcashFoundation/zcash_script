@@ -1546,19 +1546,3 @@ mod tests {
         }
     }
 }
-
-impl Asm for Opcode {
-    fn to_asm(&self, attempt_sighash_decode: bool) -> String {
-        match self {
-            Opcode::PushValue(pv) => pv.to_asm(attempt_sighash_decode),
-            Opcode::Operation(op) => op.to_asm(attempt_sighash_decode),
-            Opcode::Control(c) => c.to_asm(attempt_sighash_decode),
-        }
-    }
-}
-
-impl core::fmt::Display for Opcode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_asm(false))
-    }
-}

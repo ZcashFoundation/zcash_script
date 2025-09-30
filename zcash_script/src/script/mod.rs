@@ -8,7 +8,8 @@ use alloc::{
 use thiserror::Error;
 
 use crate::{
-    interpreter, op,
+    interpreter,
+    op::{self, PossiblyBad},
     opcode::{self, push_value::LargeValue::*, Operation::*, PushValue},
     signature, Opcode,
 };
@@ -290,6 +291,16 @@ impl<T: Into<opcode::PossiblyBad> + opcode::Evaluable + Clone> Evaluable for Com
     }
 }
 
+impl<T: Asm> Asm for Component<T> {
+    fn to_asm(&self, attempt_sighash_decode: bool) -> String {
+        self.0
+            .iter()
+            .map(|op| op.to_asm(attempt_sighash_decode))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+}
+
 /// An iterator that provides `Opcode`s from a byte stream.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Parser<'a>(&'a [u8]);
@@ -378,13 +389,13 @@ impl Code {
 
     /// Returns whether the script is guaranteed to fail at execution,
     /// regardless of the initial stack.
+    ///
+    /// The only purpose of this function is to reproduce the behavior of the
+    /// zcashd function `IsUnspendable()`, which is used for "asm" encoding.
+    /// https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/script/script.h#L617-L620
     fn is_unspendable(&self) -> bool {
-        const MAX_SCRIPT_SIZE: usize = 10000;
-        self.parse().next()
-            == Some(Ok(opcode::PossiblyBad::Good(Opcode::Operation(
-                opcode::Operation::OP_RETURN,
-            ))))
-            || self.0.len() > MAX_SCRIPT_SIZE
+        self.parse().next() == Some(Ok(opcode::PossiblyBad::Good(op::RETURN)))
+            || self.0.len() > Self::MAX_SIZE
     }
 }
 
@@ -443,10 +454,12 @@ impl Asm for Code {
     fn to_asm(&self, attempt_sighash_decode: bool) -> String {
         let mut v = Vec::new();
         let is_unspendable = self.is_unspendable();
-        for r in self.parse_strict(&interpreter::Flags::StrictEnc) {
+        for r in self.parse() {
             match r {
-                Ok(op) => v.push(op.to_asm(attempt_sighash_decode && !is_unspendable)),
-                Err(_) => {
+                Ok(PossiblyBad::Good(op)) => {
+                    v.push(op.to_asm(attempt_sighash_decode && !is_unspendable))
+                }
+                Ok(PossiblyBad::Bad(_)) | Err(_) => {
                     v.push("[error]".to_string());
                     break;
                 }
@@ -456,7 +469,6 @@ impl Asm for Code {
     }
 }
 
-/// Implement Display for any type that implements Asm
 impl core::fmt::Display for Code {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_asm(false))
