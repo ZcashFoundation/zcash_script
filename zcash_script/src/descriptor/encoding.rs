@@ -50,7 +50,7 @@ impl FromStr for KeyOrigin {
                         .expect("split() returns the full input on no matches"),
                 )
                 .ok()
-                .and_then(|fingerprint| fingerprint.try_into().ok())
+                .and_then(|fingerprint| <[u8; 4]>::try_from(fingerprint).ok())
                 .ok_or(ParseError::InvalidFingerprint)?;
 
                 let derivation = parts

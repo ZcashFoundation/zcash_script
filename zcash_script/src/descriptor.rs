@@ -3,7 +3,7 @@
 //! This module provides the subset of [BIP 380] Output Script Descriptors that are valid
 //! to use within the Zcash ecosystem.
 //!
-//! [BIP 380]: https://github.com/bitcoin/bips/blob/master/bip-0380.
+//! [BIP 380]: https://github.com/bitcoin/bips/blob/master/bip-0380.mediawiki
 
 use alloc::vec::Vec;
 use core::fmt;
@@ -194,7 +194,7 @@ pub fn sh(script: &script::Redeem) -> script::PubKey {
     let script_hash = Ripemd160::digest(Sha256::digest(script.to_bytes()));
     script::Component(vec![
         op::HASH160,
-        op::push_value(&script_hash).expect("short enough"),
+        Opcode::from(pattern::push_160b_hash(&script_hash)),
         op::EQUAL,
     ])
 }
@@ -227,10 +227,8 @@ fn multi_inner(k: u8, keys: &[KeyExpression], sorted: bool) -> Result<script::Re
             if k > n {
                 Err(Error::InvalidThreshold(k, n))
             } else {
-                let k = op::push_value(&crate::num::serialize(k.into()))
-                    .expect("all u8 can be encoded as `PushValue`");
-                let n = op::push_value(&crate::num::serialize(n.into()))
-                    .expect("all u8 can be encoded as `PushValue`");
+                let k = Opcode::from(pattern::push_num(k.into()));
+                let n = Opcode::from(pattern::push_num(n.into()));
 
                 let mut keys = keys
                     .iter()
