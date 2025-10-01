@@ -1,12 +1,16 @@
 //! Managing sequences of opcodes.
 
-use alloc::vec::Vec;
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 
 use thiserror::Error;
 
 use crate::{
-    interpreter, op,
-    opcode::{self, push_value::LargeValue::*, Operation::*, PushValue},
+    interpreter,
+    op::{self},
+    opcode::{self, push_value::LargeValue::*, Operation::*, PossiblyBad, PushValue},
     signature, Opcode,
 };
 
@@ -148,6 +152,14 @@ pub trait Evaluable {
     fn is_push_only(&self) -> bool;
 }
 
+/// Type that has a "asm" representation.
+pub trait Asm {
+    /// Return the "asm" representation of this type. The
+    /// `attempt_sighash_decode` flag indicates whether to try to decode
+    /// signature hash types in signatures.
+    fn to_asm(&self, attempt_sighash_decode: bool) -> String;
+}
+
 /// A script component is used as either the script sig or script pubkey in a script. Depending on
 /// `T` (which generally needs an `opcode::Evaluable` instance), it has different properties:
 ///
@@ -281,6 +293,16 @@ impl<T: Into<opcode::PossiblyBad> + opcode::Evaluable + Clone> Evaluable for Com
     }
 }
 
+impl<T: Asm> Asm for Component<T> {
+    fn to_asm(&self, attempt_sighash_decode: bool) -> String {
+        self.0
+            .iter()
+            .map(|op| op.to_asm(attempt_sighash_decode))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+}
+
 /// An iterator that provides `Opcode`s from a byte stream.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Parser<'a>(&'a [u8]);
@@ -359,6 +381,17 @@ impl Code {
     pub fn sig_op_count(&self, accurate: bool) -> u32 {
         iter::sig_op_count(self.parse(), accurate)
     }
+
+    /// Returns whether the script is guaranteed to fail at execution,
+    /// regardless of the initial stack.
+    ///
+    /// The only purpose of this function is to reproduce the behavior of the
+    /// zcashd function `IsUnspendable()`, which is used for "asm" encoding.
+    /// https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/script/script.h#L617-L620
+    fn is_unspendable(&self) -> bool {
+        self.parse().next() == Some(Ok(opcode::PossiblyBad::Good(op::RETURN)))
+            || self.0.len() > Self::MAX_SIZE
+    }
 }
 
 impl Evaluable for Code {
@@ -412,6 +445,31 @@ impl Evaluable for Code {
     }
 }
 
+impl Asm for Code {
+    fn to_asm(&self, attempt_sighash_decode: bool) -> String {
+        let mut v = Vec::new();
+        let is_unspendable = self.is_unspendable();
+        for r in self.parse() {
+            match r {
+                Ok(PossiblyBad::Good(op)) => {
+                    v.push(op.to_asm(attempt_sighash_decode && !is_unspendable))
+                }
+                Ok(PossiblyBad::Bad(_)) | Err(_) => {
+                    v.push("[error]".to_string());
+                    break;
+                }
+            }
+        }
+        v.join(" ")
+    }
+}
+
+impl core::fmt::Display for Code {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_asm(false))
+    }
+}
+
 /// A script represented by two byte sequences – one is the sig, the other is the pubkey.
 pub struct Raw {
     /// The script signature from the spending transaction.
@@ -446,5 +504,17 @@ impl Raw {
         checker: &dyn interpreter::SignatureChecker,
     ) -> Result<bool, (ComponentType, Error)> {
         iter::eval_script(&self.sig, &self.pub_key, flags, checker)
+    }
+}
+
+impl Asm for Raw {
+    fn to_asm(&self, attempt_sighash_decode: bool) -> String {
+        self.sig.to_asm(attempt_sighash_decode) + " " + &self.pub_key.to_asm(false)
+    }
+}
+
+impl core::fmt::Display for Raw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_asm(true))
     }
 }
