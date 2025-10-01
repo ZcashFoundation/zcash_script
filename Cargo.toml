@@ -46,7 +46,7 @@ sha2 = { version = "0.10", default-features = false }
 # Encodings
 bitflags = "2.8"
 # See Note [explicit >= version requirements]
-hex = ">= 0.4.3"
+hex = { version = ">= 0.4.3", default-features = false }
 
 # Errors
 thiserror = { version = "2", default-features = false }
@@ -57,6 +57,7 @@ tracing = { version = "0.1", default-features = false }
 # Transparent protocol
 # This needs to match the version used by ECC crates (which are being used in
 # Zebra).
+bip32 = { version = "=0.6.0-pre.1", default-features = false, features = ["alloc", "secp256k1-ffi"] }
 secp256k1 = { version = "0.29", default-features = false, features = ["alloc"] }
 
 # Static constants

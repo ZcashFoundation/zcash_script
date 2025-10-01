@@ -23,14 +23,16 @@ path = "src/lib.rs"
 
 [features]
 default = ["std", "signature-validation"]
+descriptor = ["dep:bip32", "dep:hex", "dep:secp256k1"]
 ## Whether to allow signature validation (and lock time verification). If disabled, the
 ## `CallbackTransactionSignatureChecker` will be unavailable, and only the `NullSignatureChecker`
 ## can be used.
 signature-validation = ["dep:secp256k1"]
 std = []
-test-dependencies = ["dep:hex", "dep:lazy_static"]
+test-dependencies = ["dep:hex", "dep:lazy_static", "hex/std"]
 
 [dependencies]
+bip32 = { workspace = true, optional = true }
 bitflags.workspace = true
 bounded-vec.workspace = true
 hex = { workspace = true, optional = true }
@@ -42,7 +44,7 @@ sha2.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-hex.workspace = true
+hex = { workspace = true, features = ["std"] }
 lazy_static.workspace = true
 
 [target.'cfg(linux)'.dev-dependencies]
