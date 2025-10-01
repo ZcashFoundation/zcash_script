@@ -19,7 +19,7 @@ use std::os::raw::{c_int, c_uint, c_void};
 #[cfg(feature = "std")]
 use tracing::warn;
 use zcash_script::{
-    interpreter::{self, CallbackTransactionSignatureChecker, SighashCalculator},
+    interpreter::{self, SighashCalculator},
     op, opcode, script,
     signature::{self, HashType},
 };
@@ -28,6 +28,33 @@ pub mod cxx;
 mod ztrait;
 
 pub use ztrait::{AnnError, Error, RustInterpreter, ZcashScript};
+
+/// Code shared between testing and production, but that we only want to make public via `testing`.
+mod internal {
+    use super::*;
+
+    /// Runs two implementations of `ZcashScript::verify_callback` with the same arguments and
+    /// returns both results. This is more useful for testing than the impl that logs a warning if
+    /// the results differ and always returns the `T` result.
+    pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
+        first: &T,
+        second: &U,
+        script: &script::Raw,
+        flags: interpreter::Flags,
+    ) -> (Result<bool, AnnError>, Result<bool, AnnError>) {
+        (
+            first.verify_callback(script, flags),
+            second.verify_callback(script, flags),
+        )
+    }
+
+    /// Convert errors that don’t exist in the C++ code into the cases that do.
+    pub fn normalize_err(err: AnnError) -> Error {
+        err.1.normalize()
+    }
+}
+
+use internal::*;
 
 /// An interpreter that calls the original C++ implementation via FFI.
 pub struct CxxInterpreter<'a> {
@@ -276,24 +303,6 @@ fn check_legacy_sigop_count_script<T: ZcashScript, U: ZcashScript>(
     )
 }
 
-// FIXME: This shouldn’t be public, but is currently used by both `ZcashScript for
-//        ComparisonInterpreter` and the fuzz tests, so it can’t easily be non-`pub` or moved to
-//        `testing`.
-/// Runs two implementations of `ZcashScript::verify_callback` with the same arguments and returns
-/// both results. This is more useful for testing than the impl that logs a warning if the results
-/// differ and always returns the `T` result.
-pub fn check_verify_callback<T: ZcashScript, U: ZcashScript>(
-    first: &T,
-    second: &U,
-    script: &script::Raw,
-    flags: interpreter::Flags,
-) -> (Result<bool, AnnError>, Result<bool, AnnError>) {
-    (
-        first.verify_callback(script, flags),
-        second.verify_callback(script, flags),
-    )
-}
-
 /// A tag to indicate that both the C++ and Rust implementations of zcash_script should be used,
 /// with their results compared.
 #[cfg(feature = "std")]
@@ -305,29 +314,27 @@ pub struct ComparisonInterpreter<T, U> {
 /// An interpreter that compares the results of the C++ and Rust implementations. In the case where
 /// they differ, a warning will be logged, and the C++ interpreter will be treated as the correct
 /// result.
-#[cfg(feature = "std")]
+#[cfg(all(feature = "signature-validation", feature = "std"))]
 pub fn cxx_rust_comparison_interpreter(
     sighash: SighashCalculator,
     lock_time: u32,
     is_final: bool,
-) -> ComparisonInterpreter<CxxInterpreter, RustInterpreter<CallbackTransactionSignatureChecker>> {
+) -> ComparisonInterpreter<
+    CxxInterpreter,
+    RustInterpreter<interpreter::CallbackTransactionSignatureChecker>,
+> {
     ComparisonInterpreter {
         first: CxxInterpreter {
             sighash,
             lock_time,
             is_final,
         },
-        second: RustInterpreter::new(CallbackTransactionSignatureChecker {
+        second: RustInterpreter::new(interpreter::CallbackTransactionSignatureChecker {
             sighash,
             lock_time: lock_time.into(),
             is_final,
         }),
     }
-}
-
-/// Convert errors that don’t exist in the C++ code into the cases that do.
-pub fn normalize_err(err: AnnError) -> Error {
-    err.1.normalize()
 }
 
 /// This implementation is functionally equivalent to the `T` impl, but it also runs a second (`U`)
@@ -364,14 +371,19 @@ impl<T: ZcashScript, U: ZcashScript> ZcashScript for ComparisonInterpreter<T, U>
     }
 }
 
+/// Utilities useful for tests in other modules and crates.
+#[cfg(any(test, feature = "test-dependencies"))]
+pub mod testing {
+    pub use super::internal::*;
+}
+
 #[cfg(test)]
 mod tests {
     use alloc::format;
 
     use proptest::prelude::{prop, prop_assert_eq, proptest, ProptestConfig};
     use zcash_script::{
-        interpreter::{self, CallbackTransactionSignatureChecker},
-        script,
+        interpreter, script,
         test_vectors::test_vectors,
         testing::{
             self, invalid_sighash, missing_sighash, repair_flags, sighash, OVERFLOW_SCRIPT_SIZE,
@@ -381,90 +393,112 @@ mod tests {
     };
 
     use super::{
-        check_verify_callback, normalize_err, CxxInterpreter, Error, RustInterpreter, ZcashScript,
+        testing::{check_verify_callback, normalize_err},
+        CxxInterpreter, Error, RustInterpreter, ZcashScript,
     };
 
     #[test]
-    fn it_works() {
+    fn it_works_in_cxx() {
         let lock_time: u32 = 2410374;
         let is_final: bool = true;
         let flags = interpreter::Flags::P2SH | interpreter::Flags::CHECKLOCKTIMEVERIFY;
 
-        let ret = check_verify_callback(
-            &CxxInterpreter {
-                sighash: &sighash,
-                lock_time,
-                is_final,
-            },
-            &RustInterpreter::new(CallbackTransactionSignatureChecker {
-                sighash: &sighash,
-                lock_time: lock_time.into(),
-                is_final,
-            }),
-            &SCRIPT,
-            flags,
-        );
+        let ret = CxxInterpreter {
+            sighash: &sighash,
+            lock_time,
+            is_final,
+        }
+        .verify_callback(&SCRIPT, flags);
 
-        assert_eq!(
-            ret.0.clone().map_err(normalize_err),
-            ret.1.map_err(normalize_err)
-        );
-        assert!(ret.0.is_ok());
+        assert_eq!(ret, Ok(true));
     }
 
     #[test]
-    fn it_fails_on_invalid_sighash() {
+    fn it_works_in_rust() {
         let lock_time: u32 = 2410374;
         let is_final: bool = true;
         let flags = interpreter::Flags::P2SH | interpreter::Flags::CHECKLOCKTIMEVERIFY;
-        let ret = check_verify_callback(
-            &CxxInterpreter {
-                sighash: &invalid_sighash,
-                lock_time,
-                is_final,
-            },
-            &RustInterpreter::new(CallbackTransactionSignatureChecker {
-                sighash: &invalid_sighash,
-                lock_time: lock_time.into(),
-                is_final,
-            }),
-            &SCRIPT,
-            flags,
-        );
 
-        assert_eq!(
-            ret.0.map_err(normalize_err),
-            ret.1.clone().map_err(normalize_err)
-        );
-        assert_eq!(ret.1, Ok(false));
+        let ret = RustInterpreter::new(interpreter::CallbackTransactionSignatureChecker {
+            sighash: &sighash,
+            lock_time: lock_time.into(),
+            is_final,
+        })
+        .verify_callback(&SCRIPT, flags);
+        assert_eq!(ret, Ok(true));
     }
 
     #[test]
-    fn it_fails_on_missing_sighash() {
+    fn it_fails_with_null_checker() {
+        let flags = interpreter::Flags::P2SH | interpreter::Flags::CHECKLOCKTIMEVERIFY;
+
+        let ret = RustInterpreter::new(interpreter::NullSignatureChecker())
+            .verify_callback(&SCRIPT, flags);
+        assert_eq!(ret, Ok(false));
+    }
+
+    #[test]
+    fn it_fails_on_invalid_sighash_in_cxx() {
+        let lock_time: u32 = 2410374;
+        let is_final: bool = true;
+        let flags = interpreter::Flags::P2SH | interpreter::Flags::CHECKLOCKTIMEVERIFY;
+        let ret = CxxInterpreter {
+            sighash: &invalid_sighash,
+            lock_time,
+            is_final,
+        }
+        .verify_callback(&SCRIPT, flags);
+
+        assert_eq!(ret, Ok(false));
+    }
+
+    #[cfg(feature = "signature-validation")]
+    #[test]
+    fn it_fails_on_invalid_sighash_in_rust() {
+        let lock_time: u32 = 2410374;
+        let is_final: bool = true;
+        let flags = interpreter::Flags::P2SH | interpreter::Flags::CHECKLOCKTIMEVERIFY;
+        let ret = RustInterpreter::new(interpreter::CallbackTransactionSignatureChecker {
+            sighash: &invalid_sighash,
+            lock_time: lock_time.into(),
+            is_final,
+        })
+        .verify_callback(&SCRIPT, flags);
+
+        assert_eq!(ret, Ok(false));
+    }
+
+    #[test]
+    fn it_fails_on_missing_sighash_in_cxx() {
         let lock_time: u32 = 2410374;
         let is_final: bool = true;
         let flags = interpreter::Flags::P2SH | interpreter::Flags::CHECKLOCKTIMEVERIFY;
 
-        let ret = check_verify_callback(
-            &CxxInterpreter {
-                sighash: &missing_sighash,
-                lock_time,
-                is_final,
-            },
-            &RustInterpreter::new(CallbackTransactionSignatureChecker {
-                sighash: &missing_sighash,
-                lock_time: lock_time.into(),
-                is_final,
-            }),
-            &SCRIPT,
-            flags,
-        );
+        let ret = CxxInterpreter {
+            sighash: &missing_sighash,
+            lock_time,
+            is_final,
+        }
+        .verify_callback(&SCRIPT, flags);
 
-        assert_eq!(
-            ret.0.map_err(normalize_err),
-            ret.1.clone().map_err(normalize_err)
-        );
-        assert_eq!(ret.1, Ok(false));
+        assert_eq!(ret, Ok(false));
+    }
+
+    #[cfg(feature = "signature-validation")]
+    #[test]
+    fn it_fails_on_missing_sighash_in_rust() {
+        let lock_time: u32 = 2410374;
+        let is_final: bool = true;
+        let flags = interpreter::Flags::P2SH | interpreter::Flags::CHECKLOCKTIMEVERIFY;
+
+        let ret = RustInterpreter::new(interpreter::CallbackTransactionSignatureChecker {
+            sighash: &missing_sighash,
+            lock_time: lock_time.into(),
+            is_final,
+        })
+        .verify_callback(&SCRIPT, flags);
+
+        assert_eq!(ret, Ok(false));
     }
 
     #[test]
@@ -500,7 +534,7 @@ mod tests {
                 &tv,
                 false,
                 &|script, flags| {
-                    RustInterpreter::new(CallbackTransactionSignatureChecker {
+                    RustInterpreter::new(interpreter::CallbackTransactionSignatureChecker {
                         sighash: &missing_sighash,
                         lock_time: 0,
                         is_final: false,
@@ -512,7 +546,7 @@ mod tests {
                     })
                 },
                 &|pubkey| {
-                    RustInterpreter::new(CallbackTransactionSignatureChecker {
+                    RustInterpreter::new(interpreter::CallbackTransactionSignatureChecker {
                         sighash: &missing_sighash,
                         lock_time: 0,
                         is_final: false,
@@ -528,7 +562,6 @@ mod tests {
             cases: 20_000, .. ProptestConfig::default()
         })]
 
-        #[cfg(feature = "signature-validation")]
         #[test]
         fn test_arbitrary_scripts(
             lock_time in prop::num::u32::ANY,
@@ -546,7 +579,7 @@ mod tests {
                     is_final,
                 },
                 &RustInterpreter::new(
-                    CallbackTransactionSignatureChecker {
+                    interpreter::CallbackTransactionSignatureChecker {
                         sighash: &sighash,
                         lock_time: lock_time.into(),
                         is_final,
@@ -560,7 +593,7 @@ mod tests {
                 ret.1.clone().map_err(normalize_err),
                 "\n• original Rust result: {:?}\n• parsed script: {:?}",
                 ret.1,
-                testing::annotate_script(&script, &flags)
+                script.annotate(&flags),
             );
         }
 
@@ -586,7 +619,7 @@ mod tests {
                 // Parsing of the script components succeeded, so we can evaluate & compare as
                 // normal.
                 (Ok(sig), Ok(pub_key)) => {
-                    let rust_ret = Script {sig, pub_key}.eval(flags, &CallbackTransactionSignatureChecker {
+                    let rust_ret = Script {sig, pub_key}.eval(flags, &interpreter::CallbackTransactionSignatureChecker {
                         sighash: &sighash,
                         lock_time: lock_time.into(),
                         is_final,
@@ -596,7 +629,7 @@ mod tests {
                         rust_ret.clone().map_err(|(_, e)| Error::Script(e).normalize()),
                         "\n• original Rust result: {:?}\n• parsed script: {:?}",
                         rust_ret,
-                        testing::annotate_script(&script, &flags)
+                        script.annotate(&flags),
                     )
                 }
                 // Parsing of at least one script component failed. This checks that C++ evaluation
@@ -610,12 +643,13 @@ mod tests {
                             rust_ret.clone().map_err(|e| e.normalize()),
                             "\n• original Rust result: {:?}\n• parsed script: {:?}",
                             rust_ret,
-                            testing::annotate_script(&script, &flags),
+                            script.annotate(&flags),
                         )
                     }
                 }
             }
         }
+
         /// Similar to `test_arbitrary_scripts`, but ensures the `sig` only contains pushes.
         #[test]
         fn test_restricted_sig_scripts(
@@ -637,7 +671,7 @@ mod tests {
                     is_final,
                 },
                 &RustInterpreter::new(
-                    CallbackTransactionSignatureChecker {
+                    interpreter::CallbackTransactionSignatureChecker {
                         sighash: &sighash,
                         lock_time: lock_time.into(),
                         is_final,

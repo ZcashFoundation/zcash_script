@@ -1,8 +1,12 @@
+//! Conversions for numbers represented as byte sequences.
+
 use alloc::vec::Vec;
 
 use thiserror::Error;
 
+/// Errors that can occur when parsing integers from byte sequences.
 #[derive(Clone, PartialEq, Eq, Debug, Error)]
+#[allow(missing_docs)]
 pub enum Error {
     #[error("non-minimal encoding of script number")]
     NonMinimalEncoding(Option<Vec<u8>>),
@@ -70,13 +74,14 @@ pub fn parse(vch: &[u8], require_minimal: bool, max_size: Option<usize>) -> Resu
             // and return a negative.
             if vch_back & 0x80 != 0 {
                 return Ok(-(result & !(0x80 << (8 * (vch.len() - 1)))));
-            };
+            }
 
             Ok(result)
         }
     }
 }
 
+/// Convert an i64 to the corresponding byte sequence.
 pub fn serialize(value: i64) -> Vec<u8> {
     if value == 0 {
         return Vec::new();

@@ -79,7 +79,7 @@ impl<C> RustInterpreter<C> {
     }
 }
 
-impl<C: interpreter::SignatureChecker + Copy> ZcashScript for RustInterpreter<C> {
+impl<C: interpreter::SignatureChecker> ZcashScript for RustInterpreter<C> {
     /// Returns the number of transparent signature operations in the
     /// transparent inputs and outputs of this transaction.
     fn legacy_sigop_count_script(&self, script: &script::Code) -> Result<u32, script::Error> {

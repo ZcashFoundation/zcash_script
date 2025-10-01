@@ -28,16 +28,43 @@ edition = "2021"
 repository = "https://github.com/ZcashFoundation/zcash_script"
 
 [workspace.dependencies]
-libzcash_script = { version = "0.0.0", path = "libzcash_script" }
-zcash_script = { version = "0.3.2", path = "zcash_script" }
+# Intra-workspace dependencies
+libzcash_script = { version = "0.1", path = "libzcash_script" }
+zcash_script = { version = "0.4", path = "zcash_script" }
 
+# C++ build dependencies
 # See Note [explicit >= version requirements]
 bindgen = { version = ">= 0.69.5", default-features = false, features = ["runtime"] }
-bounded-vec = "0.9"
 # See Note [explicit >= version requirements]
 cc = { version = ">= 1.2.11", features = ["parallel"] }
-hex = ">= 0.4.3" # See Note [explicit >= version requirements]
-libfuzzer-sys = "0.4"
+
+# Digests
+ripemd = { version = "0.1", default-features = false }
+sha1 = { version = "0.10", default-features = false }
+sha2 = { version = "0.10", default-features = false }
+
+# Encodings
+bitflags = "2.8"
+# See Note [explicit >= version requirements]
+hex = ">= 0.4.3"
+
+# Errors
+thiserror = { version = "2", default-features = false }
+
+# Logging
+tracing = { version = "0.1", default-features = false }
+
+# Transparent protocol
 # This needs to match the version used by ECC crates (which are being used in
 # Zebra).
 secp256k1 = { version = "0.29", default-features = false, features = ["alloc"] }
+
+# Static constants
+lazy_static = "1.5"
+
+# Type safety
+bounded-vec = "0.9"
+
+# Tests
+libfuzzer-sys = "0.4"
+proptest = "1.6"

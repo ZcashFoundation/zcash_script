@@ -36,10 +36,10 @@ impl LargeValue {
     const PUSHDATA4_BYTE: u8 = 0x4e;
 
     /// The maximum number of bytes able to be stored in a single [`PushValue`].
-    pub const MAX_SIZE: usize = 520; // bytes
+    pub(crate) const MAX_SIZE: usize = 520; // bytes
 
     /// The number of bytes this requires in a script.
-    pub fn byte_len(&self) -> usize {
+    pub(crate) fn byte_len(&self) -> usize {
         1 + match self {
             PushdataBytelength(data) => data.as_slice().len(),
             OP_PUSHDATA1(data) => 1 + data.as_slice().len(),
@@ -50,7 +50,7 @@ impl LargeValue {
 
     /// Returns a [`LargeValue`] as minimally-encoded as possible. That is, values that
     /// should be minimally-encoded as [`SmallValue`]s will be [`LargeValue`].
-    pub fn from_slice(v: &[u8]) -> Option<LargeValue> {
+    pub(crate) fn from_slice(v: &[u8]) -> Option<LargeValue> {
         if let Ok(bv) = BoundedVec::try_from(v.to_vec()) {
             Some(PushdataBytelength(bv))
         } else if let Ok(bv) = BoundedVec::try_from(v.to_vec()) {
@@ -108,7 +108,7 @@ impl LargeValue {
 
     /// Parse a single [`LargeValue`] from a script. Returns `None` if the first byte doesn’t
     /// correspond to a [`LargeValue`].
-    pub fn parse(script: &[u8]) -> Option<(Result<LargeValue, opcode::Error>, &[u8])> {
+    pub(crate) fn parse(script: &[u8]) -> Option<(Result<LargeValue, opcode::Error>, &[u8])> {
         match script.split_first() {
             None => Some((
                 Err(opcode::Error::Read {
@@ -160,7 +160,7 @@ impl LargeValue {
     }
 
     /// Get the [`interpreter::Stack`] element represented by this [`LargeValue`].
-    pub fn value(&self) -> &[u8] {
+    pub(crate) fn value(&self) -> &[u8] {
         match self {
             PushdataBytelength(v) => v.as_slice(),
             OP_PUSHDATA1(v) => v.as_slice(),
@@ -170,7 +170,7 @@ impl LargeValue {
     }
 
     /// Returns false if there is a smaller possible encoding of the provided value.
-    pub fn is_minimal_push(&self) -> bool {
+    pub(crate) fn is_minimal_push(&self) -> bool {
         match self {
             PushdataBytelength(data) => match data.as_slice() {
                 [b] => *b != 0x81 && (*b < 1 || 16 < *b),
@@ -183,7 +183,7 @@ impl LargeValue {
     }
 
     /// Returns the numeric value represented by the opcode, if one exists.
-    pub fn to_num(&self) -> Result<i64, num::Error> {
+    pub(crate) fn to_num(&self) -> Result<i64, num::Error> {
         num::parse(
             self.value(),
             false,
@@ -306,7 +306,7 @@ impl SmallValue {
     }
 
     /// Get the [`interpreter::Stack`] element represented by this [`SmallValue`].
-    pub fn value(&self) -> Vec<u8> {
+    pub(crate) fn value(&self) -> Vec<u8> {
         match self {
             OP_0 => vec![],
             OP_1NEGATE => vec![0x81],
@@ -315,7 +315,7 @@ impl SmallValue {
     }
 
     /// Returns the numeric value of the opcode. It will always be in the range -1..=16.
-    pub fn to_num(self) -> i8 {
+    pub(crate) fn to_num(self) -> i8 {
         match self {
             OP_0 => 0,
             OP_1NEGATE => -1,

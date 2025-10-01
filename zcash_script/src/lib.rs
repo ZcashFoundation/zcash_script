@@ -2,7 +2,7 @@
 
 #![no_std]
 #![doc(html_logo_url = "https://www.zfnd.org/images/zebra-icon.png")]
-#![doc(html_root_url = "https://docs.rs/zcash_script/0.3.2")]
+#![doc(html_root_url = "https://docs.rs/zcash_script/0.4.0")]
 #![allow(clippy::unit_arg)]
 #![allow(non_snake_case)]
 #![allow(unsafe_code)]
@@ -16,7 +16,7 @@ extern crate std;
 
 mod external;
 pub mod interpreter;
-mod num;
+pub mod num;
 pub mod op;
 pub mod opcode;
 pub mod pattern;
@@ -47,33 +47,15 @@ pub enum Opcode {
 }
 
 impl Opcode {
-    /// This parses a single opcode from a byte stream.
-    ///
-    /// This always returns the unparsed bytes, because parsing failures don’t invalidate the
-    /// remainder of the stream (if any).
-    ///
-    /// __NB__: This is stricter than the parsing allowed by script verification. For that, use
-    ///         [`opcode::PossiblyBad::parse`].
-    pub fn parse(script: &[u8]) -> (Result<Opcode, script::Error>, &[u8]) {
-        let (res, rem) = opcode::PossiblyBad::parse(script);
-        (
-            res.map_err(script::Error::Opcode).and_then(|pb| match pb {
-                opcode::PossiblyBad::Bad(_) => Err(script::Error::Interpreter(
-                    Some(pb),
-                    interpreter::Error::BadOpcode,
-                )),
-                opcode::PossiblyBad::Good(op) => Ok(op),
-            }),
-            rem,
-        )
-    }
-
     /// Statically analyze an opcode. That is, this identifies potential runtime errors without
     /// needing to evaluate the script.
     ///
-    /// __NB__: [`opcode::Operation::OP_RETURN`] isn’t tracked by this function because it’s
-    ///         functionally more like a `break` then an error.
-    pub fn analyze(&self, flags: &interpreter::Flags) -> Result<(), Vec<interpreter::Error>> {
+    /// __NB__: [`op::RETURN`] isn’t tracked by this function because it’s functionally more like a
+    ///         `break` then an error.
+    pub(crate) fn analyze(
+        &self,
+        flags: &interpreter::Flags,
+    ) -> Result<(), Vec<interpreter::Error>> {
         match self {
             Opcode::PushValue(pv) => pv.analyze(flags),
             Opcode::Operation(op) => op.analyze(flags),
@@ -241,8 +223,6 @@ impl<T: Asm, U: Asm> Asm for Script<T, U> {
 /// Utilities useful for tests in other modules and crates.
 #[cfg(any(test, feature = "test-dependencies"))]
 pub mod testing {
-    use alloc::vec::Vec;
-
     use hex::FromHex;
 
     use crate::{
@@ -252,7 +232,7 @@ pub mod testing {
         script::{self, Evaluable},
         signature::HashType,
         test_vectors::TestVector,
-        Opcode, Script,
+        Script,
     };
 
     /// Ensures that flags represent a supported state. This avoids crashes in the C++ code, which
@@ -312,16 +292,6 @@ pub mod testing {
     /// A callback that returns no sighash at all – another failure case.
     pub fn missing_sighash(_script_code: &script::Code, _hash_type: &HashType) -> Option<[u8; 32]> {
         None
-    }
-
-    type AnnOpcode = Result<Opcode, Vec<script::Error>>;
-
-    /// Returns a script annotated with errors that could occur during evaluation.
-    pub fn annotate_script(
-        script: &script::Raw,
-        flags: &interpreter::Flags,
-    ) -> (Vec<AnnOpcode>, Vec<AnnOpcode>) {
-        script.map(&|c| c.parse_strict(flags).collect::<Vec<_>>())
     }
 
     /// Run a single test case against some function.

@@ -2,7 +2,10 @@
 
 use libfuzzer_sys::fuzz_target;
 
-use libzcash_script::{check_verify_callback, normalize_err, CxxInterpreter, RustInterpreter};
+use libzcash_script::{
+    testing::{check_verify_callback, normalize_err},
+    CxxInterpreter, RustInterpreter,
+};
 use zcash_script::{
     interpreter::{self, CallbackTransactionSignatureChecker},
     script,
@@ -38,6 +41,6 @@ fuzz_target!(|tup: (u32, bool, &[u8], &[u8], u32)| {
         ret.1.clone().map_err(normalize_err),
         "\n• original Rust result: {:?}\n• parsed script: {:?}",
         ret.1,
-        testing::annotate_script(&script, &flags)
+        script.annotate(&flags),
     );
 });

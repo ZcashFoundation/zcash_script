@@ -265,7 +265,7 @@ dependencies = [
 
 [[package]]
 name = "libzcash_script"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "bindgen",
  "cc",
@@ -513,10 +513,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "sha-1"
-version = "0.10.1"
+name = "sha1"
+version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5058ada175748e33390e40e872bd0fe59a19f265d0158daa551c5a88a76009c"
+checksum = "e3bf829a2d51ab4a5ddf1352d8470c140cadc8301b2ae1789db023f01cedd6ba"
 dependencies = [
  "cfg-if",
  "cpufeatures",
@@ -736,7 +736,7 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "zcash_script"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "bitflags",
  "bounded-vec",
@@ -745,7 +745,7 @@ dependencies = [
  "libfuzzer-sys",
  "ripemd",
  "secp256k1",
- "sha-1",
+ "sha1",
  "sha2",
  "thiserror",
 ]

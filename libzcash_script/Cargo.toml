@@ -1,6 +1,6 @@
 [package]
 name = "libzcash_script"
-version = "0.0.0"
+version = "0.1.0"
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
@@ -63,23 +63,24 @@ default = ["std", "signature-validation"]
 signature-validation = ["zcash_script/signature-validation"]
 std = ["zcash_script/std"]
 external-secp = []
+test-dependencies = []
 
 [dependencies]
 zcash_script.workspace = true
 
-tracing = { version = "0.1", default-features = false }
-thiserror = "2.0"
+tracing.workspace = true
+thiserror.workspace = true
 
 [build-dependencies]
 bindgen.workspace = true
-cc = { workspace = true, features = ["parallel"] }
+cc.workspace = true
 
 [dev-dependencies]
 zcash_script = { path = "../zcash_script", features = ["test-dependencies"] }
 
 hex.workspace = true
-lazy_static = "1.5.0"
-proptest = "1.6"
+lazy_static.workspace = true
+proptest.workspace = true
 
 [target.'cfg(linux)'.dev-dependencies]
 libfuzzer-sys.workspace = true

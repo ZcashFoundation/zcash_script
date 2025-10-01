@@ -111,7 +111,7 @@ pub fn sig_op_count<T: Into<opcode::PossiblyBad> + opcode::Evaluable>(
         opcode.map_err(|_| sum).map(|op| {
             (
                 sum + op.sig_op_count(last_opcode),
-                if accurate { Some(op.into()) } else { None },
+                accurate.then(|| op.into()),
             )
         })
     })
