@@ -2,11 +2,14 @@
 
 #![allow(non_camel_case_types)]
 
-use alloc::vec::Vec;
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 
 use bounded_vec::{BoundedVec, EmptyBoundedVec};
 
-use crate::{num, opcode};
+use crate::{num, opcode, script::Asm, signature};
 
 /// Data values that aren’t represented within their opcode byte.
 ///
@@ -211,6 +214,37 @@ impl From<&LargeValue> for Vec<u8> {
     }
 }
 
+impl Asm for LargeValue {
+    fn to_asm(&self, attempt_sighash_decode: bool) -> String {
+        // The logic below follows the zcashd implementation in its
+        // `ScriptToAsmStr()`
+        // https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/core_write.cpp#L73-L115
+        let mut value = self.value().to_vec();
+        let mut hash_type = String::new();
+        if attempt_sighash_decode && value.len() > 4 {
+            if let signature::Validity::Valid(signature) =
+                signature::Decoded::from_bytes(&value, false, true)
+            {
+                value = signature.sig().serialize_der().to_vec();
+                hash_type = format!("[{}]", signature.sighash_type().to_asm(false));
+            }
+        }
+        if value.len() <= 4 {
+            // zcashd ultimately uses `CScriptNum()`-> `set_vch()`, which was
+            // replaced with `num::parse()` in this crate
+            let n = num::parse(&value, false, Some(8)).unwrap_or(0);
+            return n.to_string();
+        }
+        // hex::encode(), but avoids the `hex` dependency
+        value
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<Vec<_>>()
+            .join("")
+            + &hash_type
+    }
+}
+
 /// Data values represented entirely by their opcode byte.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[allow(missing_docs)]
@@ -302,5 +336,32 @@ impl SmallValue {
             OP_15 => 15,
             OP_16 => 16,
         }
+    }
+}
+
+impl Asm for SmallValue {
+    fn to_asm(&self, _attempt_sighash_decode: bool) -> String {
+        match self {
+            // This is an exception because zcashd handles `0 <= opcode <= OP_PUSHDATA4` differently
+            OP_0 => "0",
+            OP_1NEGATE => "OP_1NEGATE",
+            OP_1 => "OP_1",
+            OP_2 => "OP_2",
+            OP_3 => "OP_3",
+            OP_4 => "OP_4",
+            OP_5 => "OP_5",
+            OP_6 => "OP_6",
+            OP_7 => "OP_7",
+            OP_8 => "OP_8",
+            OP_9 => "OP_9",
+            OP_10 => "OP_10",
+            OP_11 => "OP_11",
+            OP_12 => "OP_12",
+            OP_13 => "OP_13",
+            OP_14 => "OP_14",
+            OP_15 => "OP_15",
+            OP_16 => "OP_16",
+        }
+        .to_string()
     }
 }
