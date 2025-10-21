@@ -12,11 +12,16 @@ Rust implementation of the Zcash Script language..
 
 ### Publishing New Releases
 
-Releases for `zcash-script` are made with the help of [cargo release](https://github.com/sunng87/cargo-release).
-
-1. Update `CHANGELOG.md` to document any major changes since the last release
-2. Run `cargo release <level>` to commit the release version bump (but not actually publish), `<level>` can be `patch`, `minor` or `major`
-3. Open a `zcash_script` PR with the changes, get it reviewed, and wait for CI to pass
-4. Publish a new release using `cargo release --execute <level>`
-
-**NOTE**: It's important to specify the level when using cargo release because of the way it implements the substitutions. We specify a number of automatic substitutions in `Cargo.toml` but they will only be applied if `cargo release` also handles incrementing the version itself, **do not increment the version by hand and then run `cargo release` or `cargo release -- release`, or it will not correctly update all version references in the codebase.**
+- Decide level of the release.
+- Bump the crate versions:
+```bash
+cargo release version --verbose --execute --allow-branch '*' -p zcash_script patch # [ major | minor ]
+cargo release replace --verbose --execute --allow-branch '*' -p zcash_script
+```
+- Update the crate CHANGELOG.md
+- Open a `zcash_script` PR with the changes, get it reviewed, and wait for CI to pass
+- Create a [new github release](https://github.com/ZcashFoundation/zcash_script/releases/new)
+- Publish the crate:
+```bash
+cargo release publish --verbose --execute -p zcash_script
+```
