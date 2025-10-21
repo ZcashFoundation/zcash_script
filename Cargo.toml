@@ -30,7 +30,7 @@ repository = "https://github.com/ZcashFoundation/zcash_script"
 [workspace.dependencies]
 # Intra-workspace dependencies
 libzcash_script = { version = "0.1", path = "libzcash_script" }
-zcash_script = { version = "0.4", path = "zcash_script" }
+zcash_script = { version = "0.5", path = "zcash_script" }
 
 # C++ build dependencies
 # See Note [explicit >= version requirements]
