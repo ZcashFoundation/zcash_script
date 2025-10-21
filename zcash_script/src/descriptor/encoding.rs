@@ -75,7 +75,7 @@ impl FromStr for KeyOrigin {
 
 impl fmt::Display for KeyOrigin {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{}", hex::encode(&self.fingerprint))?;
+        write!(f, "[{}", hex::encode(self.fingerprint))?;
         for i in &self.derivation {
             write!(
                 f,
