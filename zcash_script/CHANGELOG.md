@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+## [0.5.0] - 2025-10-21
+
+### Added
+
+- Implemented the `Asm` trait and `Display` formatting for scripts and opcodes, enabling `asm`-style string representations similar to zcashd ([#256](https://github.com/ZcashFoundation/zcash_script/pull/256))
+
+
 ## [0.4.0] - 2025-09-25
 
 This is a significant change, with a new Rust API that isn’t made to be swappable with the C++ API. The previous `ZcashScript`-based API is in the new `libzcash_script` crate.
@@ -179,7 +186,8 @@ This is a significant change, with a new Rust API that isn’t made to be swappa
 - Updated `bindgen` to a non yanked version
 
 <!-- next-url -->
-[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.5.0...HEAD
+[0.5.0]: https://github.com/ZcashFoundation/zcash_script/compare/v0.4.0...zcash_script-v0.5.0
 [0.4.0]: https://github.com/ZcashFoundation/zcash_script/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/ZcashFoundation/zcash_script/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/ZcashFoundation/zcash_script/compare/v0.2.0...v0.3.1

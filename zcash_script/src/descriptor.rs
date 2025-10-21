@@ -16,8 +16,9 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::{
-    op,
+    op, pattern,
     script::{self, Evaluable},
+    Opcode,
 };
 
 mod encoding;
@@ -194,7 +195,7 @@ pub fn sh(script: &script::Redeem) -> script::PubKey {
     let script_hash = Ripemd160::digest(Sha256::digest(script.to_bytes()));
     script::Component(vec![
         op::HASH160,
-        Opcode::from(pattern::push_160b_hash(&script_hash)),
+        Opcode::from(pattern::push_160b_hash(&script_hash.into())),
         op::EQUAL,
     ])
 }
