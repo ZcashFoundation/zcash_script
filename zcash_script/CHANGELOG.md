@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+## [0.4.1] - 2025-10-23
+
 ### Added
 - `zcash_script::descriptor` module, providing the subset of [BIP 380] Output
   Script Descriptors that are valid to use within the Zcash ecosystem ([#273]).
@@ -190,7 +192,8 @@ This is a significant change, with a new Rust API that isn’t made to be swappa
 - Updated `bindgen` to a non yanked version
 
 <!-- next-url -->
-[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.4.1...HEAD
+[0.4.1]: https://github.com/ZcashFoundation/zcash_script/compare/v0.4.0...zcash_script-v0.4.1
 [0.4.0]: https://github.com/ZcashFoundation/zcash_script/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/ZcashFoundation/zcash_script/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/ZcashFoundation/zcash_script/compare/v0.2.0...v0.3.1
