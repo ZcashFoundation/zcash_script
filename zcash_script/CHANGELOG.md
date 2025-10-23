@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+### Added
+- `zcash_script::descriptor` module, providing the subset of [BIP 380] Output
+  Script Descriptors that are valid to use within the Zcash ecosystem ([#273]).
+- `zcash_script::script::Asm` trait, enabling `asm`-style string representations
+  similar to zcashd ([#256]).
+- Implemented the `Display` trait for scripts and opcodes, using `Asm` ([#256]).
+
+[#256]: https://github.com/ZcashFoundation/zcash_script/pull/256
+[#273]: https://github.com/ZcashFoundation/zcash_script/pull/273
+[BIP 380]: https://github.com/bitcoin/bips/blob/master/bip-0380.mediawiki
+
 ## [0.4.0] - 2025-09-25
 
 This is a significant change, with a new Rust API that isn’t made to be swappable with the C++ API. The previous `ZcashScript`-based API is in the new `libzcash_script` crate.
