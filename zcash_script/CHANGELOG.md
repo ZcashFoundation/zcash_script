@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+### Fixed
+- Fixed `no-std` support which was broken by [#256].
+
 ## [0.4.1] - 2025-10-23
 
 ### Added
