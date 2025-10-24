@@ -221,6 +221,7 @@ impl Asm for LargeValue {
         // https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/core_write.cpp#L73-L115
         let mut value = self.value().to_vec();
         let mut hash_type = String::new();
+        #[cfg(feature = "signature-validation")]
         if attempt_sighash_decode && value.len() > 4 {
             if let signature::Validity::Valid(signature) =
                 signature::Decoded::from_bytes(&value, false, true)

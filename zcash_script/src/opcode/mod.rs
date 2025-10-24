@@ -233,8 +233,8 @@ impl Asm for PushValue {
     }
 }
 
-impl std::fmt::Display for PushValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for PushValue {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.to_asm(false))
     }
 }
@@ -314,8 +314,8 @@ impl Asm for Control {
     }
 }
 
-impl std::fmt::Display for Control {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Control {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.to_asm(false))
     }
 }
@@ -1143,7 +1143,7 @@ impl Asm for Operation {
 }
 
 impl core::fmt::Display for Operation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.to_asm(false))
     }
 }

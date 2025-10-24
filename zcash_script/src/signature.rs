@@ -9,8 +9,10 @@ use alloc::{borrow::ToOwned, string::String, vec::Vec};
 use secp256k1::ecdsa;
 use thiserror::Error;
 
+use crate::script::Asm;
+
 #[cfg(feature = "signature-validation")]
-use crate::{external::pubkey::PubKey, script::Asm};
+use crate::external::pubkey::PubKey;
 
 /// Things that can go wrong when constructing a `HashType` from bit flags.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Error)]
@@ -190,8 +192,8 @@ impl Asm for HashType {
     }
 }
 
-impl std::fmt::Display for HashType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for HashType {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.to_asm(false))
     }
 }

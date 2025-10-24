@@ -2,7 +2,7 @@
 
 #![no_std]
 #![doc(html_logo_url = "https://www.zfnd.org/images/zebra-icon.png")]
-#![doc(html_root_url = "https://docs.rs/zcash_script/0.5.0")]
+#![doc(html_root_url = "https://docs.rs/zcash_script/0.5.1")]
 #![allow(clippy::unit_arg)]
 #![allow(non_snake_case)]
 #![allow(unsafe_code)]
@@ -184,7 +184,7 @@ impl Asm for Opcode {
 }
 
 impl core::fmt::Display for Opcode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.to_asm(false))
     }
 }

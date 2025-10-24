@@ -154,9 +154,13 @@ pub trait Evaluable {
 
 /// Type that has a "asm" representation.
 pub trait Asm {
-    /// Return the "asm" representation of this type. The
-    /// `attempt_sighash_decode` flag indicates whether to try to decode
-    /// signature hash types in signatures.
+    /// Return the "asm" representation of this type.
+    ///
+    /// The `attempt_sighash_decode` flag indicates whether to attempt to parse
+    /// [`signature::Decoded`] objects from data within the script that matches the format
+    /// of a signature. Only set this to `true` for scripts you believe could contain
+    /// signatures (e.g. [`Sig`]). This flag does nothing if the `signature-validation`
+    /// feature flag is disabled.
     fn to_asm(&self, attempt_sighash_decode: bool) -> String;
 }
 
@@ -465,7 +469,7 @@ impl Asm for Code {
 }
 
 impl core::fmt::Display for Code {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.to_asm(false))
     }
 }
@@ -514,7 +518,7 @@ impl Asm for Raw {
 }
 
 impl core::fmt::Display for Raw {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.to_asm(true))
     }
 }

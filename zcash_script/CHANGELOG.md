@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+## [0.4.2], [0.5.1] - 2025-10-24
+
+### Fixed
+- Fixed `no-std` support which was broken by [#256].
+
 ## [0.5.0] - 2025-10-21
 
 This release is identical to 0.4.1.
@@ -55,6 +60,7 @@ This is a significant change, with a new Rust API that isn’t made to be swappa
 
 ### Added
 
+- `no-std` support (`alloc` still required), by disabling the new default-enabled `std` feature flag.
 - `interpreter::Error`, `opcode::Error`, and `signature::Error` have been added as subsets of `script::Error`
 - script types `Script` and `script::Raw` have been added
 - `script::Component` has been added
@@ -196,7 +202,9 @@ This is a significant change, with a new Rust API that isn’t made to be swappa
 - Updated `bindgen` to a non yanked version
 
 <!-- next-url -->
-[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.5.1...HEAD
+[0.5.1]: https://github.com/ZcashFoundation/zcash_script/compare/v0.5.0...zcash_script-v0.5.1
+[0.4.2]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.4.1...zcash_script-v0.4.2
 [0.5.0]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.4.1...v0.5.0
 [0.4.1]: https://github.com/ZcashFoundation/zcash_script/compare/v0.4.0...zcash_script-v0.4.1
 [0.4.0]: https://github.com/ZcashFoundation/zcash_script/compare/v0.3.2...v0.4.0
