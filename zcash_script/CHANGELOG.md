@@ -10,10 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.0] - 2025-10-21
 
+This release is identical to 0.4.1.
+
+## [0.4.1] - 2025-10-23
+
 ### Added
+- `zcash_script::descriptor` module, providing the subset of [BIP 380] Output
+  Script Descriptors that are valid to use within the Zcash ecosystem ([#273]).
+- `zcash_script::script::Asm` trait, enabling `asm`-style string representations
+  similar to zcashd ([#256]).
+- Implemented the `Display` trait for scripts and opcodes, using `Asm` ([#256]).
 
-- Implemented the `Asm` trait and `Display` formatting for scripts and opcodes, enabling `asm`-style string representations similar to zcashd ([#256](https://github.com/ZcashFoundation/zcash_script/pull/256))
-
+[#256]: https://github.com/ZcashFoundation/zcash_script/pull/256
+[#273]: https://github.com/ZcashFoundation/zcash_script/pull/273
+[BIP 380]: https://github.com/bitcoin/bips/blob/master/bip-0380.mediawiki
 
 ## [0.4.0] - 2025-09-25
 
@@ -186,8 +196,9 @@ This is a significant change, with a new Rust API that isn’t made to be swappa
 - Updated `bindgen` to a non yanked version
 
 <!-- next-url -->
-[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.5.0...HEAD
-[0.5.0]: https://github.com/ZcashFoundation/zcash_script/compare/v0.4.0...zcash_script-v0.5.0
+[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.4.1...v0.5.0
+[0.4.1]: https://github.com/ZcashFoundation/zcash_script/compare/v0.4.0...zcash_script-v0.4.1
 [0.4.0]: https://github.com/ZcashFoundation/zcash_script/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/ZcashFoundation/zcash_script/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/ZcashFoundation/zcash_script/compare/v0.2.0...v0.3.1
