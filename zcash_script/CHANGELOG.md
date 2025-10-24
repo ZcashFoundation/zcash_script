@@ -51,6 +51,7 @@ This is a significant change, with a new Rust API that isn’t made to be swappa
 
 ### Added
 
+- `no-std` support (`alloc` still required), by disabling the new default-enabled `std` feature flag.
 - `interpreter::Error`, `opcode::Error`, and `signature::Error` have been added as subsets of `script::Error`
 - script types `Script` and `script::Raw` have been added
 - `script::Component` has been added
