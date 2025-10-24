@@ -1,6 +1,6 @@
 [package]
 name = "zcash_script"
-version = "0.5.0"
+version = "0.5.1"
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
