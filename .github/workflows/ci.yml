@@ -11,7 +11,7 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           submodules: true
       - uses: actions-rs/cargo@v1
@@ -30,7 +30,7 @@ jobs:
           - rust-toolchain.toml
           - nightly
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           submodules: true
       - uses: actions-rs/cargo@v1
@@ -55,7 +55,7 @@ jobs:
           - rust-toolchain.toml
           - nightly
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           submodules: true
       - uses: actions-rs/cargo@v1
@@ -78,7 +78,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           submodules: true
       # - name: install LLVM on Linux
@@ -107,7 +107,7 @@ jobs:
         target:
           - wasm32-wasip1
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
           path: crates
@@ -143,7 +143,7 @@ jobs:
         target:
           - thumbv7em-none-eabihf
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
           path: crates
@@ -176,7 +176,7 @@ jobs:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           submodules: true
       - uses: actions-rs/cargo@v1
@@ -188,7 +188,7 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           submodules: true
       - uses: actions-rs/cargo@v1
@@ -204,7 +204,7 @@ jobs:
         rust:
           - nightly
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           submodules: true
       - uses: actions-rs/toolchain@v1
