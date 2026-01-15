@@ -37,6 +37,7 @@ jobs:
         if: matrix.toolchain == 'rust-toolchain.toml'
         with:
           command: package
+          args: -p zcash_script -p libzcash_script
       - run: rustup install ${{ matrix.toolchain }}
         if: matrix.toolchain != 'rust-toolchain.toml'
       - uses: actions-rs/cargo@v1
@@ -44,6 +45,7 @@ jobs:
         with:
           command: package
           toolchain: ${{ matrix.toolchain }}
+          args: -p zcash_script -p libzcash_script
 
   test-versions:
     name: Test Suite
