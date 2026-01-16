@@ -1234,7 +1234,7 @@ impl PossiblyBad {
     ///
     /// This always returns the unparsed bytes, because parsing failures don’t invalidate the
     /// remainder of the stream (if any).
-    pub(crate) fn parse(script: &[u8]) -> (Result<Self, Error>, &[u8]) {
+    pub fn parse(script: &[u8]) -> (Result<Self, Error>, &[u8]) {
         match push_value::LargeValue::parse(script) {
             None => match script.split_first() {
                 None => (
