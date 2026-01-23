@@ -209,7 +209,7 @@ pub fn push_script<T: Into<opcode::PossiblyBad> + opcode::Evaluable + Clone>(
 /// Creates a `PushValue` from a 20-byte value (basically, RipeMD160 and other hashes).
 ///
 /// __TODO__: Once const_generic_exprs lands, this should become `push_array<N>(a: &[u8; N])` with
-///           `N` bounded by [`opcode::push_value::LargeValue::MAX_SIZE`].
+///           `N` bounded by `opcode::push_value::LargeValue::MAX_SIZE`.
 pub fn push_160b_hash(hash: &[u8; 20]) -> opcode::PushValue {
     pv::push_value(hash).expect("20 is a valid data size")
 }
@@ -217,7 +217,7 @@ pub fn push_160b_hash(hash: &[u8; 20]) -> opcode::PushValue {
 /// Creates a `PushValue` from a 32-byte value (basically, SHA-256 and other hashes).
 ///
 /// __TODO__: Once const_generic_exprs lands, this should become `push_array<N>(a: &[u8; N])` with
-///           `N` bounded by [`opcode::push_value::LargeValue::MAX_SIZE`].
+///           `N` bounded by `opcode::push_value::LargeValue::MAX_SIZE`.
 pub fn push_256b_hash(hash: &[u8; 32]) -> opcode::PushValue {
     pv::push_value(hash).expect("32 is a valid data size")
 }
@@ -300,7 +300,7 @@ pub fn combined_multisig(m: u8, x: &[&[u8]], n: u8, y: &[&[u8]]) -> Result<Vec<O
 /// - P2PKH inside P2SH with a 32-byte ignored data value
 /// - P2PKH inside P2SH with a zero-value placeholder ignored data value
 ///
-/// type: [Signature, PubKey] -> [Bool] ∪  💥
+/// type: \[Signature, PubKey\] -> \[Bool\] ∪  💥
 pub fn p2pkh_ignored(ignored: opcode::PushValue, pk: &[u8]) -> Vec<Opcode> {
     [&ignored_value(ignored)[..], &pay_to_pubkey_hash(pk)].concat()
 }

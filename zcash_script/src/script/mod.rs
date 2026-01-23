@@ -386,7 +386,7 @@ impl Code {
     ///
     /// The only purpose of this function is to reproduce the behavior of the
     /// zcashd function `IsUnspendable()`, which is used for "asm" encoding.
-    /// https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/script/script.h#L617-L620
+    /// <https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/script/script.h#L617-L620>
     fn is_unspendable(&self) -> bool {
         self.parse().next() == Some(Ok(opcode::PossiblyBad::Good(op::RETURN)))
             || self.0.len() > Self::MAX_SIZE
