@@ -268,7 +268,7 @@ impl Control {
         self as u8
     }
 
-    /// <expression> if [statements] [else [statements]] endif
+    /// `<expression> if [statements] [else [statements]] endif`
     pub(crate) fn eval(
         &self,
         mut stack: interpreter::Stack<Vec<u8>>,
@@ -1169,9 +1169,9 @@ impl Bad {
     /// - [Bad::OP_RESERVED] counts as a push value for the purposes of
     ///   [interpreter::Flags::SigPushOnly] (but push-only sigs must necessarily evaluate
     ///   all of their opcodes, so what we’re preserving here is that we get
-    ///   [script::Error::SigPushOnly] in this case instead of [script::Error::BadOpcode]).
+    ///   [`script::Error::SigPushOnly`] in this case instead of [`interpreter::Error::BadOpcode`]).
     /// - [Bad::OP_VERIF] and [Bad::OP_VERNOTIF] both _always_ get evaluated, so we need to special case
-    ///   them when checking whether to throw [script::Error::BadOpcode]
+    ///   them when checking whether to throw [`interpreter::Error::BadOpcode`]
     fn eval(
         &self,
         mut state: interpreter::State,
