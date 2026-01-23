@@ -28,7 +28,7 @@ pub const _15: Opcode = PushValue(pv::_15);
 pub const _16: Opcode = PushValue(pv::_16);
 
 /// Produces a minimally-encoded data value. It fails if the slice is larger than
-/// [`opcode::push_value::LargeValue::MAX_SIZE`].
+/// `opcode::push_value::LargeValue::MAX_SIZE`.
 pub fn push_value(value: &[u8]) -> Option<Opcode> {
     pv::push_value(value).map(PushValue)
 }

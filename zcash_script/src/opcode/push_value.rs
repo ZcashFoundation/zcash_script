@@ -24,7 +24,7 @@ pub enum LargeValue {
     OP_PUSHDATA1(EmptyBoundedVec<u8, 0xff>),
     /// A value whose byte length can fit into two bytes.
     OP_PUSHDATA2(EmptyBoundedVec<u8, { Self::MAX_SIZE }>),
-    /// NB: This constructor is only possible when [`Flags::MinimalData`] isn’t set.
+    /// NB: This constructor is only possible when [`crate::interpreter::Flags::MinimalData`] isn't set.
     OP_PUSHDATA4(EmptyBoundedVec<u8, { Self::MAX_SIZE }>),
 }
 
@@ -35,7 +35,7 @@ impl LargeValue {
     const PUSHDATA2_BYTE: u8 = 0x4d;
     const PUSHDATA4_BYTE: u8 = 0x4e;
 
-    /// The maximum number of bytes able to be stored in a single [`PushValue`].
+    /// The maximum number of bytes able to be stored in a single [`super::PushValue`].
     pub(crate) const MAX_SIZE: usize = 520; // bytes
 
     /// The number of bytes this requires in a script.
@@ -159,7 +159,7 @@ impl LargeValue {
         }
     }
 
-    /// Get the [`interpreter::Stack`] element represented by this [`LargeValue`].
+    /// Get the [`crate::interpreter::Stack`] element represented by this [`LargeValue`].
     pub(crate) fn value(&self) -> &[u8] {
         match self {
             PushdataBytelength(v) => v.as_slice(),
@@ -306,7 +306,7 @@ impl SmallValue {
         self as u8
     }
 
-    /// Get the [`interpreter::Stack`] element represented by this [`SmallValue`].
+    /// Get the [`crate::interpreter::Stack`] element represented by this [`SmallValue`].
     pub(crate) fn value(&self) -> Vec<u8> {
         match self {
             OP_0 => vec![],

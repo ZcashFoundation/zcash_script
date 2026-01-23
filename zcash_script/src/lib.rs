@@ -234,7 +234,7 @@ pub mod testing {
         pv,
         script::{self, Evaluable},
         signature::HashType,
-        test_vectors::TestVector,
+        test_vectors::{AnnError, TestVector},
         Script,
     };
 
@@ -300,13 +300,13 @@ pub mod testing {
     /// Run a single test case against some function.
     ///
     /// `try_normalized_error` indicates whether the results should be normalized before being
-    /// compared. In particular, the C++ implementation doesn’t carry much failure information, so
+    /// compared. In particular, the C++ implementation doesn't carry much failure information, so
     /// the results need to be normalized to discard the corresponding information from the expected
     /// results.
     pub fn run_test_vector(
         tv: &TestVector,
         try_normalized_error: bool,
-        interpreter_fn: &dyn Fn(&script::Raw, interpreter::Flags) -> Result<bool, script::AnnError>,
+        interpreter_fn: &dyn Fn(&script::Raw, interpreter::Flags) -> Result<bool, AnnError>,
         sigop_count_fn: &dyn Fn(&script::Code) -> Result<u32, script::Error>,
     ) {
         match tv.run(&|script, flags| interpreter_fn(script, flags), &|pubkey| {
