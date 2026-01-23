@@ -234,7 +234,7 @@ pub mod testing {
         pv,
         script::{self, Evaluable},
         signature::HashType,
-        test_vectors::TestVector,
+        test_vectors::{AnnError, TestVector},
         Script,
     };
 
@@ -306,7 +306,7 @@ pub mod testing {
     pub fn run_test_vector(
         tv: &TestVector,
         try_normalized_error: bool,
-        interpreter_fn: &dyn Fn(&script::Raw, interpreter::Flags) -> Result<bool, script::AnnError>,
+        interpreter_fn: &dyn Fn(&script::Raw, interpreter::Flags) -> Result<bool, AnnError>,
         sigop_count_fn: &dyn Fn(&script::Code) -> Result<u32, script::Error>,
     ) {
         match tv.run(&|script, flags| interpreter_fn(script, flags), &|pubkey| {

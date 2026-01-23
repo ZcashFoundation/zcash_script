@@ -18,6 +18,11 @@ use crate::{
     script, signature, Opcode,
 };
 
+/// An [`script::Error`] annotated with a [`script::ComponentType`].
+//
+// TODO: Once C++ support is removed, the `Option` can go away.
+pub type AnnError = (Option<script::ComponentType>, script::Error);
+
 /// A shorthand syntax for writing possibly-incorrect scripts.
 #[derive(Debug)]
 enum Entry {
@@ -145,9 +150,9 @@ impl TestVector {
     /// A successful run is uninteresting, but a failure returns the actual `Result` in `Err`.
     pub fn run(
         &self,
-        interpreter_fn: &dyn Fn(&script::Raw, interpreter::Flags) -> Result<bool, script::AnnError>,
+        interpreter_fn: &dyn Fn(&script::Raw, interpreter::Flags) -> Result<bool, AnnError>,
         sigop_count_fn: &dyn Fn(&script::Code) -> u32,
-    ) -> Result<(), (Result<bool, script::AnnError>, u32)> {
+    ) -> Result<(), (Result<bool, AnnError>, u32)> {
         match (
             self.script_sig
                 .iter()
