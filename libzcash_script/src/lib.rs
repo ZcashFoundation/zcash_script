@@ -515,7 +515,7 @@ mod tests {
                 true,
                 &|script, flags| {
                     interp
-                        .verify_callback(&script, flags)
+                        .verify_callback(script, flags)
                         .map_err(|err| match err {
                             (t, Error::Script(serr)) => (t, serr),
                             _ => panic!("failed in a very bad way: {:?}", err),
@@ -539,7 +539,7 @@ mod tests {
                         lock_time: 0,
                         is_final: false,
                     })
-                    .verify_callback(&script, flags)
+                    .verify_callback(script, flags)
                     .map_err(|err| match err {
                         (t, Error::Script(serr)) => (t, serr),
                         _ => panic!("failed in a very bad way: {:?}", err),
@@ -551,7 +551,7 @@ mod tests {
                         lock_time: 0,
                         is_final: false,
                     })
-                    .legacy_sigop_count_script(&pubkey)
+                    .legacy_sigop_count_script(pubkey)
                 },
             )
         }
