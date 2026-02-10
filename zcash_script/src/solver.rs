@@ -134,3 +134,27 @@ pub enum ScriptKind {
         data: BoundedVec<u8, { PubKey::COMPRESSED_SIZE }, { PubKey::SIZE }>,
     },
 }
+
+impl ScriptKind {
+    /// Returns a string identifier for this script kind.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ScriptKind::PubKeyHash { .. } => "pubkeyhash",
+            ScriptKind::ScriptHash { .. } => "scripthash",
+            ScriptKind::MultiSig { .. } => "multisig",
+            ScriptKind::NullData { .. } => "nulldata",
+            ScriptKind::PubKey { .. } => "pubkey",
+        }
+    }
+
+    /// Returns the number of signatures required to spend an output of this script kind.
+    pub fn req_sigs(&self) -> u8 {
+        match self {
+            ScriptKind::PubKeyHash { .. } => 1,
+            ScriptKind::ScriptHash { .. } => 1,
+            ScriptKind::MultiSig { required, .. } => *required,
+            ScriptKind::NullData { .. } => 0,
+            ScriptKind::PubKey { .. } => 1,
+        }
+    }
+}
