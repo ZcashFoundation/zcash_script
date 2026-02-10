@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+## Added
+
+- `zcash_script::script::Code::is_unspendable()`
+
 ## [0.4.2], [0.5.1] - 2025-10-24
 
 ### Fixed
