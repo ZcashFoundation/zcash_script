@@ -344,8 +344,8 @@ mod tests {
         interpreter::CallbackTransactionSignatureChecker,
         opcode::Operation,
         pv,
-        script::{Asm, Code},
-        testing::{AUTHORED_SCRIPT, SCRIPT},
+        script::{Asm, Code, Evaluable},
+        testing::{AUTHORED_SCRIPT, SCRIPT, SCRIPT_PUBKEY},
         Opcode,
     };
 
@@ -426,5 +426,13 @@ mod tests {
         for (suffix, expected_suffix) in sighash_cases.iter() {
             check_sig_display(der_sig, pubkey, suffix, expected_suffix);
         }
+    }
+
+    #[test]
+    fn is_unspendable_works() {
+        let code = Code(SCRIPT_PUBKEY.to_bytes());
+        assert!(!code.is_unspendable());
+        let code = Code(vec![0x6A]);
+        assert!(code.is_unspendable());
     }
 }
