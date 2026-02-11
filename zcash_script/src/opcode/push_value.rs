@@ -341,27 +341,29 @@ impl SmallValue {
 }
 
 impl Asm for SmallValue {
+    /// zcashd prints small values script elements as numbers (e.g. OP_1 → "1").
+    /// https://github.com/zcash/zcash/blob/v6.11.0/src/script/script.cpp#L19-L40
     fn to_asm(&self, _attempt_sighash_decode: bool) -> String {
         match self {
             // This is an exception because zcashd handles `0 <= opcode <= OP_PUSHDATA4` differently
             OP_0 => "0",
-            OP_1NEGATE => "OP_1NEGATE",
-            OP_1 => "OP_1",
-            OP_2 => "OP_2",
-            OP_3 => "OP_3",
-            OP_4 => "OP_4",
-            OP_5 => "OP_5",
-            OP_6 => "OP_6",
-            OP_7 => "OP_7",
-            OP_8 => "OP_8",
-            OP_9 => "OP_9",
-            OP_10 => "OP_10",
-            OP_11 => "OP_11",
-            OP_12 => "OP_12",
-            OP_13 => "OP_13",
-            OP_14 => "OP_14",
-            OP_15 => "OP_15",
-            OP_16 => "OP_16",
+            OP_1NEGATE => "-1",
+            OP_1 => "1",
+            OP_2 => "2",
+            OP_3 => "3",
+            OP_4 => "4",
+            OP_5 => "5",
+            OP_6 => "6",
+            OP_7 => "7",
+            OP_8 => "8",
+            OP_9 => "9",
+            OP_10 => "10",
+            OP_11 => "11",
+            OP_12 => "12",
+            OP_13 => "13",
+            OP_14 => "14",
+            OP_15 => "15",
+            OP_16 => "16",
         }
         .to_string()
     }
