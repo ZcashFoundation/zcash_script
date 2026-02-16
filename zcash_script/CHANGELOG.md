@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+## Added
+
+- `zcash_script::script::Code::is_unspendable()`
+
 ### Changed
 
 - Bumped `bindgen` dependency from `>= 0.69.5` to `>= 0.71`.
