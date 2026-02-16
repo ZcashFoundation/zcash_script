@@ -38,7 +38,7 @@ zcash_script = { version = "0.5", path = "zcash_script" }
 
 # C++ build dependencies
 # See Note [explicit >= version requirements]
-bindgen = { version = ">= 0.69.5", default-features = false, features = ["runtime"] }
+bindgen = { version = ">= 0.71", default-features = false, features = ["runtime"] }
 # See Note [explicit >= version requirements]
 cc = { version = ">= 1.2.11", features = ["parallel"] }
 
