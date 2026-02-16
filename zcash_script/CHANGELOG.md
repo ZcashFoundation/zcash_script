@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `zcash_script::script::Code::is_unspendable()`
 
+### Changed
+
+- Bumped `bindgen` dependency from `>= 0.69.5` to `>= 0.71`.
+
 ## [0.4.2], [0.5.1] - 2025-10-24
 >>>>>>> 4c631e1 (make Code::is_unspendable() public (#280))
 
