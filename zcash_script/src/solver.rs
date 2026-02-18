@@ -153,6 +153,8 @@ impl ScriptKind {
             ScriptKind::PubKeyHash { .. } => 1,
             ScriptKind::ScriptHash { .. } => 1,
             ScriptKind::MultiSig { required, .. } => *required,
+            // TODO: null-data value might be incorrect,
+            //       fix after https://github.com/zcash/wallet/issues/236
             ScriptKind::NullData { .. } => 0,
             ScriptKind::PubKey { .. } => 1,
         }

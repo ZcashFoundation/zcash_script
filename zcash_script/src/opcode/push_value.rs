@@ -345,7 +345,6 @@ impl Asm for SmallValue {
     /// https://github.com/zcash/zcash/blob/v6.11.0/src/script/script.cpp#L19-L40
     fn to_asm(&self, _attempt_sighash_decode: bool) -> String {
         match self {
-            // This is an exception because zcashd handles `0 <= opcode <= OP_PUSHDATA4` differently
             OP_0 => "0",
             OP_1NEGATE => "-1",
             OP_1 => "1",

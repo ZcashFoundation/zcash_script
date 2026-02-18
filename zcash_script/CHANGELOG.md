@@ -11,10 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Added
 
 - `zcash_script::script::Code::is_unspendable()`
+- `as_str()` and `req_sigs()` for `ScriptKind`
 
 ### Changed
 
 - Bumped `bindgen` dependency from `>= 0.69.5` to `>= 0.71`.
+
+### Fixed
+
+- `SmallValue::to_asm()` fixed to match zcashd
 
 ## [0.4.2], [0.5.1] - 2025-10-24
 
