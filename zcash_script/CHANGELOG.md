@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Bumped `bindgen` dependency from `>= 0.69.5` to `>= 0.71`.
+- The `zcash_script::opcode::PossiblyBad::parse` fn is now `pub`.
 
 ### Fixed
 
