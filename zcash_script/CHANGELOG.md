@@ -8,9 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
-<<<<<<< HEAD
-## [0.4.2] - 2025-10-24
-=======
+## [0.4.3], [0.5.2] - 2026-02-23
+
 ## Added
 
 - `zcash_script::script::Code::is_unspendable()`
@@ -26,7 +25,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SmallValue::to_asm()` fixed to match zcashd
 
 ## [0.4.2], [0.5.1] - 2025-10-24
->>>>>>> 4c631e1 (make Code::is_unspendable() public (#280))
 
 ### Fixed
 - Fixed `no-std` support which was broken by [#256].
@@ -216,7 +214,14 @@ This is a significant change, with a new Rust API that isn’t made to be swappa
 - Updated `bindgen` to a non yanked version
 
 <!-- next-url -->
+<<<<<<< HEAD
 [Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.4.2...HEAD
+=======
+[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.5.2...HEAD
+[0.5.2]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.5.1...zcash_script-v0.5.2
+[0.4.3]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.4.2...zcash_script-v0.4.3
+[0.5.1]: https://github.com/ZcashFoundation/zcash_script/compare/v0.5.0...zcash_script-v0.5.1
+>>>>>>> 717d78b (Update CHANGELOG for zcash_script 0.4.3 and 0.5.2 release (#294))
 [0.4.2]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.4.1...zcash_script-v0.4.2
 [0.4.1]: https://github.com/ZcashFoundation/zcash_script/compare/v0.4.0...zcash_script-v0.4.1
 [0.4.0]: https://github.com/ZcashFoundation/zcash_script/compare/v0.3.2...v0.4.0
