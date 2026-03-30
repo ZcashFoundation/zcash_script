@@ -34,20 +34,25 @@ publishing fixes that apply to both lines.
 
 #### Backport release (`0.4.x`)
 
-1. Create a new branch from the previous release tag (e.g. `zcash_script-v0.4.2`):
+1. Create a base branch from the previous release tag (e.g. `zcash_script-v0.4.2`):
    ```bash
-   git checkout -b backport/zcash_script-0.4.3 zcash_script-v0.4.2
+   git checkout -b backport/zcash_script-0.4.3-base zcash_script-v0.4.2
+   git push origin backport/zcash_script-0.4.3-base
    ```
-2. Cherry-pick the relevant commits from `main` (excluding release/merge commits).
-3. Bump the version and apply replacements on the backport branch:
+2. Create a working branch from the base branch:
+   ```bash
+   git checkout -b backport/zcash_script-0.4.3
+   ```
+3. Cherry-pick the relevant commits from `main` (excluding release/merge commits).
+4. Bump the version and apply replacements on the backport branch:
    ```bash
    cargo release version --verbose --execute --allow-branch '*' -p zcash_script patch
    cargo release replace --verbose --execute --allow-branch '*' -p zcash_script
    ```
-4. Update `CHANGELOG.md`.
-5. Open a PR with the backport changes, get it reviewed, and wait for CI to pass.
-6. Create a [new GitHub release](https://github.com/ZcashFoundation/zcash_script/releases/new) for the tag.
-7. Publish the crate from the backport tag:
+5. Update `CHANGELOG.md`.
+6. Open a PR from `backport/zcash_script-0.4.3` targeting `backport/zcash_script-0.4.3-base`, get it reviewed, and wait for CI to pass.
+7. Create a [new GitHub release](https://github.com/ZcashFoundation/zcash_script/releases/new) for the tag.
+8. Publish the crate from the backport tag:
    ```bash
    cargo release publish --verbose --execute -p zcash_script
    ```
