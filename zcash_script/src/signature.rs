@@ -131,6 +131,7 @@ pub enum SignedOutputs {
 pub struct HashType {
     signed_outputs: SignedOutputs,
     anyone_can_pay: bool,
+    raw_bits: i32,
 }
 
 impl HashType {
@@ -161,6 +162,7 @@ impl HashType {
                     _ => SignedOutputs::All,
                 },
                 anyone_can_pay: bits & 0x80 != 0,
+                raw_bits: bits,
             })
         }
     }
@@ -173,6 +175,11 @@ impl HashType {
     /// Allows anyone to add transparent inputs to this transaction.
     pub fn anyone_can_pay(&self) -> bool {
         self.anyone_can_pay
+    }
+
+    /// The raw hash_type bits as received from the script interpreter.
+    pub fn raw_bits(&self) -> i32 {
+        self.raw_bits
     }
 }
 
