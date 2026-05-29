@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+## [0.4.5] - 2026-05-29
+
+### Changed
+
+- Changed `sig_op_count()` to match zcashd
+
 ## [0.4.4] - 2026-04-17
 
 ## Added
@@ -220,7 +226,8 @@ This is a significant change, with a new Rust API that isn’t made to be swappa
 - Updated `bindgen` to a non yanked version
 
 <!-- next-url -->
-[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.4.4...HEAD
+[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.4.5...HEAD
+[0.4.5]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.4.4...zcash_script-v0.4.5
 [0.4.4]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.4.2...zcash_script-v0.4.4
 [0.4.3]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.4.2...zcash_script-v0.4.3
 [0.4.2]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.4.1...zcash_script-v0.4.2
