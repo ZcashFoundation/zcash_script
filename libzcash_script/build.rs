@@ -36,11 +36,7 @@ fn bindgen_headers() -> Result<()> {
         // included header files changed.
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         // This can be removed once rust-lang/rust-bindgen#3049 is fixed.
-        .rust_target(
-            env!("CARGO_PKG_RUST_VERSION")
-                .parse()
-                .expect("Cargo ‘rust-version’ is a valid value"),
-        )
+        .rust_target(env!("CARGO_PKG_RUST_VERSION").parse().unwrap_or_default())
         .use_core()
         // Finish the builder and generate the bindings.
         .generate()
