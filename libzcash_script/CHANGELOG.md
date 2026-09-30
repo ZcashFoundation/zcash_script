@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+### Fixed
+
+- The bundled `secp256k1` library is now linked after `libzcash_script`, under a
+  name that does not collide with the library built by `secp256k1-sys`. This
+  fixes a link failure when building against `secp256k1-sys 0.14`.
+
 ## [0.1.0] - 2025-09-25
 
 This crate was extracted from `zcash_script 0.3.2` and then modified to align with

@@ -82,11 +82,6 @@ fn main() -> Result<()> {
         .define("HAVE_DECL_STRNLEN", "1")
         .define("__STDC_FORMAT_MACROS", None);
 
-    // **Secp256k1**
-    if !cfg!(feature = "external-secp") {
-        build_secp256k1();
-    }
-
     if target.contains("windows") {
         base_config.define("WIN32", "1");
     }
@@ -104,6 +99,13 @@ fn main() -> Result<()> {
         .file("depend/zcash/src/uint256.cpp")
         .file("depend/zcash/src/util/strencodings.cpp")
         .compile("libzcash_script.a");
+
+    // **Secp256k1**
+    // Static libraries resolve symbols only from libraries linked after them, so
+    // `libzcash_script` must precede the `secp256k1` library it calls into.
+    if !cfg!(feature = "external-secp") {
+        build_secp256k1();
+    }
 
     Ok(())
 }
@@ -153,7 +155,7 @@ fn build_secp256k1() {
         .file("depend/zcash/src/secp256k1/src/secp256k1.c")
         .file("depend/zcash/src/secp256k1/src/precomputed_ecmult.c")
         .file("depend/zcash/src/secp256k1/src/precomputed_ecmult_gen.c")
-        .compile("libsecp256k1.a");
+        .compile("libzcash_script_secp256k1.a");
 }
 
 /// Checker whether the target architecture is big endian.
