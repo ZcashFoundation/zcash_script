@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+### Changed
+
+- MSRV is now 1.85.
+
 ### Fixed
 
 - The bundled `secp256k1` library is now linked after `libzcash_script`, under a
