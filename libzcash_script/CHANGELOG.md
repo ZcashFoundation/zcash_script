@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - MSRV is now 1.85.
+- The bundled `secp256k1` library is now libsecp256k1 0.8.0 (previously 0.2.0),
+  the release that `secp256k1-sys 0.14` vendors. It enables the same modules as
+  `secp256k1-sys`, so building with `--cfg rust_secp_no_symbol_renaming` links
+  the Rust `secp256k1` bindings against it, leaving a single copy of
+  libsecp256k1 in the final artifact.
 
 ### Fixed
 

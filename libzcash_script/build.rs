@@ -80,7 +80,10 @@ fn main() -> Result<()> {
         // when compiling using Microsoft Visual C++, ignore warnings about unused arguments
         .flag_if_supported("/wd4100")
         .define("HAVE_DECL_STRNLEN", "1")
-        .define("__STDC_FORMAT_MACROS", None);
+        .define("__STDC_FORMAT_MACROS", None)
+        // libsecp256k1 is linked statically. Without this, its headers declare the API as
+        // imported from a DLL on Windows.
+        .define("SECP256K1_STATIC", None);
 
     if target.contains("windows") {
         base_config.define("WIN32", "1");
@@ -111,83 +114,43 @@ fn main() -> Result<()> {
 }
 
 /// Build the `secp256k1` library.
+///
+/// This is the libsecp256k1 release that `secp256k1-sys` vendors, built with the same modules
+/// and precomputation parameters but with unprefixed symbols. A build that sets
+/// `--cfg rust_secp_no_symbol_renaming` therefore links the Rust `secp256k1` bindings against
+/// this library, so that the final artifact contains a single copy of libsecp256k1.
 fn build_secp256k1() {
     let mut build = cc::Build::new();
 
     // Compile C99 code
     language_std(&mut build, "c99");
 
-    // Define configuration constants
     build
-        // This matches the #define in depend/zcash/src/secp256k1/src/secp256k1.c
-        .define("SECP256K1_BUILD", "")
-        .define("USE_NUM_NONE", "1")
-        .define("USE_FIELD_INV_BUILTIN", "1")
-        .define("USE_SCALAR_INV_BUILTIN", "1")
-        .define("ECMULT_WINDOW_SIZE", "15")
-        .define("ECMULT_GEN_PREC_BITS", "4")
-        // Use the endomorphism optimization now that the patents have expired.
-        .define("USE_ENDOMORPHISM", "1")
-        // Technically libconsensus doesn't require the recovery feature, but `pubkey.cpp` does.
-        .define("ENABLE_MODULE_RECOVERY", "1")
-        // The source files look for headers inside an `include` sub-directory
-        .include("depend/zcash/src/secp256k1")
+        .include("depend/zcash/src/secp256k1/")
+        .include("depend/zcash/src/secp256k1/include/")
+        .include("depend/zcash/src/secp256k1/src/")
         // Some ecmult stuff is defined but not used upstream
         .flag_if_supported("-Wno-unused-function")
-        .flag_if_supported("-Wno-unused-parameter");
-
-    if is_big_endian() {
-        build.define("WORDS_BIGENDIAN", "1");
-    }
-
-    if is_64bit_compilation() {
-        build
-            .define("USE_FIELD_5X52", "1")
-            .define("USE_SCALAR_4X64", "1")
-            .define("HAVE___INT128", "1");
-    } else {
-        build
-            .define("USE_FIELD_10X26", "1")
-            .define("USE_SCALAR_8X32", "1");
-    }
+        .flag_if_supported("-Wno-unused-parameter")
+        // The modules that `secp256k1-sys` enables, so that its bindings resolve against this
+        // library. `pubkey.cpp` itself requires only the recovery module.
+        .define("ENABLE_MODULE_ECDH", "1")
+        .define("ENABLE_MODULE_ELLSWIFT", "1")
+        .define("ENABLE_MODULE_EXTRAKEYS", "1")
+        .define("ENABLE_MODULE_MUSIG", "1")
+        .define("ENABLE_MODULE_RECOVERY", "1")
+        .define("ENABLE_MODULE_SCHNORRSIG", "1")
+        // The precomputation parameters that `secp256k1-sys` uses.
+        .define("ECMULT_WINDOW_SIZE", "15")
+        .define("COMB_BLOCKS", "43")
+        .define("COMB_TEETH", "6");
 
     build
-        .file("depend/zcash/src/secp256k1/src/secp256k1.c")
-        .file("depend/zcash/src/secp256k1/src/precomputed_ecmult.c")
+        .file("depend/zcash/src/secp256k1/contrib/lax_der_parsing.c")
         .file("depend/zcash/src/secp256k1/src/precomputed_ecmult_gen.c")
+        .file("depend/zcash/src/secp256k1/src/precomputed_ecmult.c")
+        .file("depend/zcash/src/secp256k1/src/secp256k1.c")
         .compile("libzcash_script_secp256k1.a");
-}
-
-/// Checker whether the target architecture is big endian.
-fn is_big_endian() -> bool {
-    let endianess = env::var("CARGO_CFG_TARGET_ENDIAN").expect("No endian is set");
-
-    endianess == "big"
-}
-
-/// Check whether we can use 64-bit compilation.
-fn is_64bit_compilation() -> bool {
-    let target_pointer_width =
-        env::var("CARGO_CFG_TARGET_POINTER_WIDTH").expect("Target pointer width is not set");
-
-    if target_pointer_width == "64" {
-        let check = cc::Build::new()
-            .file("depend/check_uint128_t.c")
-            .cargo_metadata(false)
-            .try_compile("check_uint128_t")
-            .is_ok();
-
-        if !check {
-            println!(
-                "cargo:warning=Compiling in 32-bit mode on a 64-bit architecture due to lack of \
-                uint128_t support."
-            );
-        }
-
-        check
-    } else {
-        false
-    }
 }
 
 /// Configure the language standard used in the build.
