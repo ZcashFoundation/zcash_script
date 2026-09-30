@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - MSRV is now 1.85.
+- Migrated to `bip32 0.6` and `secp256k1 0.33`.
 
 ## [0.4.5] - 2026-05-29
 
