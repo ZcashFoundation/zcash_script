@@ -9,12 +9,20 @@
 
 #include "../../../include/secp256k1.h"
 #include "../../../include/secp256k1_extrakeys.h"
+#include "../../util.h"
 
 static SECP256K1_INLINE int secp256k1_xonly_pubkey_load(const secp256k1_context* ctx, secp256k1_ge *ge, const secp256k1_xonly_pubkey *pubkey) {
     return secp256k1_pubkey_load(ctx, ge, (const secp256k1_pubkey *) pubkey);
 }
 
 static SECP256K1_INLINE void secp256k1_xonly_pubkey_save(secp256k1_xonly_pubkey *pubkey, secp256k1_ge *ge) {
+#ifdef VERIFY
+    /* ensure that the group element's Y coordinate is even, as per definition of x-only public keys */
+    secp256k1_fe y = ge->y;
+    secp256k1_fe_normalize_var(&y);
+    VERIFY_CHECK(!secp256k1_fe_is_odd(&y));
+#endif
+
     secp256k1_pubkey_save((secp256k1_pubkey *) pubkey, ge);
 }
 
@@ -27,7 +35,7 @@ int secp256k1_xonly_pubkey_parse(const secp256k1_context* ctx, secp256k1_xonly_p
     memset(pubkey, 0, sizeof(*pubkey));
     ARG_CHECK(input32 != NULL);
 
-    if (!secp256k1_fe_set_b32(&x, input32)) {
+    if (!secp256k1_fe_set_b32_limit(&x, input32)) {
         return 0;
     }
     if (!secp256k1_ge_set_xo_var(&pk, &x, 0)) {

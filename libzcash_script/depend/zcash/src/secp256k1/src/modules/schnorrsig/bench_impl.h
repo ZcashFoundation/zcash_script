@@ -21,7 +21,7 @@ typedef struct {
     const unsigned char **msgs;
 } bench_schnorrsig_data;
 
-void bench_schnorrsig_sign(void* arg, int iters) {
+static void bench_schnorrsig_sign(void* arg, int iters) {
     bench_schnorrsig_data *data = (bench_schnorrsig_data *)arg;
     int i;
     unsigned char msg[MSGLEN] = {0};
@@ -34,7 +34,7 @@ void bench_schnorrsig_sign(void* arg, int iters) {
     }
 }
 
-void bench_schnorrsig_verify(void* arg, int iters) {
+static void bench_schnorrsig_verify(void* arg, int iters) {
     bench_schnorrsig_data *data = (bench_schnorrsig_data *)arg;
     int i;
 
@@ -45,24 +45,24 @@ void bench_schnorrsig_verify(void* arg, int iters) {
     }
 }
 
-void run_schnorrsig_bench(int iters, int argc, char** argv) {
+static void run_schnorrsig_bench(int iters, int argc, char** argv) {
     int i;
     bench_schnorrsig_data data;
     int d = argc == 1;
 
     data.ctx = secp256k1_context_create(SECP256K1_CONTEXT_NONE);
-    data.keypairs = (const secp256k1_keypair **)malloc(iters * sizeof(secp256k1_keypair *));
-    data.pk = (const unsigned char **)malloc(iters * sizeof(unsigned char *));
-    data.msgs = (const unsigned char **)malloc(iters * sizeof(unsigned char *));
-    data.sigs = (const unsigned char **)malloc(iters * sizeof(unsigned char *));
+    data.keypairs = malloc(iters * sizeof(secp256k1_keypair *));
+    data.pk = malloc(iters * sizeof(unsigned char *));
+    data.msgs = malloc(iters * sizeof(unsigned char *));
+    data.sigs = malloc(iters * sizeof(unsigned char *));
 
     CHECK(MSGLEN >= 4);
     for (i = 0; i < iters; i++) {
         unsigned char sk[32];
-        unsigned char *msg = (unsigned char *)malloc(MSGLEN);
-        unsigned char *sig = (unsigned char *)malloc(64);
-        secp256k1_keypair *keypair = (secp256k1_keypair *)malloc(sizeof(*keypair));
-        unsigned char *pk_char = (unsigned char *)malloc(32);
+        unsigned char *msg = malloc(MSGLEN);
+        unsigned char *sig = malloc(64);
+        secp256k1_keypair *keypair = malloc(sizeof(*keypair));
+        unsigned char *pk_char = malloc(32);
         secp256k1_xonly_pubkey pk;
         msg[0] = sk[0] = i;
         msg[1] = sk[1] = i >> 8;

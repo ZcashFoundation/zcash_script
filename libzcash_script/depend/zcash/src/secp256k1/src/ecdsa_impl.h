@@ -16,17 +16,8 @@
 #include "ecdsa.h"
 
 /** Group order for secp256k1 defined as 'n' in "Standards for Efficient Cryptography" (SEC2) 2.7.1
- *  sage: for t in xrange(1023, -1, -1):
- *     ..   p = 2**256 - 2**32 - t
- *     ..   if p.is_prime():
- *     ..     print '%x'%p
- *     ..     break
- *   'fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f'
- *  sage: a = 0
- *  sage: b = 7
- *  sage: F = FiniteField (p)
- *  sage: '%x' % (EllipticCurve ([F (a), F (b)]).order())
- *   'fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141'
+ *  $ sage -c 'load("secp256k1_params.sage"); print(hex(N))'
+ *  0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141
  */
 static const secp256k1_fe secp256k1_ecdsa_const_order_as_fe = SECP256K1_FE_CONST(
     0xFFFFFFFFUL, 0xFFFFFFFFUL, 0xFFFFFFFFUL, 0xFFFFFFFEUL,
@@ -35,12 +26,8 @@ static const secp256k1_fe secp256k1_ecdsa_const_order_as_fe = SECP256K1_FE_CONST
 
 /** Difference between field and order, values 'p' and 'n' values defined in
  *  "Standards for Efficient Cryptography" (SEC2) 2.7.1.
- *  sage: p = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
- *  sage: a = 0
- *  sage: b = 7
- *  sage: F = FiniteField (p)
- *  sage: '%x' % (p - EllipticCurve ([F (a), F (b)]).order())
- *   '14551231950b75fc4402da1722fc9baee'
+ *  $ sage -c 'load("secp256k1_params.sage"); print(hex(P-N))'
+ *  0x14551231950b75fc4402da1722fc9baee
  */
 static const secp256k1_fe secp256k1_ecdsa_const_p_minus_order = SECP256K1_FE_CONST(
     0, 0, 0, 1, 0x45512319UL, 0x50B75FC4UL, 0x402DA172UL, 0x2FC9BAEEUL
@@ -79,8 +66,7 @@ static int secp256k1_der_read_len(size_t *len, const unsigned char **sigp, const
     }
     if (lenleft > sizeof(size_t)) {
         /* The resulting length would exceed the range of a size_t, so
-         * certainly longer than the passed array size.
-         */
+         * it is certainly longer than the passed array size. */
         return 0;
     }
     while (lenleft > 0) {
@@ -89,7 +75,9 @@ static int secp256k1_der_read_len(size_t *len, const unsigned char **sigp, const
         lenleft--;
     }
     if (*len > (size_t)(sigend - *sigp)) {
-        /* Result exceeds the length of the passed array. */
+        /* Result exceeds the length of the passed array.
+           (Checking this is the responsibility of the caller but it
+           can't hurt do it here, too.) */
         return 0;
     }
     if (*len < 128) {
@@ -208,6 +196,7 @@ static int secp256k1_ecdsa_sig_verify(const secp256k1_scalar *sigr, const secp25
     unsigned char c[32];
     secp256k1_scalar sn, u1, u2;
 #if !defined(EXHAUSTIVE_TEST_ORDER)
+    int range;
     secp256k1_fe xr;
 #endif
     secp256k1_gej pubkeyj;
@@ -238,8 +227,16 @@ static int secp256k1_ecdsa_sig_verify(const secp256k1_scalar *sigr, const secp25
     return secp256k1_scalar_eq(sigr, &computed_r);
 }
 #else
+
+    /* Interpret sigr as a field element xr  */
     secp256k1_scalar_get_b32(c, sigr);
-    secp256k1_fe_set_b32(&xr, c);
+    range = secp256k1_fe_set_b32_limit(&xr, c);
+#ifdef VERIFY
+    /* We know that c is in range; it comes from a scalar. */
+    VERIFY_CHECK(range);
+#else
+    (void)range;
+#endif
 
     /** We now have the recomputed R point in pr, and its claimed x coordinate (modulo n)
      *  in xr. Naively, we would extract the x coordinate from pr (requiring a inversion modulo p),
@@ -276,14 +273,12 @@ static int secp256k1_ecdsa_sig_verify(const secp256k1_scalar *sigr, const secp25
 
 static int secp256k1_ecdsa_sig_sign(const secp256k1_ecmult_gen_context *ctx, secp256k1_scalar *sigr, secp256k1_scalar *sigs, const secp256k1_scalar *seckey, const secp256k1_scalar *message, const secp256k1_scalar *nonce, int *recid) {
     unsigned char b[32];
-    secp256k1_gej rp;
     secp256k1_ge r;
     secp256k1_scalar n;
     int overflow = 0;
     int high;
 
-    secp256k1_ecmult_gen(ctx, &rp, nonce);
-    secp256k1_ge_set_gej(&r, &rp);
+    secp256k1_ecmult_gen_ge(ctx, &r, nonce);
     secp256k1_fe_normalize(&r.x);
     secp256k1_fe_normalize(&r.y);
     secp256k1_fe_get_b32(b, &r.x);
@@ -299,7 +294,6 @@ static int secp256k1_ecdsa_sig_sign(const secp256k1_ecmult_gen_context *ctx, sec
     secp256k1_scalar_inverse(sigs, nonce);
     secp256k1_scalar_mul(sigs, sigs, &n);
     secp256k1_scalar_clear(&n);
-    secp256k1_gej_clear(&rp);
     secp256k1_ge_clear(&r);
     high = secp256k1_scalar_is_high(sigs);
     secp256k1_scalar_cond_negate(sigs, high);

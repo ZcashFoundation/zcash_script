@@ -4,6 +4,7 @@
  * file COPYING or https://www.opensource.org/licenses/mit-license.php.*
  ***********************************************************************/
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "secp256k1.c"
 #include "../include/secp256k1.h"
@@ -14,11 +15,30 @@
 #include "field_impl.h"
 #include "group_impl.h"
 #include "scalar_impl.h"
-#include "ecmult_const_impl.h"
 #include "ecmult_impl.h"
 #include "bench.h"
 
+static void help(const char *executable_path, int default_iters) {
+    printf("Benchmarks various internal routines.\n");
+    printf("\n");
+    printf("The default number of iterations for each benchmark is %d. This can be\n", default_iters);
+    printf("customized using the SECP256K1_BENCH_ITERS environment variable.\n");
+    printf("\n");
+    printf("Usage: %s [args]\n", executable_path);
+    printf("By default, all benchmarks will be run.\n");
+    printf("args:\n");
+    printf("    help       : display this help and exit\n");
+    printf("    scalar     : all scalar operations (add, half, inverse, mul, negate, split)\n");
+    printf("    field      : all field operations (half, inverse, issquare, mul, normalize, sqr, sqrt)\n");
+    printf("    group      : all group operations (add, double, to_affine)\n");
+    printf("    ecmult     : all point multiplication operations (ecmult_wnaf) \n");
+    printf("    hash       : all hash algorithms (hmac, rng6979, sha256)\n");
+    printf("    context    : all context object operations (context_create)\n");
+    printf("\n");
+}
+
 typedef struct {
+    const secp256k1_context* ctx;
     secp256k1_scalar scalar[2];
     secp256k1_fe fe[4];
     secp256k1_ge ge[2];
@@ -27,7 +47,7 @@ typedef struct {
     int wnaf[256];
 } bench_inv;
 
-void bench_setup(void* arg) {
+static void bench_setup(void* arg) {
     bench_inv *data = (bench_inv*)arg;
 
     static const unsigned char init[4][32] = {
@@ -63,12 +83,15 @@ void bench_setup(void* arg) {
         }
     };
 
+    /* Customize context if needed */
+    data->ctx = secp256k1_context_static;
+
     secp256k1_scalar_set_b32(&data->scalar[0], init[0], NULL);
     secp256k1_scalar_set_b32(&data->scalar[1], init[1], NULL);
-    secp256k1_fe_set_b32(&data->fe[0], init[0]);
-    secp256k1_fe_set_b32(&data->fe[1], init[1]);
-    secp256k1_fe_set_b32(&data->fe[2], init[2]);
-    secp256k1_fe_set_b32(&data->fe[3], init[3]);
+    secp256k1_fe_set_b32_limit(&data->fe[0], init[0]);
+    secp256k1_fe_set_b32_limit(&data->fe[1], init[1]);
+    secp256k1_fe_set_b32_limit(&data->fe[2], init[2]);
+    secp256k1_fe_set_b32_limit(&data->fe[3], init[3]);
     CHECK(secp256k1_ge_set_xo_var(&data->ge[0], &data->fe[0], 0));
     CHECK(secp256k1_ge_set_xo_var(&data->ge[1], &data->fe[1], 1));
     secp256k1_gej_set_ge(&data->gej[0], &data->ge[0]);
@@ -79,7 +102,7 @@ void bench_setup(void* arg) {
     memcpy(data->data + 32, init[1], 32);
 }
 
-void bench_scalar_add(void* arg, int iters) {
+static void bench_scalar_add(void* arg, int iters) {
     int i, j = 0;
     bench_inv *data = (bench_inv*)arg;
 
@@ -89,7 +112,7 @@ void bench_scalar_add(void* arg, int iters) {
     CHECK(j <= iters);
 }
 
-void bench_scalar_negate(void* arg, int iters) {
+static void bench_scalar_negate(void* arg, int iters) {
     int i;
     bench_inv *data = (bench_inv*)arg;
 
@@ -98,7 +121,19 @@ void bench_scalar_negate(void* arg, int iters) {
     }
 }
 
-void bench_scalar_mul(void* arg, int iters) {
+static void bench_scalar_half(void* arg, int iters) {
+    int i;
+    bench_inv *data = (bench_inv*)arg;
+    secp256k1_scalar s = data->scalar[0];
+
+    for (i = 0; i < iters; i++) {
+        secp256k1_scalar_half(&s, &s);
+    }
+
+    data->scalar[0] = s;
+}
+
+static void bench_scalar_mul(void* arg, int iters) {
     int i;
     bench_inv *data = (bench_inv*)arg;
 
@@ -107,18 +142,19 @@ void bench_scalar_mul(void* arg, int iters) {
     }
 }
 
-void bench_scalar_split(void* arg, int iters) {
+static void bench_scalar_split(void* arg, int iters) {
     int i, j = 0;
     bench_inv *data = (bench_inv*)arg;
+    secp256k1_scalar tmp;
 
     for (i = 0; i < iters; i++) {
-        secp256k1_scalar_split_lambda(&data->scalar[0], &data->scalar[1], &data->scalar[0]);
-        j += secp256k1_scalar_add(&data->scalar[0], &data->scalar[0], &data->scalar[1]);
+        secp256k1_scalar_split_lambda(&tmp, &data->scalar[1], &data->scalar[0]);
+        j += secp256k1_scalar_add(&data->scalar[0], &tmp, &data->scalar[1]);
     }
     CHECK(j <= iters);
 }
 
-void bench_scalar_inverse(void* arg, int iters) {
+static void bench_scalar_inverse(void* arg, int iters) {
     int i, j = 0;
     bench_inv *data = (bench_inv*)arg;
 
@@ -129,7 +165,7 @@ void bench_scalar_inverse(void* arg, int iters) {
     CHECK(j <= iters);
 }
 
-void bench_scalar_inverse_var(void* arg, int iters) {
+static void bench_scalar_inverse_var(void* arg, int iters) {
     int i, j = 0;
     bench_inv *data = (bench_inv*)arg;
 
@@ -140,7 +176,7 @@ void bench_scalar_inverse_var(void* arg, int iters) {
     CHECK(j <= iters);
 }
 
-void bench_field_half(void* arg, int iters) {
+static void bench_field_half(void* arg, int iters) {
     int i;
     bench_inv *data = (bench_inv*)arg;
 
@@ -149,7 +185,7 @@ void bench_field_half(void* arg, int iters) {
     }
 }
 
-void bench_field_normalize(void* arg, int iters) {
+static void bench_field_normalize(void* arg, int iters) {
     int i;
     bench_inv *data = (bench_inv*)arg;
 
@@ -158,7 +194,18 @@ void bench_field_normalize(void* arg, int iters) {
     }
 }
 
-void bench_field_normalize_weak(void* arg, int iters) {
+static void bench_field_normalize_var(void* arg, int iters) {
+    int i;
+    bench_inv *data = (bench_inv*)arg;
+
+    /* Note that this benchmark measures the optimistic path. The worst-case path with the final
+       reduction is very unlikely to be needed, so this is representative of the common case. */
+    for (i = 0; i < iters; i++) {
+        secp256k1_fe_normalize_var(&data->fe[0]);
+    }
+}
+
+static void bench_field_normalize_weak(void* arg, int iters) {
     int i;
     bench_inv *data = (bench_inv*)arg;
 
@@ -167,7 +214,7 @@ void bench_field_normalize_weak(void* arg, int iters) {
     }
 }
 
-void bench_field_mul(void* arg, int iters) {
+static void bench_field_mul(void* arg, int iters) {
     int i;
     bench_inv *data = (bench_inv*)arg;
 
@@ -176,7 +223,7 @@ void bench_field_mul(void* arg, int iters) {
     }
 }
 
-void bench_field_sqr(void* arg, int iters) {
+static void bench_field_sqr(void* arg, int iters) {
     int i;
     bench_inv *data = (bench_inv*)arg;
 
@@ -185,7 +232,7 @@ void bench_field_sqr(void* arg, int iters) {
     }
 }
 
-void bench_field_inverse(void* arg, int iters) {
+static void bench_field_inverse(void* arg, int iters) {
     int i;
     bench_inv *data = (bench_inv*)arg;
 
@@ -195,7 +242,7 @@ void bench_field_inverse(void* arg, int iters) {
     }
 }
 
-void bench_field_inverse_var(void* arg, int iters) {
+static void bench_field_inverse_var(void* arg, int iters) {
     int i;
     bench_inv *data = (bench_inv*)arg;
 
@@ -205,7 +252,7 @@ void bench_field_inverse_var(void* arg, int iters) {
     }
 }
 
-void bench_field_sqrt(void* arg, int iters) {
+static void bench_field_sqrt(void* arg, int iters) {
     int i, j = 0;
     bench_inv *data = (bench_inv*)arg;
     secp256k1_fe t;
@@ -218,7 +265,20 @@ void bench_field_sqrt(void* arg, int iters) {
     CHECK(j <= iters);
 }
 
-void bench_group_double_var(void* arg, int iters) {
+static void bench_field_is_square_var(void* arg, int iters) {
+    int i, j = 0;
+    bench_inv *data = (bench_inv*)arg;
+    secp256k1_fe t = data->fe[0];
+
+    for (i = 0; i < iters; i++) {
+        j += secp256k1_fe_is_square_var(&t);
+        secp256k1_fe_add(&t, &data->fe[1]);
+        secp256k1_fe_normalize_var(&t);
+    }
+    CHECK(j <= iters);
+}
+
+static void bench_group_double_var(void* arg, int iters) {
     int i;
     bench_inv *data = (bench_inv*)arg;
 
@@ -227,7 +287,7 @@ void bench_group_double_var(void* arg, int iters) {
     }
 }
 
-void bench_group_add_var(void* arg, int iters) {
+static void bench_group_add_var(void* arg, int iters) {
     int i;
     bench_inv *data = (bench_inv*)arg;
 
@@ -236,7 +296,7 @@ void bench_group_add_var(void* arg, int iters) {
     }
 }
 
-void bench_group_add_affine(void* arg, int iters) {
+static void bench_group_add_affine(void* arg, int iters) {
     int i;
     bench_inv *data = (bench_inv*)arg;
 
@@ -245,7 +305,7 @@ void bench_group_add_affine(void* arg, int iters) {
     }
 }
 
-void bench_group_add_affine_var(void* arg, int iters) {
+static void bench_group_add_affine_var(void* arg, int iters) {
     int i;
     bench_inv *data = (bench_inv*)arg;
 
@@ -254,7 +314,7 @@ void bench_group_add_affine_var(void* arg, int iters) {
     }
 }
 
-void bench_group_add_zinv_var(void* arg, int iters) {
+static void bench_group_add_zinv_var(void* arg, int iters) {
     int i;
     bench_inv *data = (bench_inv*)arg;
 
@@ -263,7 +323,7 @@ void bench_group_add_zinv_var(void* arg, int iters) {
     }
 }
 
-void bench_group_to_affine_var(void* arg, int iters) {
+static void bench_group_to_affine_var(void* arg, int iters) {
     int i;
     bench_inv *data = (bench_inv*)arg;
 
@@ -283,7 +343,7 @@ void bench_group_to_affine_var(void* arg, int iters) {
     }
 }
 
-void bench_ecmult_wnaf(void* arg, int iters) {
+static void bench_ecmult_wnaf(void* arg, int iters) {
     int i, bits = 0, overflow = 0;
     bench_inv *data = (bench_inv*)arg;
 
@@ -295,55 +355,45 @@ void bench_ecmult_wnaf(void* arg, int iters) {
     CHECK(bits <= 256*iters);
 }
 
-void bench_wnaf_const(void* arg, int iters) {
-    int i, bits = 0, overflow = 0;
-    bench_inv *data = (bench_inv*)arg;
-
-    for (i = 0; i < iters; i++) {
-        bits += secp256k1_wnaf_const(data->wnaf, &data->scalar[0], WINDOW_A, 256);
-        overflow += secp256k1_scalar_add(&data->scalar[0], &data->scalar[0], &data->scalar[1]);
-    }
-    CHECK(overflow >= 0);
-    CHECK(bits <= 256*iters);
-}
-
-
-void bench_sha256(void* arg, int iters) {
+static void bench_sha256(void* arg, int iters) {
     int i;
     bench_inv *data = (bench_inv*)arg;
     secp256k1_sha256 sha;
+    const secp256k1_hash_ctx *hash_ctx = secp256k1_get_hash_context(data->ctx);
 
     for (i = 0; i < iters; i++) {
         secp256k1_sha256_initialize(&sha);
-        secp256k1_sha256_write(&sha, data->data, 32);
-        secp256k1_sha256_finalize(&sha, data->data);
+        secp256k1_sha256_write(hash_ctx, &sha, data->data, 32);
+        secp256k1_sha256_finalize(hash_ctx, &sha, data->data);
     }
 }
 
-void bench_hmac_sha256(void* arg, int iters) {
+static void bench_hmac_sha256(void* arg, int iters) {
     int i;
     bench_inv *data = (bench_inv*)arg;
     secp256k1_hmac_sha256 hmac;
+    const secp256k1_hash_ctx *hash_ctx = secp256k1_get_hash_context(data->ctx);
 
     for (i = 0; i < iters; i++) {
-        secp256k1_hmac_sha256_initialize(&hmac, data->data, 32);
-        secp256k1_hmac_sha256_write(&hmac, data->data, 32);
-        secp256k1_hmac_sha256_finalize(&hmac, data->data);
+        secp256k1_hmac_sha256_initialize(hash_ctx, &hmac, data->data, 32);
+        secp256k1_hmac_sha256_write(hash_ctx, &hmac, data->data, 32);
+        secp256k1_hmac_sha256_finalize(hash_ctx, &hmac, data->data);
     }
 }
 
-void bench_rfc6979_hmac_sha256(void* arg, int iters) {
+static void bench_rfc6979_hmac_sha256(void* arg, int iters) {
     int i;
     bench_inv *data = (bench_inv*)arg;
     secp256k1_rfc6979_hmac_sha256 rng;
+    const secp256k1_hash_ctx *hash_ctx = secp256k1_get_hash_context(data->ctx);
 
     for (i = 0; i < iters; i++) {
-        secp256k1_rfc6979_hmac_sha256_initialize(&rng, data->data, 64);
-        secp256k1_rfc6979_hmac_sha256_generate(&rng, data->data, 32);
+        secp256k1_rfc6979_hmac_sha256_initialize(hash_ctx, &rng, data->data, 64);
+        secp256k1_rfc6979_hmac_sha256_generate(hash_ctx, &rng, data->data, 32);
     }
 }
 
-void bench_context(void* arg, int iters) {
+static void bench_context(void* arg, int iters) {
     int i;
     (void)arg;
     for (i = 0; i < iters; i++) {
@@ -353,10 +403,26 @@ void bench_context(void* arg, int iters) {
 
 int main(int argc, char **argv) {
     bench_inv data;
-    int iters = get_iters(20000);
     int d = argc == 1; /* default */
+    int default_iters = 20000;
+    int iters = get_iters(default_iters);
+    if (iters == 0) {
+        help(argv[0], default_iters);
+        return EXIT_FAILURE;
+    }
+
+    if (argc > 1) {
+        if (have_flag(argc, argv, "-h")
+           || have_flag(argc, argv, "--help")
+           || have_flag(argc, argv, "help")) {
+            help(argv[0], default_iters);
+            return EXIT_SUCCESS;
+        }
+    }
+
     print_output_table_header_row();
 
+    if (d || have_flag(argc, argv, "scalar") || have_flag(argc, argv, "half")) run_benchmark("scalar_half", bench_scalar_half, bench_setup, NULL, &data, 10, iters*100);
     if (d || have_flag(argc, argv, "scalar") || have_flag(argc, argv, "add")) run_benchmark("scalar_add", bench_scalar_add, bench_setup, NULL, &data, 10, iters*100);
     if (d || have_flag(argc, argv, "scalar") || have_flag(argc, argv, "negate")) run_benchmark("scalar_negate", bench_scalar_negate, bench_setup, NULL, &data, 10, iters*100);
     if (d || have_flag(argc, argv, "scalar") || have_flag(argc, argv, "mul")) run_benchmark("scalar_mul", bench_scalar_mul, bench_setup, NULL, &data, 10, iters*10);
@@ -366,11 +432,13 @@ int main(int argc, char **argv) {
 
     if (d || have_flag(argc, argv, "field") || have_flag(argc, argv, "half")) run_benchmark("field_half", bench_field_half, bench_setup, NULL, &data, 10, iters*100);
     if (d || have_flag(argc, argv, "field") || have_flag(argc, argv, "normalize")) run_benchmark("field_normalize", bench_field_normalize, bench_setup, NULL, &data, 10, iters*100);
+    if (d || have_flag(argc, argv, "field") || have_flag(argc, argv, "normalize")) run_benchmark("field_normalize_var", bench_field_normalize_var, bench_setup, NULL, &data, 10, iters*100);
     if (d || have_flag(argc, argv, "field") || have_flag(argc, argv, "normalize")) run_benchmark("field_normalize_weak", bench_field_normalize_weak, bench_setup, NULL, &data, 10, iters*100);
     if (d || have_flag(argc, argv, "field") || have_flag(argc, argv, "sqr")) run_benchmark("field_sqr", bench_field_sqr, bench_setup, NULL, &data, 10, iters*10);
     if (d || have_flag(argc, argv, "field") || have_flag(argc, argv, "mul")) run_benchmark("field_mul", bench_field_mul, bench_setup, NULL, &data, 10, iters*10);
     if (d || have_flag(argc, argv, "field") || have_flag(argc, argv, "inverse")) run_benchmark("field_inverse", bench_field_inverse, bench_setup, NULL, &data, 10, iters);
     if (d || have_flag(argc, argv, "field") || have_flag(argc, argv, "inverse")) run_benchmark("field_inverse_var", bench_field_inverse_var, bench_setup, NULL, &data, 10, iters);
+    if (d || have_flag(argc, argv, "field") || have_flag(argc, argv, "issquare")) run_benchmark("field_is_square_var", bench_field_is_square_var, bench_setup, NULL, &data, 10, iters);
     if (d || have_flag(argc, argv, "field") || have_flag(argc, argv, "sqrt")) run_benchmark("field_sqrt", bench_field_sqrt, bench_setup, NULL, &data, 10, iters);
 
     if (d || have_flag(argc, argv, "group") || have_flag(argc, argv, "double")) run_benchmark("group_double_var", bench_group_double_var, bench_setup, NULL, &data, 10, iters*10);
@@ -380,7 +448,6 @@ int main(int argc, char **argv) {
     if (d || have_flag(argc, argv, "group") || have_flag(argc, argv, "add")) run_benchmark("group_add_zinv_var", bench_group_add_zinv_var, bench_setup, NULL, &data, 10, iters*10);
     if (d || have_flag(argc, argv, "group") || have_flag(argc, argv, "to_affine")) run_benchmark("group_to_affine_var", bench_group_to_affine_var, bench_setup, NULL, &data, 10, iters);
 
-    if (d || have_flag(argc, argv, "ecmult") || have_flag(argc, argv, "wnaf")) run_benchmark("wnaf_const", bench_wnaf_const, bench_setup, NULL, &data, 10, iters);
     if (d || have_flag(argc, argv, "ecmult") || have_flag(argc, argv, "wnaf")) run_benchmark("ecmult_wnaf", bench_ecmult_wnaf, bench_setup, NULL, &data, 10, iters);
 
     if (d || have_flag(argc, argv, "hash") || have_flag(argc, argv, "sha256")) run_benchmark("hash_sha256", bench_sha256, bench_setup, NULL, &data, 10, iters);
@@ -389,5 +456,5 @@ int main(int argc, char **argv) {
 
     if (d || have_flag(argc, argv, "context")) run_benchmark("context_create", bench_context, bench_setup, NULL, &data, 10, iters);
 
-    return 0;
+    return EXIT_SUCCESS;
 }
