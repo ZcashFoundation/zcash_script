@@ -1,5 +1,5 @@
 #[cfg(feature = "signature-validation")]
-use secp256k1::{ecdsa, Message, PublicKey, Secp256k1};
+use secp256k1::{ecdsa, Message, PublicKey};
 
 #[cfg_attr(not(feature = "signature-validation"), allow(dead_code))]
 pub(crate) struct PubKey<'a>(pub(crate) &'a [u8]);
@@ -29,9 +29,7 @@ impl PubKey<'_> {
             // libsecp256k1's ECDSA verification requires lower-S signatures, which are
             // not required by consensus in Zcash, so normalize them first.
             normalized_sig.normalize_s();
-            let secp = Secp256k1::verification_only();
-            secp.verify_ecdsa(&Message::from_digest(*hash), &normalized_sig, &pubkey)
-                .is_ok()
+            ecdsa::verify(&normalized_sig, Message::from_digest(*hash), &pubkey).is_ok()
         } else {
             false
         }

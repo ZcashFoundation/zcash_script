@@ -306,7 +306,7 @@ impl<T: Asm> Asm for Component<T> {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Parser<'a>(&'a [u8]);
 
-impl<'a> Iterator for Parser<'a> {
+impl Iterator for Parser<'_> {
     type Item = Result<opcode::PossiblyBad, opcode::Error>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.0.is_empty() {
@@ -427,7 +427,7 @@ impl Evaluable for Code {
     fn is_pay_to_script_hash(&self) -> bool {
         self.parse()
             .collect::<Result<Vec<_>, _>>()
-            .map_or(false, |ops| Component(ops).is_pay_to_script_hash())
+            .is_ok_and(|ops| Component(ops).is_pay_to_script_hash())
     }
 
     /// Called by `IsStandardTx` and P2SH/BIP62 VerifyScript (which makes it consensus-critical).

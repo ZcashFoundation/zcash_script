@@ -20,6 +20,10 @@ jobs:
 
   # Test that "cargo package" works. This makes sure it's publishable,
   # since we had issues where "cargo build" worked but "package" didn't.
+  #
+  # Packaging does not depend on the MSRV, which the test suite covers. It runs on
+  # toolchains whose cargo packages the workspace members together, so that a crate
+  # can be packaged against an unpublished version of another member.
   package:
     name: Package
     runs-on: ubuntu-latest
@@ -27,20 +31,14 @@ jobs:
       fail-fast: false
       matrix:
         toolchain:
-          - rust-toolchain.toml
+          - stable
           - nightly
     steps:
       - uses: actions/checkout@v6
         with:
           submodules: true
-      - uses: actions-rs/cargo@v1
-        if: matrix.toolchain == 'rust-toolchain.toml'
-        with:
-          command: package
       - run: rustup install ${{ matrix.toolchain }}
-        if: matrix.toolchain != 'rust-toolchain.toml'
       - uses: actions-rs/cargo@v1
-        if: matrix.toolchain != 'rust-toolchain.toml'
         with:
           command: package
           toolchain: ${{ matrix.toolchain }}
@@ -98,6 +96,47 @@ jobs:
         if: matrix.os != 'windows-latest'
         with:
           command: test
+
+  # With `--cfg rust_secp_no_symbol_renaming`, the Rust `secp256k1` bindings resolve against
+  # the libsecp256k1 that libzcash_script builds, so a binary links a single copy of it. Only
+  # a binary that links libzcash_script provides that library, so this tests libzcash_script,
+  # whose tests check the Rust interpreter against the C++ one. It then checks that each test
+  # binary contains the unprefixed libsecp256k1 and no code from the copy that
+  # `secp256k1-sys` builds under its symbol prefix.
+  test-single-libsecp256k1:
+    name: Test Suite (single libsecp256k1)
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: --cfg rust_secp_no_symbol_renaming
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+      - run: cargo test -p libzcash_script
+      - name: Check that the test binaries link a single libsecp256k1
+        shell: bash
+        run: |
+          set -euo pipefail
+          binaries=$(cargo test -p libzcash_script --no-run --message-format=json \
+            | jq -r 'select(.reason == "compiler-artifact" and .executable != null) | .executable')
+          if [ -z "$binaries" ]; then
+            echo "::error::no libzcash_script test binaries were built"
+            exit 1
+          fi
+          status=0
+          for binary in $binaries; do
+            symbols=$(nm --defined-only "$binary")
+            prefixed=$(grep -c ' [Tt] rustsecp256k1_v0_' <<< "$symbols" || true)
+            if [ "$prefixed" -ne 0 ]; then
+              echo "::error::$binary contains $prefixed functions from the prefixed libsecp256k1"
+              status=1
+            fi
+            if ! grep -q ' [Tt] secp256k1_ecdsa_verify$' <<< "$symbols"; then
+              echo "::error::$binary does not contain the unprefixed libsecp256k1"
+              status=1
+            fi
+          done
+          exit "$status"
 
   build-nodefault:
     name: Build target ${{ matrix.target }}
