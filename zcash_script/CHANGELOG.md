@@ -8,10 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+## [0.6.0] - 2026-09-30
+
+This release includes the changes from 0.4.4 and 0.4.5.
+
+### Added
+
+- `zcash_script::signature::HashType::raw_bits()`
+
 ### Changed
 
 - MSRV is now 1.85.
 - Migrated to `bip32 0.6` and `secp256k1 0.33`.
+- `sig_op_count()` now matches zcashd.
 
 ## [0.4.5] - 2026-05-29
 
@@ -235,7 +244,8 @@ This is a significant change, with a new Rust API that isn’t made to be swappa
 - Updated `bindgen` to a non yanked version
 
 <!-- next-url -->
-[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.5.2...HEAD
+[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.6.0...HEAD
+[0.6.0]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.5.2...zcash_script-v0.6.0
 [0.4.5]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.4.4...zcash_script-v0.4.5
 [0.4.4]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.4.2...zcash_script-v0.4.4
 [0.5.2]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.5.1...zcash_script-v0.5.2
