@@ -20,6 +20,10 @@ jobs:
 
   # Test that "cargo package" works. This makes sure it's publishable,
   # since we had issues where "cargo build" worked but "package" didn't.
+  #
+  # Packaging does not depend on the MSRV, which the test suite covers. It runs on
+  # toolchains whose cargo packages the workspace members together, so that a crate
+  # can be packaged against an unpublished version of another member.
   package:
     name: Package
     runs-on: ubuntu-latest
@@ -27,20 +31,14 @@ jobs:
       fail-fast: false
       matrix:
         toolchain:
-          - rust-toolchain.toml
+          - stable
           - nightly
     steps:
       - uses: actions/checkout@v6
         with:
           submodules: true
-      - uses: actions-rs/cargo@v1
-        if: matrix.toolchain == 'rust-toolchain.toml'
-        with:
-          command: package
       - run: rustup install ${{ matrix.toolchain }}
-        if: matrix.toolchain != 'rust-toolchain.toml'
       - uses: actions-rs/cargo@v1
-        if: matrix.toolchain != 'rust-toolchain.toml'
         with:
           command: package
           toolchain: ${{ matrix.toolchain }}
