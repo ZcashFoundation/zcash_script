@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+### Added
+
+- `zcash_script::opcode::push_value::LargeValue::MAX_SIZE` is now public, so
+  downstream crates can use it instead of duplicating the value.
+
 ## [0.6.0] - 2026-09-30
 
 This release includes the changes from 0.4.4 and 0.4.5.

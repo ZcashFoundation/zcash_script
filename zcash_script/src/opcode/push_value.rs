@@ -36,7 +36,7 @@ impl LargeValue {
     const PUSHDATA4_BYTE: u8 = 0x4e;
 
     /// The maximum number of bytes able to be stored in a single [`super::PushValue`].
-    pub(crate) const MAX_SIZE: usize = 520; // bytes
+    pub const MAX_SIZE: usize = 520; // bytes
 
     /// The number of bytes this requires in a script.
     pub(crate) fn byte_len(&self) -> usize {
