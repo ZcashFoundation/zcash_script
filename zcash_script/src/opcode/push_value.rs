@@ -214,6 +214,9 @@ impl From<&LargeValue> for Vec<u8> {
     }
 }
 
+/// Lowercase hex digits for [`LargeValue::to_asm`].
+const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
+
 impl Asm for LargeValue {
     fn to_asm(&self, attempt_sighash_decode: bool) -> String {
         // The logic below follows the zcashd implementation in its
@@ -236,13 +239,13 @@ impl Asm for LargeValue {
             let n = num::parse(&value, false, Some(8)).unwrap_or(0);
             return n.to_string();
         }
-        // hex::encode(), but avoids the `hex` dependency
-        value
-            .iter()
-            .map(|b| format!("{:02x}", b))
-            .collect::<Vec<_>>()
-            .join("")
-            + &hash_type
+        // hex::encode(), but avoids the `hex` dependency and a string per byte.
+        let mut asm = String::with_capacity(value.len() * 2 + hash_type.len());
+        for byte in &value {
+            asm.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
+            asm.push(char::from(HEX_DIGITS[usize::from(byte & 0xf)]));
+        }
+        asm + &hash_type
     }
 }
 
@@ -365,5 +368,29 @@ impl Asm for SmallValue {
             OP_16 => "16",
         }
         .to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{string::String, vec::Vec};
+    use core::fmt::Write;
+
+    use super::LargeValue;
+    use crate::script::Asm;
+
+    /// `to_asm` hex-encodes large pushes exactly as the per-byte `format!` it replaced.
+    #[test]
+    fn large_value_asm_is_lowercase_hex_of_every_byte() {
+        let bytes: Vec<u8> = (0..=255).collect();
+        for len in [5, 20, 33, 65, 75, 76, 255, 256] {
+            let data: Vec<u8> = bytes.iter().cycle().take(len).copied().collect();
+            let value = LargeValue::from_slice(&data).expect("valid push length");
+            let expected = data.iter().fold(String::new(), |mut hex, b| {
+                write!(hex, "{b:02x}").expect("writing to a String cannot fail");
+                hex
+            });
+            assert_eq!(value.to_asm(false), expected, "{len} bytes");
+        }
     }
 }

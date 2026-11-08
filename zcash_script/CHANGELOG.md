@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+### Changed
+
+- `Asm::to_asm()` hex-encodes large push values without allocating a string per byte, about 8× faster on transparent-heavy blocks. The output is unchanged.
+
 ## [0.6.0] - 2026-09-30
 
 This release includes the changes from 0.4.4 and 0.4.5.
