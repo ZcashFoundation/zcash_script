@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+### Fixed
+
+- `OP_PUSHDATA1`, `OP_PUSHDATA2`, and `OP_PUSHDATA4` lengths are now serialized as fixed-width
+  unsigned integers, which is how they are parsed. They were serialized as script numbers, which
+  added a byte to pushes of 128 to 255 bytes.
+
 ## [0.6.0] - 2026-09-30
 
 This release includes the changes from 0.4.4 and 0.4.5.

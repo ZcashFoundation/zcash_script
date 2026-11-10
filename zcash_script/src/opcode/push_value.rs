@@ -194,23 +194,26 @@ impl LargeValue {
 }
 
 impl From<&LargeValue> for Vec<u8> {
+    /// Encodes the push the way the parser reads it: the opcode, the length of the data as an
+    /// unsigned little-endian integer whose width is set by the opcode, then the data. For
+    /// `PushdataBytelength`, the one-byte length is itself the opcode.
     fn from(value: &LargeValue) -> Self {
-        let to_vec = |prefix: Option<u8>, contents: &[u8]| {
-            prefix
-                .into_iter()
-                .chain(num::serialize(
-                    contents.len().try_into().expect("upper bound fits in i64"),
-                ))
-                .chain(contents.iter().copied())
-                .collect()
+        let (opcode, len_size, data) = match value {
+            PushdataBytelength(bv) => (None, 1, bv.as_slice()),
+            OP_PUSHDATA1(bv) => (Some(LargeValue::PUSHDATA1_BYTE), 1, bv.as_slice()),
+            OP_PUSHDATA2(bv) => (Some(LargeValue::PUSHDATA2_BYTE), 2, bv.as_slice()),
+            OP_PUSHDATA4(bv) => (Some(LargeValue::PUSHDATA4_BYTE), 4, bv.as_slice()),
         };
+        // NB: The length is not a script number, which is signed and has no fixed width.
+        let len = u32::try_from(data.len())
+            .expect("a push holds at most `LargeValue::MAX_SIZE` bytes")
+            .to_le_bytes();
 
-        match value {
-            PushdataBytelength(bv) => to_vec(None, bv.as_slice()),
-            OP_PUSHDATA1(bv) => to_vec(Some(LargeValue::PUSHDATA1_BYTE), bv.as_slice()),
-            OP_PUSHDATA2(bv) => to_vec(Some(LargeValue::PUSHDATA2_BYTE), bv.as_slice()),
-            OP_PUSHDATA4(bv) => to_vec(Some(LargeValue::PUSHDATA4_BYTE), bv.as_slice()),
-        }
+        let mut bytes = Vec::with_capacity(value.byte_len());
+        bytes.extend(opcode);
+        bytes.extend_from_slice(&len[..len_size]);
+        bytes.extend_from_slice(data);
+        bytes
     }
 }
 
@@ -365,5 +368,92 @@ impl Asm for SmallValue {
             OP_16 => "16",
         }
         .to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec::Vec;
+
+    use super::LargeValue;
+
+    /// Data whose bytes differ from their neighbours, so that data read from the wrong offset
+    /// doesn't compare equal.
+    fn data(len: usize) -> Vec<u8> {
+        (0..len)
+            .map(|i| u8::try_from(i % 251).expect("less than 251"))
+            .collect()
+    }
+
+    /// A push as it appears in a script: the opcode (absent for a direct push, whose one-byte
+    /// length is the opcode), the length as a `len_size`-byte unsigned little-endian integer,
+    /// then the data.
+    fn wire_encoding(opcode: Option<u8>, len_size: usize, data: &[u8]) -> Vec<u8> {
+        let len = u32::try_from(data.len())
+            .expect("fits in a u32")
+            .to_le_bytes();
+        opcode
+            .into_iter()
+            .chain(len[..len_size].iter().copied())
+            .chain(data.iter().copied())
+            .collect()
+    }
+
+    /// The pushes that `from_slice` builds are minimal; this checks the bytes that precede their
+    /// data, on both sides of each change of encoding.
+    #[test]
+    fn push_lengths_are_fixed_width_unsigned_integers() {
+        // (data length, bytes before the data)
+        let cases: [(usize, &[u8]); 8] = [
+            (0x01, &[0x01]),
+            (0x4b, &[0x4b]),
+            (0x4c, &[0x4c, 0x4c]),
+            (0x7f, &[0x4c, 0x7f]),
+            // A script number would need a second byte from here on, to hold the sign bit.
+            (0x80, &[0x4c, 0x80]),
+            (0xff, &[0x4c, 0xff]),
+            (0x100, &[0x4d, 0x00, 0x01]),
+            (LargeValue::MAX_SIZE, &[0x4d, 0x08, 0x02]),
+        ];
+        for (len, header) in cases {
+            let data = data(len);
+            let value = LargeValue::from_slice(&data).expect("at most 520 bytes");
+            assert_eq!(
+                Vec::from(&value),
+                [header, &data[..]].concat(),
+                "{len}-byte push"
+            );
+        }
+    }
+
+    /// Every way a script can encode a push, including the non-minimal ones (which consensus
+    /// accepts), is written back as the bytes it was parsed from.
+    #[test]
+    fn every_push_encoding_round_trips() {
+        for (opcode, len_size, lens) in [
+            (None, 1, 1..=0x4b),
+            (Some(0x4c), 1, 0..=0xff),
+            (Some(0x4d), 2, 0..=LargeValue::MAX_SIZE),
+            (Some(0x4e), 4, 0..=LargeValue::MAX_SIZE),
+        ] {
+            for len in lens {
+                let data = data(len);
+                let bytes = wire_encoding(opcode, len_size, &data);
+                let (parsed, rest) = LargeValue::parse(&bytes).expect("a push opcode");
+                let parsed = parsed.expect("a valid push");
+                assert!(rest.is_empty(), "{opcode:?}, {len} bytes: unparsed bytes");
+                assert_eq!(parsed.value(), &data[..], "{opcode:?}, {len} bytes: value");
+                assert_eq!(
+                    parsed.byte_len(),
+                    bytes.len(),
+                    "{opcode:?}, {len} bytes: byte_len"
+                );
+                assert_eq!(
+                    Vec::from(&parsed),
+                    bytes,
+                    "{opcode:?}, {len} bytes: encoding"
+                );
+            }
+        }
     }
 }
