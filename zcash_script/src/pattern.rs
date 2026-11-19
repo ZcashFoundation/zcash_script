@@ -494,10 +494,19 @@ pub fn sha256_htlc_size_check(
 
 /// One party has SHA-256 hashlock, other party can spend unconditionally
 ///
-/// The on-chain scripts with this label omit `OP_DUP` in the unconditional branch, so their
-/// `OP_HASH160` and `OP_CHECKSIG` consume different stack values: anyone who knows the hashed
-/// value can spend with a key of their own. This builder uses P2PKH for that branch, so only
-/// the holder of `sender_pk` can spend through it.
+/// This differs from the script that `label_script` gives this label, which omits `OP_DUP` from
+/// the unconditional branch:
+///
+/// ```text
+/// OP_IF OP_SHA256 <32 bytes> OP_EQUALVERIFY OP_DUP OP_HASH160 <20 bytes>
+/// OP_ELSE OP_1 OP_DROP OP_HASH160 <20 bytes>
+/// OP_ENDIF OP_EQUALVERIFY OP_CHECKSIG
+/// ```
+///
+/// In that branch, `OP_HASH160` and `OP_CHECKSIG` consume different stack values, so if the
+/// hash is of a public key, anyone who knows that key can spend through the branch with a
+/// signature and key of their own. This builder uses P2PKH for the branch instead, so only the
+/// holder of `sender_pk` can spend through it.
 ///
 /// type: `[Signature, PubKey, _?, Bool] -> ([Signature, PubKey] + 💥) ∪ [Bool]`
 ///
