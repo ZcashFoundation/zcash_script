@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+### Fixed
+
+- `sig_op_count()` now counts past pushes of more than 520 bytes, as zcashd does.
+
 ## [0.6.0] - 2026-09-30
 
 This release includes the changes from 0.4.4 and 0.4.5.
