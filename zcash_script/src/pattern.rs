@@ -108,13 +108,34 @@ pub enum Error {
     TooManyPubKeys(usize),
     #[error("PubKeys shouldn’t be longer than 65 bytes")]
     OverlongPubKey,
+    #[error(
+        "a PubKey must be 33 bytes starting with 0x02 or 0x03, or 65 bytes starting with 0x04"
+    )]
+    InvalidPubKey,
+    #[error("a multisig threshold must be between 1 and the number of keys ({1}), but was {0}")]
+    InvalidThreshold(u8, usize),
+    #[error("a P2SH redeem script must be at most 520 bytes to be spendable, but was {0}")]
+    RedeemScriptTooLarge(usize),
 }
 
+/// The most keys `OP_CHECKMULTISIG` accepts.
+const MAX_MULTISIG_PUBKEYS: usize = 20;
+
+/// The longest redeem script a P2SH spend can push.
+const MAX_REDEEM_SCRIPT_BYTES: usize = 520;
+
 /// Generate an [`Opcode`] that would push the provided pubkey onto the stack.
+///
+/// The key must use an encoding that `OP_CHECKSIG` accepts under strict encoding: compressed
+/// (33 bytes starting with `0x02` or `0x03`) or uncompressed (65 bytes starting with `0x04`).
 pub fn push_pubkey(pubkey: &[u8]) -> Result<Opcode, Error> {
-    pv::push_value(pubkey)
-        .map(PushValue)
-        .ok_or(Error::OverlongPubKey)
+    match (pubkey.len(), pubkey.first()) {
+        (66.., _) => Err(Error::OverlongPubKey),
+        (33, Some(0x02 | 0x03)) | (65, Some(0x04)) => Ok(PushValue(
+            pv::push_value(pubkey).expect("a public key is shorter than 520 bytes"),
+        )),
+        _ => Err(Error::InvalidPubKey),
+    }
 }
 
 /// Performs a `sig_count`-of-`pks.len()` multisig.
@@ -123,26 +144,35 @@ pub fn push_pubkey(pubkey: &[u8]) -> Result<Opcode, Error> {
 ///   type: `sig_count*Signature -> 💥?`
 /// else
 ///   type: `sig_count*Signature -> [Bool]`
+///
+/// `sig_count` must be between 1 and `pks.len()`, and there can be at most 20 keys: any
+/// other script would either be spendable without signatures or never spendable.
 pub fn check_multisig(sig_count: u8, pks: &[&[u8]], verify: bool) -> Result<Vec<Opcode>, Error> {
-    Ok([
-        &[PushValue(push_num(sig_count.into()))],
-        &pks.iter()
-            .map(|pk| push_pubkey(pk))
-            .collect::<Result<Vec<_>, _>>()?[..],
-        &[
-            PushValue(push_num(
-                pks.len()
-                    .try_into()
-                    .map_err(|_| Error::TooManyPubKeys(pks.len()))?,
-            )),
-            if verify {
-                op::CHECKMULTISIGVERIFY
-            } else {
-                op::CHECKMULTISIG
-            },
-        ],
-    ]
-    .concat())
+    if pks.len() > MAX_MULTISIG_PUBKEYS {
+        Err(Error::TooManyPubKeys(pks.len()))
+    } else if sig_count == 0 || usize::from(sig_count) > pks.len() {
+        Err(Error::InvalidThreshold(sig_count, pks.len()))
+    } else {
+        Ok([
+            &[PushValue(push_num(sig_count.into()))],
+            &pks.iter()
+                .map(|pk| push_pubkey(pk))
+                .collect::<Result<Vec<_>, _>>()?[..],
+            &[
+                PushValue(push_num(
+                    pks.len()
+                        .try_into()
+                        .expect("checked to be at most 20 above"),
+                )),
+                if verify {
+                    op::CHECKMULTISIGVERIFY
+                } else {
+                    op::CHECKMULTISIG
+                },
+            ],
+        ]
+        .concat())
+    }
 }
 
 /// Checks equality against some constant value.
@@ -248,18 +278,26 @@ pub fn pay_to_pubkey_hash(pk: &[u8]) -> Vec<Opcode> {
 
 /// P2SH
 ///
+/// Fails if the redeem script is longer than 520 bytes: spending a P2SH output pushes its
+/// redeem script, and no push can be larger.
+///
 /// type: `[_] -> [Bool]`
 pub fn pay_to_script_hash<T: Into<opcode::PossiblyBad> + opcode::Evaluable + Clone>(
     redeem_script: &script::Component<T>,
-) -> Vec<Opcode> {
-    [
-        &[op::HASH160],
-        &equals(
-            push_160b_hash(&Ripemd160::digest(Sha256::digest(redeem_script.to_bytes())).into()),
-            false,
-        )[..],
-    ]
-    .concat()
+) -> Result<Vec<Opcode>, Error> {
+    let redeem_script = redeem_script.to_bytes();
+    if redeem_script.len() > MAX_REDEEM_SCRIPT_BYTES {
+        Err(Error::RedeemScriptTooLarge(redeem_script.len()))
+    } else {
+        Ok([
+            &[op::HASH160],
+            &equals(
+                push_160b_hash(&Ripemd160::digest(Sha256::digest(redeem_script)).into()),
+                false,
+            )[..],
+        ]
+        .concat())
+    }
 }
 
 /// multisig with ignored value and empty stack check
@@ -569,16 +607,84 @@ pub fn dual_hash160_htlc_size_check(
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "signature-validation")]
     use alloc::vec::Vec;
+
+    use super::{check_multisig, pay_to_pubkey, pay_to_script_hash, push_pubkey, Error};
+    use crate::{
+        op,
+        script::{self, Evaluable},
+    };
 
     #[cfg(feature = "signature-validation")]
     use super::sha256_htlc_with_unconditional;
     #[cfg(feature = "signature-validation")]
-    use crate::{
-        op, pv,
-        script::{self, Evaluable},
-    };
+    use crate::pv;
+
+    const COMPRESSED: [u8; 33] = [0x02; 33];
+
+    fn uncompressed() -> [u8; 65] {
+        let mut key = [0x11; 65];
+        key[0] = 0x04;
+        key
+    }
+
+    #[test]
+    fn push_pubkey_accepts_only_strict_encodings() {
+        assert!(push_pubkey(&COMPRESSED).is_ok());
+        assert!(push_pubkey(&[&[0x03][..], &[0; 32]].concat()).is_ok());
+        assert!(push_pubkey(&uncompressed()).is_ok());
+
+        assert_eq!(push_pubkey(&[0x04; 33]), Err(Error::InvalidPubKey));
+        assert_eq!(push_pubkey(&[0x02; 65]), Err(Error::InvalidPubKey));
+        assert_eq!(push_pubkey(&[0x02; 32]), Err(Error::InvalidPubKey));
+        assert_eq!(push_pubkey(&[]), Err(Error::InvalidPubKey));
+        assert_eq!(push_pubkey(&[0x04; 66]), Err(Error::OverlongPubKey));
+        assert_eq!(pay_to_pubkey(&[0x05; 33]), Err(Error::InvalidPubKey));
+    }
+
+    #[test]
+    fn check_multisig_rejects_unusable_thresholds_and_key_counts() {
+        let keys = |n| core::iter::repeat_n(&COMPRESSED[..], n).collect::<Vec<_>>();
+
+        assert!(check_multisig(1, &keys(1), false).is_ok());
+        assert!(check_multisig(20, &keys(20), true).is_ok());
+
+        // 0-of-n passes `OP_CHECKMULTISIG` without any signature.
+        assert_eq!(
+            check_multisig(0, &keys(3), false),
+            Err(Error::InvalidThreshold(0, 3))
+        );
+        assert_eq!(
+            check_multisig(4, &keys(3), false),
+            Err(Error::InvalidThreshold(4, 3))
+        );
+        // `OP_CHECKMULTISIG` fails with more than 20 keys.
+        assert_eq!(
+            check_multisig(1, &keys(21), false),
+            Err(Error::TooManyPubKeys(21))
+        );
+        assert_eq!(
+            check_multisig(1, &[&[0x02; 32][..]], false),
+            Err(Error::InvalidPubKey)
+        );
+    }
+
+    #[test]
+    fn pay_to_script_hash_rejects_redeem_scripts_over_520_bytes() {
+        let redeem = |len| {
+            script::Component(vec![
+                op::push_value(&vec![0; len]).expect("at most 520 bytes"),
+                op::DROP,
+            ])
+        };
+        // A 516-byte push takes 3 bytes of overhead, plus 1 for `OP_DROP`.
+        assert_eq!(redeem(516).byte_len(), 520);
+        assert!(pay_to_script_hash(&redeem(516)).is_ok());
+        assert_eq!(
+            pay_to_script_hash(&redeem(517)),
+            Err(Error::RedeemScriptTooLarge(521))
+        );
+    }
 
     /// Accepts a signature only for `signer`, modelling a spender who holds only that
     /// key.
