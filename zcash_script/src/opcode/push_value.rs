@@ -51,7 +51,10 @@ impl LargeValue {
     /// Returns a [`LargeValue`] as minimally-encoded as possible. That is, values that
     /// should be minimally-encoded as [`SmallValue`]s will be [`LargeValue`].
     pub(crate) fn from_slice(v: &[u8]) -> Option<LargeValue> {
-        if let Ok(bv) = BoundedVec::try_from(v.to_vec()) {
+        // Checked first, because each attempt below copies `v`.
+        if v.len() > Self::MAX_SIZE {
+            None
+        } else if let Ok(bv) = BoundedVec::try_from(v.to_vec()) {
             Some(PushdataBytelength(bv))
         } else if let Ok(bv) = BoundedVec::try_from(v.to_vec()) {
             Some(OP_PUSHDATA1(bv))
