@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+### Security
+
+- `pattern::sha256_htlc_with_unconditional` omitted `OP_DUP` from its unconditional branch, so
+  anyone who knew the sender’s public key could spend through that branch with a key of their own.
+  The branch is now P2PKH, so only the sender can.
+
 ## [0.6.0] - 2026-09-30
 
 This release includes the changes from 0.4.4 and 0.4.5.

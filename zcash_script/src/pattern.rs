@@ -494,7 +494,16 @@ pub fn sha256_htlc_size_check(
 
 /// One party has SHA-256 hashlock, other party can spend unconditionally
 ///
-/// type: `[Signature, PubKey, _, Bool] -> ([Signature, PubKey] + 💥) ∪ [Bool]`
+/// The on-chain scripts with this label omit `OP_DUP` in the unconditional branch, so their
+/// `OP_HASH160` and `OP_CHECKSIG` consume different stack values: anyone who knows the hashed
+/// value can spend with a key of their own. This builder uses P2PKH for that branch, so only
+/// the holder of `sender_pk` can spend through it.
+///
+/// type: `[Signature, PubKey, _?, Bool] -> ([Signature, PubKey] + 💥) ∪ [Bool]`
+///
+/// dependent type:
+/// - `[Signature, PubKey, _, True] -> ([Signature, PubKey] + 💥) ∪ [Bool]`
+/// - `[Signature, PubKey, False] -> ([Signature, PubKey] + 💥) ∪ [Bool]`
 pub fn sha256_htlc_with_unconditional(
     sender_pk: &[u8],
     recipient_sha: &[u8; 32],
@@ -509,12 +518,7 @@ pub fn sha256_htlc_with_unconditional(
         .concat(),
         &[
             &ignored_value(pv::_1)[..],
-            &[op::HASH160],
-            &equals(
-                push_160b_hash(&Ripemd160::digest(Sha256::digest(sender_pk)).into()),
-                true,
-            )[..],
-            &[op::CHECKSIG],
+            &pay_to_pubkey_hash(sender_pk)[..],
         ]
         .concat(),
     )
@@ -552,4 +556,86 @@ pub fn dual_hash160_htlc_size_check(
         .concat(),
         &verify(recipient_hash, recipient_pk)?,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(feature = "signature-validation")]
+    use alloc::vec::Vec;
+
+    #[cfg(feature = "signature-validation")]
+    use super::sha256_htlc_with_unconditional;
+    #[cfg(feature = "signature-validation")]
+    use crate::{
+        op, pv,
+        script::{self, Evaluable},
+    };
+
+    /// Accepts a signature only for `signer`, modelling a spender who holds only that
+    /// key.
+    #[cfg(feature = "signature-validation")]
+    struct SignsOnlyFor<'a> {
+        signer: &'a [u8],
+    }
+
+    #[cfg(feature = "signature-validation")]
+    impl crate::interpreter::SignatureChecker for SignsOnlyFor<'_> {
+        fn check_sig(
+            &self,
+            _script_sig: &crate::signature::Decoded,
+            vch_pub_key: &[u8],
+            _script_code: &script::Code,
+        ) -> bool {
+            vch_pub_key == self.signer
+        }
+
+        fn check_lock_time(&self, _lock_time: i64) -> bool {
+            false
+        }
+    }
+
+    /// The unconditional branch requires the sender's signature, not just their public key.
+    #[cfg(feature = "signature-validation")]
+    #[test]
+    fn htlc_unconditional_branch_needs_the_sender_signature() {
+        use hex::FromHex;
+
+        use crate::interpreter::Flags;
+
+        // A strict-DER signature with `SIGHASH_ALL`; `SignsOnlyFor` ignores its contents.
+        let sig = <Vec<u8>>::from_hex(
+            "3044022013e15d865010c257eef133064ef69a780b4bc7ebe6eda367504e806614f940c3022062fdbc8c2d049f91db2042d6c9771de6f1ef0b3b1fea76c1ab5542e44ed29ed801",
+        )
+        .unwrap();
+        let sender = [0x02; 33];
+        let attacker = [&[0x03][..], &[0x22; 32]].concat();
+        let recipient = {
+            let mut key = [0x11; 65];
+            key[0] = 0x04;
+            key
+        };
+        let script_pubkey = script::Component(sha256_htlc_with_unconditional(
+            &sender, &[0; 32], &recipient,
+        ))
+        .to_bytes();
+        let spend = |stack: &[&[u8]], signer: &[u8]| {
+            let script_sig = script::Component(
+                stack
+                    .iter()
+                    .map(|v| op::push_value(v).unwrap())
+                    .chain([crate::Opcode::PushValue(pv::_0)])
+                    .collect(),
+            )
+            .to_bytes();
+            script::Raw::from_raw_parts(script_sig, script_pubkey.clone())
+                .eval(Flags::empty(), &SignsOnlyFor { signer })
+                .unwrap_or(false)
+        };
+
+        assert!(spend(&[&sig, &sender], &sender));
+        // Previously accepted: the sender's public key satisfied `OP_HASH160`, and
+        // `OP_CHECKSIG` checked the attacker's signature against the attacker's key.
+        assert!(!spend(&[&sig, &attacker, &sender], &attacker));
+        assert!(!spend(&[&sig, &sender], &attacker));
+    }
 }
