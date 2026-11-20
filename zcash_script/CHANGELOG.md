@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+### Changed
+
+- Building a push value from more than 520 bytes fails before copying the data, instead of copying it
+  once for each push opcode it tries. The result is unchanged.
+
 ### Fixed
 
 - `OP_PUSHDATA1`, `OP_PUSHDATA2`, and `OP_PUSHDATA4` lengths are now serialized as fixed-width
