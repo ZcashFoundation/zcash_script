@@ -13,6 +13,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `zcash_script::opcode::push_value::LargeValue::MAX_SIZE` is now public, so
   downstream crates can use it instead of duplicating the value.
 
+### Changed
+
+- Building a push value from more than 520 bytes fails before copying the data, instead of copying it
+  once for each push opcode it tries. The result is unchanged.
+
+### Fixed
+
+- `OP_PUSHDATA1`, `OP_PUSHDATA2`, and `OP_PUSHDATA4` lengths are now serialized as fixed-width
+  unsigned integers, which is how they are parsed. They were serialized as script numbers, which
+  added a byte to pushes of 128 to 255 bytes (breaking P2SH spends of multisig redeem scripts
+  with 4 to 7 compressed keys) and dropped or shortened the length of empty pushes, `OP_PUSHDATA2`
+  pushes under 128 bytes, and all `OP_PUSHDATA4` pushes.
+- `sig_op_count()` now counts past pushes of more than 520 bytes, as zcashd does.
+
+### Security
+
+- `pattern::sha256_htlc_with_unconditional` omitted `OP_DUP` from its unconditional branch, so
+  anyone who knew the sender’s public key could spend through that branch with a key of their own.
+  The branch is now P2PKH, so only the sender can. Outputs created with earlier versions are still
+  exposed and should be swept; this builder no longer reproduces their script.
+
 ## [0.6.0] - 2026-09-30
 
 This release includes the changes from 0.4.4 and 0.4.5.

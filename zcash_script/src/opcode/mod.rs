@@ -1555,4 +1555,14 @@ mod tests {
             assert_eq!(Disabled::decode(op.encode()), Some(op));
         }
     }
+
+    #[test]
+    fn large_value_from_slice_is_bounded() {
+        assert!(matches!(
+            LargeValue::from_slice(&[0; LargeValue::MAX_SIZE]),
+            Some(LargeValue::OP_PUSHDATA2(_))
+        ));
+        assert_eq!(LargeValue::from_slice(&[0; LargeValue::MAX_SIZE + 1]), None);
+        assert_eq!(LargeValue::from_slice(&vec![0; 1 << 20]), None);
+    }
 }
