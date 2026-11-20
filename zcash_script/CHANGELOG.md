@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sig_op_count()` now counts past pushes of more than 520 bytes, as zcashd does.
 - `descriptor::multi` and `descriptor::sortedmulti` accepted a threshold of 0, which produces an
   output that anyone can spend.
+- `descriptor::multi` and `descriptor::sortedmulti` with no keys now return `Error::NoPubKeys`
+  instead of `Error::TooManyPubKeys(0)`.
 
 ### Security
 

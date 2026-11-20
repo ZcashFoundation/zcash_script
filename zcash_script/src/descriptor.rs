@@ -222,6 +222,7 @@ pub fn sortedmulti(k: u8, keys: &[KeyExpression]) -> Result<script::Redeem, Erro
 
 fn multi_inner(k: u8, keys: &[KeyExpression], sorted: bool) -> Result<script::Redeem, Error> {
     match u8::try_from(keys.len()) {
+        Ok(0) => Err(Error::NoPubKeys),
         Ok(n @ 1..=20) => {
             if k == 0 || k > n {
                 Err(Error::InvalidThreshold(k, n))
@@ -375,5 +376,11 @@ mod tests {
         //     5221025d5fc65ebb8d44a5274b53bac21ff8307fec2334a32df05553459f8b1f7fe1b62102fbd47cc8034098f0e6a94c6aeee8528abf0a2153a5d8e46d325b7284c046784652ae
         //     52210264fd4d1f5dea8ded94c61e9641309349b62f27fbffe807291f664e286bfbe6472103f4ece6dfccfa37b211eb3d0af4d0c61dba9ef698622dc17eecdf764beeb005a652ae
         //     5221022ccabda84c30bad578b13c89eb3b9544ce149787e5b538175b1d1ba259cbb83321024d902e1a2fc7a8755ab5b694c575fce742c48d9ff192e63df5193e4c7afe1f9c52ae
+    }
+
+    #[test]
+    fn multi_without_keys_is_an_error() {
+        assert_eq!(multi(1, &[]), Err(Error::NoPubKeys));
+        assert_eq!(sortedmulti(1, &[]), Err(Error::NoPubKeys));
     }
 }
