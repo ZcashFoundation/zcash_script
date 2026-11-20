@@ -10,9 +10,7 @@ use core::fmt;
 use core::iter;
 
 use bip32::{ExtendedPublicKey, Prefix};
-use ripemd::Ripemd160;
 use secp256k1::PublicKey;
-use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::{
@@ -188,16 +186,16 @@ impl Key {
 
 /// Produces a P2SH output script.
 ///
+/// Fails if the redeem script is longer than 520 bytes, because spending the output
+/// requires pushing the redeem script, and no push can be larger.
+///
 /// Specified in [BIP 381].
 ///
 /// [BIP 381]: https://github.com/bitcoin/bips/blob/master/bip-0381.mediawiki#sh
-pub fn sh(script: &script::Redeem) -> script::PubKey {
-    let script_hash = Ripemd160::digest(Sha256::digest(script.to_bytes()));
-    script::Component(vec![
-        op::HASH160,
-        Opcode::from(pattern::push_160b_hash(&script_hash.into())),
-        op::EQUAL,
-    ])
+pub fn sh(script: &script::Redeem) -> Result<script::PubKey, Error> {
+    pattern::pay_to_script_hash(script)
+        .map(script::Component)
+        .map_err(|_| Error::RedeemScriptTooLarge(script.byte_len()))
 }
 
 /// Produces a threshold multisig output script.
@@ -224,8 +222,9 @@ pub fn sortedmulti(k: u8, keys: &[KeyExpression]) -> Result<script::Redeem, Erro
 
 fn multi_inner(k: u8, keys: &[KeyExpression], sorted: bool) -> Result<script::Redeem, Error> {
     match u8::try_from(keys.len()) {
+        Ok(0) => Err(Error::NoPubKeys),
         Ok(n @ 1..=20) => {
-            if k > n {
+            if k == 0 || k > n {
                 Err(Error::InvalidThreshold(k, n))
             } else {
                 let k = Opcode::from(pattern::push_num(k.into()));
@@ -268,9 +267,11 @@ pub enum Error {
     #[error("multi and sortedmulti only support at most 20 keys, but you provided {0}")]
     TooManyPubKeys(usize),
     #[error(
-        "multi or sortedmulti was called with a threshold {0} larger than the number of keys ({1})"
+        "multi or sortedmulti was called with threshold {0}, but it must be between 1 and the number of keys ({1})"
     )]
     InvalidThreshold(u8, u8),
+    #[error("sh was called with a {0}-byte redeem script, but the maximum is 520 bytes")]
+    RedeemScriptTooLarge(usize),
 }
 
 #[cfg(test)]
@@ -279,8 +280,31 @@ mod tests {
 
     use bip32::{ChildNumber, Prefix};
 
-    use super::{multi, sh, sortedmulti, KeyExpression};
+    use super::{multi, sh, sortedmulti, Error, KeyExpression};
     use crate::script;
+
+    #[test]
+    fn rejects_zero_thresholds_and_unspendable_p2sh() {
+        let key = KeyExpression {
+            origin: None,
+            key: "03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd"
+                .parse()
+                .unwrap(),
+        };
+        let keys = |n| vec![key.clone(); n];
+
+        // 0-of-n passes `OP_CHECKMULTISIG` without any signature.
+        assert_eq!(multi(0, &keys(2)), Err(Error::InvalidThreshold(0, 2)));
+        assert_eq!(sortedmulti(0, &keys(2)), Err(Error::InvalidThreshold(0, 2)));
+        assert_eq!(sortedmulti(3, &keys(2)), Err(Error::InvalidThreshold(3, 2)));
+
+        // 15 compressed keys make a 513-byte redeem script, the largest ZIP 48 allows.
+        assert!(sortedmulti(15, &keys(15)).and_then(|r| sh(&r)).is_ok());
+        // 16 make a 547-byte one, which a spend cannot push, but it is still a valid
+        // bare multisig script.
+        let redeem = sortedmulti(1, &keys(16)).unwrap();
+        assert_eq!(sh(&redeem), Err(Error::RedeemScriptTooLarge(547)));
+    }
 
     /// From https://github.com/bitcoin/bips/blob/master/bip-0383.mediawiki#test-vectors
     #[test]
@@ -343,7 +367,7 @@ mod tests {
             script::PubKey::parse(&script::Code(hex::decode(TV_SCRIPT_PUBKEY).unwrap())).unwrap();
 
         assert_eq!(
-            multi(2, &[tv_xprv_1, tv_xprv_2]).as_ref().map(sh),
+            multi(2, &[tv_xprv_1, tv_xprv_2]).and_then(|redeem| sh(&redeem)),
             Ok(tv_script_pubkey)
         );
 
@@ -352,5 +376,11 @@ mod tests {
         //     5221025d5fc65ebb8d44a5274b53bac21ff8307fec2334a32df05553459f8b1f7fe1b62102fbd47cc8034098f0e6a94c6aeee8528abf0a2153a5d8e46d325b7284c046784652ae
         //     52210264fd4d1f5dea8ded94c61e9641309349b62f27fbffe807291f664e286bfbe6472103f4ece6dfccfa37b211eb3d0af4d0c61dba9ef698622dc17eecdf764beeb005a652ae
         //     5221022ccabda84c30bad578b13c89eb3b9544ce149787e5b538175b1d1ba259cbb83321024d902e1a2fc7a8755ab5b694c575fce742c48d9ff192e63df5193e4c7afe1f9c52ae
+    }
+
+    #[test]
+    fn multi_without_keys_is_an_error() {
+        assert_eq!(multi(1, &[]), Err(Error::NoPubKeys));
+        assert_eq!(sortedmulti(1, &[]), Err(Error::NoPubKeys));
     }
 }

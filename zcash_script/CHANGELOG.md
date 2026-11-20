@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+### Added
+
+- `pattern::Error::{InvalidPubKey, InvalidThreshold, RedeemScriptTooLarge}`
+- `descriptor::Error::RedeemScriptTooLarge`
+
+### Changed
+
+- `pattern::pay_to_script_hash` and `descriptor::sh` now return a `Result`, failing for redeem scripts
+  longer than 520 bytes, which a P2SH spend cannot push.
+- `pattern::push_pubkey`, and the builders that use it, reject public keys that are not 33 bytes
+  starting with `0x02` or `0x03`, or 65 bytes starting with `0x04`.
+- `pattern::check_multisig`, and the builders that use it, reject thresholds of 0 or above the number
+  of keys, and more than 20 keys.
+
+### Fixed
+
+- `descriptor::multi` and `descriptor::sortedmulti` accepted a threshold of 0, which produces an
+  output that anyone can spend.
+- `descriptor::multi` and `descriptor::sortedmulti` with no keys now return `Error::NoPubKeys`
+  instead of `Error::TooManyPubKeys(0)`.
+
 ## [0.6.1] - 2026-11-20
 
 Wallets that build P2SH multisig scripts with 4 to 7 keys, or that used
