@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+### Added
+
+- `zcash_script::opcode::push_value::LargeValue::MAX_SIZE` is now public, so
+  downstream crates can use it instead of duplicating the value.
+
 ### Changed
 
 - Building a push value from more than 520 bytes fails before copying the data, instead of copying it
