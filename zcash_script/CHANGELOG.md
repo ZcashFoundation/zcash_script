@@ -10,15 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `zcash_script::opcode::push_value::LargeValue::MAX_SIZE` is now public, so
-  downstream crates can use it instead of duplicating the value.
 - `pattern::Error::{InvalidPubKey, InvalidThreshold, RedeemScriptTooLarge}`
 - `descriptor::Error::RedeemScriptTooLarge`
 
 ### Changed
 
-- Building a push value from more than 520 bytes fails before copying the data, instead of copying it
-  once for each push opcode it tries. The result is unchanged.
 - `pattern::pay_to_script_hash` and `descriptor::sh` now return a `Result`, failing for redeem scripts
   longer than 520 bytes, which a P2SH spend cannot push.
 - `pattern::push_pubkey`, and the builders that use it, reject public keys that are not 33 bytes
@@ -28,16 +24,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `descriptor::multi` and `descriptor::sortedmulti` accepted a threshold of 0, which produces an
+  output that anyone can spend.
+- `descriptor::multi` and `descriptor::sortedmulti` with no keys now return `Error::NoPubKeys`
+  instead of `Error::TooManyPubKeys(0)`.
+
+## [0.6.1] - 2026-11-20
+
+Wallets that build P2SH multisig scripts with 4 to 7 keys, or that used
+`pattern::sha256_htlc_with_unconditional`, should upgrade.
+
+### Added
+
+- `zcash_script::opcode::push_value::LargeValue::MAX_SIZE` is now public, so
+  downstream crates can use it instead of duplicating the value.
+
+### Changed
+
+- Building a push value from more than 520 bytes fails before copying the data, instead of copying it
+  once for each push opcode it tries. The result is unchanged.
+- `Asm::to_asm()` hex-encodes large push values without allocating a string per byte, about 5×
+  faster on a transparent-heavy Mainnet block. The output is unchanged.
+
+### Fixed
+
 - `OP_PUSHDATA1`, `OP_PUSHDATA2`, and `OP_PUSHDATA4` lengths are now serialized as fixed-width
   unsigned integers, which is how they are parsed. They were serialized as script numbers, which
   added a byte to pushes of 128 to 255 bytes (breaking P2SH spends of multisig redeem scripts
   with 4 to 7 compressed keys) and dropped or shortened the length of empty pushes, `OP_PUSHDATA2`
   pushes under 128 bytes, and all `OP_PUSHDATA4` pushes.
 - `sig_op_count()` now counts past pushes of more than 520 bytes, as zcashd does.
-- `descriptor::multi` and `descriptor::sortedmulti` accepted a threshold of 0, which produces an
-  output that anyone can spend.
-- `descriptor::multi` and `descriptor::sortedmulti` with no keys now return `Error::NoPubKeys`
-  instead of `Error::TooManyPubKeys(0)`.
 
 ### Security
 
@@ -282,7 +298,8 @@ This is a significant change, with a new Rust API that isn’t made to be swappa
 - Updated `bindgen` to a non yanked version
 
 <!-- next-url -->
-[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.6.0...HEAD
+[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.6.1...HEAD
+[0.6.1]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.6.0...zcash_script-v0.6.1
 [0.6.0]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.5.2...zcash_script-v0.6.0
 [0.4.5]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.4.4...zcash_script-v0.4.5
 [0.4.4]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.4.2...zcash_script-v0.4.4
