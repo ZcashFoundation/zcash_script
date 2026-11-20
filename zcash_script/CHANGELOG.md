@@ -12,7 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `OP_PUSHDATA1`, `OP_PUSHDATA2`, and `OP_PUSHDATA4` lengths are now serialized as fixed-width
   unsigned integers, which is how they are parsed. They were serialized as script numbers, which
-  added a byte to pushes of 128 to 255 bytes.
+  added a byte to pushes of 128 to 255 bytes (breaking P2SH spends of multisig redeem scripts
+  with 4 to 7 compressed keys) and dropped or shortened the length of empty pushes, `OP_PUSHDATA2`
+  pushes under 128 bytes, and all `OP_PUSHDATA4` pushes.
 
 ## [0.6.0] - 2026-09-30
 
