@@ -17,8 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Building a push value from more than 520 bytes fails before copying the data, instead of copying it
   once for each push opcode it tries. The result is unchanged.
-- `Asm::to_asm()` hex-encodes large push values without allocating a string per byte, about 8×
-  faster on transparent-heavy blocks. The output is unchanged.
+- `Asm::to_asm()` hex-encodes large push values without allocating a string per byte, about 5×
+  faster on a transparent-heavy Mainnet block. The output is unchanged.
 
 ### Fixed
 
