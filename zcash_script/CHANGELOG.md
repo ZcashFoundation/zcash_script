@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+## [0.6.1] - 2026-11-20
+
+Wallets that build P2SH multisig scripts with 4 to 7 keys, or that used
+`pattern::sha256_htlc_with_unconditional`, should upgrade.
+
 ### Added
 
 - `zcash_script::opcode::push_value::LargeValue::MAX_SIZE` is now public, so
@@ -272,7 +277,8 @@ This is a significant change, with a new Rust API that isn’t made to be swappa
 - Updated `bindgen` to a non yanked version
 
 <!-- next-url -->
-[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.6.0...HEAD
+[Unreleased]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.6.1...HEAD
+[0.6.1]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.6.0...zcash_script-v0.6.1
 [0.6.0]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.5.2...zcash_script-v0.6.0
 [0.4.5]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.4.4...zcash_script-v0.4.5
 [0.4.4]: https://github.com/ZcashFoundation/zcash_script/compare/zcash_script-v0.4.2...zcash_script-v0.4.4
